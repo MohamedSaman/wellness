@@ -1,0 +1,34 @@
+* text=auto eol=lf
+
+*.blade.php diff=html
+*.css diff=css
+*.html diff=html
+*.md diff=markdown
+*.php diff=php
+
+# Development only: kept in git, left out of the release package the server
+# deploys (scripts/package-release.sh uses git archive; assets are prebuilt).
+/.github export-ignore
+/docs export-ignore
+/tests export-ignore
+/tools export-ignore
+/CHANGELOG.md export-ignore
+/CLAUDE.md export-ignore
+/README.md export-ignore
+/.editorconfig export-ignore
+/.env.testing.mysql.example export-ignore
+/.npmrc export-ignore
+/components.json export-ignore
+/package.json export-ignore
+/package-lock.json export-ignore
+/phpstan.neon export-ignore
+/phpunit.xml export-ignore
+/phpunit.mysql.xml export-ignore
+/pint.json export-ignore
+/playwright.config.ts export-ignore
+/pnpm-workspace.yaml export-ignore
+/tsconfig.json export-ignore
+/vite.config.ts export-ignore
+/scripts/e2e-server.sh export-ignore
+/scripts/package-release.sh export-ignore
+/scripts/test-mysql-full.sh export-ignore

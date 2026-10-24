@@ -1,0 +1,18 @@
+# Laravel's scheduler for one client, started every minute by its timer.
+# Long tasks (the nightly backup, the weekly check) run in the background,
+# so this returns at once.
+[Unit]
+Description=POS scheduler (%i)
+After=network-online.target mysql.service
+
+[Service]
+Type=oneshot
+User=pos-%i
+Group=pos-%i
+WorkingDirectory=/srv/pos/%i/current
+ExecStart=/usr/bin/php /srv/pos/%i/current/artisan schedule:run --no-interaction
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true

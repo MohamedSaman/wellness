@@ -1,0 +1,35 @@
+# {{CLIENT}} ({{APP_ENV}}), written by scripts/add-client.sh.
+{{DOMAIN}} {
+	root * /srv/pos/{{CLIENT}}/current/public
+	encode zstd gzip
+
+	# The release the symlink "current" points at is resolved on every request,
+	# so a deploy switches over without reloading PHP (zero downtime).
+	php_fastcgi unix//run/php/pos-{{CLIENT}}.sock {
+		resolve_root_symlink
+	}
+	file_server
+
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		{{EXTRA_HEADERS}}
+	}
+
+	# Nothing but public/ is served; this is a second lock on the door.
+	@hidden path /.env* /.git* /storage/logs* /vendor/*
+	respond @hidden 404
+
+	log {
+		output file /var/log/caddy/{{CLIENT}}.log {
+			roll_size 50MiB
+			roll_keep 10
+		}
+		format json
+	}
+}

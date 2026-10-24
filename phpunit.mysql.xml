@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The MySQL test group (docs/PHARMACY.md §11): row locks, races between tills
+  and FEFO on a real MySQL database. composer test:mysql runs it; the default
+  phpunit.xml excludes it.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Mysql">
+            <directory>tests/Feature/Pos/Mysql</directory>
+        </testsuite>
+    </testsuites>
+    <groups>
+        <include>
+            <group>mysql</group>
+        </include>
+    </groups>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <!-- Overridden by .env.testing.mysql (tests/Feature/Pos/Mysql/MysqlTestCase.php); without it, nothing touches MySQL. -->
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- The suite runs on the retail profile, whatever the shell or .env says; pharmacy tests extend PharmacyTestCase. -->
+        <env name="POS_PROFILE" value="retail" force="true"/>
+        <server name="POS_PROFILE" value="retail" force="true"/>
+    </php>
+</phpunit>

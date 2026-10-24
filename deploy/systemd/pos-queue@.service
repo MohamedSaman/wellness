@@ -1,0 +1,23 @@
+# The queue worker of one client (imports, the "Back up now" button, mail).
+# Restarted by systemd when it stops: after each deploy (queue:restart makes
+# it exit once its job is done), after --max-time or --memory, or a crash.
+[Unit]
+Description=POS queue worker (%i)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+User=pos-%i
+Group=pos-%i
+WorkingDirectory=/srv/pos/%i/current
+ExecStart=/usr/bin/php /srv/pos/%i/current/artisan queue:work --sleep=3 --tries=3 --timeout=900 --max-time=3600 --memory=256
+Restart=always
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

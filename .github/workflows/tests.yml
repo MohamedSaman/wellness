@@ -1,0 +1,173 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  # The release workflow runs these before it packages a tag.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    # The backup tests (age encryption) fail instead of skipping without age.
+    env:
+      POS_BACKUP_TESTS_REQUIRED: '1'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Install age (backup encryption tests)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends age
+
+      - name: Setup Application
+        run: composer setup
+
+      - name: Run CI Checks
+        run: composer ci:check
+
+  # Production runs on MySQL; SQLite accepts SQL that MySQL rejects (reserved
+  # words as aliases, JSON key order, strict GROUP BY ...), so run the whole
+  # test suite against MySQL as well.
+  mysql:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      POS_BACKUP_TESTS_REQUIRED: '1'
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: testing
+      DB_USERNAME: root
+      DB_PASSWORD: password
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_mysql
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Install age (backup encryption tests)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends age
+
+      - name: Setup Application
+        run: composer setup
+
+      - name: Run tests on MySQL
+        run: php artisan test
+
+  # The MySQL test group (tests/Feature/Pos/Mysql, excluded from both runs
+  # above): row locks, tills racing for one batch, FEFO on MySQL types, the
+  # backup round trip. Its tests truncate their database and fork workers, so
+  # they get their own *_test database and the pcntl/posix extensions, and fail
+  # rather than skip (a missing grant on the scratch database fails too).
+  mysql-locking:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: pos_pharmacy_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      POS_MYSQL_TESTS_REQUIRED: '1'
+      POS_BACKUP_TESTS_REQUIRED: '1'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_mysql, pcntl, posix
+          tools: composer:v2
+          coverage: none
+
+      - name: Install age (backup encryption tests)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends age
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      # As on a developer's machine and a client's server: not root, but a user with
+      # rights on the test database and on the scratch database the backup check
+      # restores into (Mysql/BackupMysqlTest, docs/SETUP-GUIDE.md A5b).
+      - name: Create the test user and the backup check's scratch database
+        run: |
+          mysql -h 127.0.0.1 -uroot -ppassword <<'SQL'
+          CREATE DATABASE IF NOT EXISTS pos_pharmacy_test_verify CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+          CREATE USER IF NOT EXISTS 'pos_user'@'%' IDENTIFIED BY 'password';
+          GRANT ALL PRIVILEGES ON pos_pharmacy_test.* TO 'pos_user'@'%';
+          GRANT ALL PRIVILEGES ON pos_pharmacy_test_verify.* TO 'pos_user'@'%';
+          FLUSH PRIVILEGES;
+          SQL
+
+      - name: Point the MySQL group at the service
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          cp .env.testing.mysql.example .env.testing.mysql
+          sed -i 's/^DB_USERNAME=.*/DB_USERNAME=pos_user/; s/^DB_PASSWORD=.*/DB_PASSWORD=password/' .env.testing.mysql
+
+      - name: Run the MySQL group
+        run: composer test:mysql

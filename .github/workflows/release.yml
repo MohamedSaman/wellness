@@ -1,0 +1,116 @@
+name: release
+
+# A semantic version tag (v1.2.0) releases (docs/deploy/CLOUD.md, "Releases"):
+# the whole test suite, then the release package on GitHub Releases, then a
+# deploy to staging, then to production once someone approves it (the
+# production environment's required reviewers, in Settings → Environments).
+# A pre-release tag (v1.2.0-rc.1) stops at staging.
+#
+# Each environment has the variables DEPLOY_HOST (the VPS) and DEPLOY_CLIENTS
+# (the clients on it, e.g. "clinic-staging"), and the secrets DEPLOY_SSH_KEY
+# (the deploy user's private key) and DEPLOY_KNOWN_HOSTS (ssh-keyscan of the VPS).
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+
+  package:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Build the assets
+        run: composer setup
+
+      - name: Package the release
+        run: bash scripts/package-release.sh "$GITHUB_REF_NAME" dist
+
+      - name: Publish it on GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # The tag's section of CHANGELOG.md as the release notes.
+          awk -v v="$version" '/^## \[/{found = index($0, "[" v "]") > 0; next} found' CHANGELOG.md > dist/notes.md
+          [ -s dist/notes.md ] || echo "See CHANGELOG.md." > dist/notes.md
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/pos-*.tar.gz dist/pos-*.sha256 \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file dist/notes.md $prerelease
+
+  deploy-staging:
+    needs: package
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - &download
+        name: Download the release package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern 'pos-*' --dir dist
+          (cd dist && sha256sum -c pos-*.sha256)
+      - &deploy
+        name: Deploy
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_CLIENTS: ${{ vars.DEPLOY_CLIENTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          package="pos-$GITHUB_REF_NAME.tar.gz"
+          scp -i ~/.ssh/id_deploy "dist/$package" "deploy@$DEPLOY_HOST:/srv/pos/incoming/$package"
+          ssh -i ~/.ssh/id_deploy "deploy@$DEPLOY_HOST" "chmod 644 /srv/pos/incoming/$package"
+          for client in $DEPLOY_CLIENTS; do
+            [[ "$client" =~ ^[a-z][a-z0-9-]+$ ]]
+            echo "::group::Deploy $GITHUB_REF_NAME to $client"
+            ssh -i ~/.ssh/id_deploy "deploy@$DEPLOY_HOST" "sudo -u pos-$client /srv/pos/$client/bin/deploy.sh --release=/srv/pos/incoming/$package"
+            echo "::endgroup::"
+          done
+
+  deploy-production:
+    needs: deploy-staging
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - *download
+      - *deploy

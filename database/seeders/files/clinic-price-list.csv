@@ -1,0 +1,6 @@
+﻿"Item Code",Description,Generic,Strength,Form,"Category of sale",MRP,Pack,"Pack size","Pack price",Supplier
+FLU-150,"Fluconazole 150 mg Capsules",Fluconazole,150mg,Caps,Rx,85.00,"Box of 10",10,800.00,Hemas
+IBU-400,"Ibuprofen 400 mg Tablets",Ibuprofen,400mg,Tab,OTC,3.00,"Box of 100",100,270.00,SPC
+MTZ-400,"Metronidazole 400 mg Tablets",Metronidazole,400mg,Tab,Rx,2.50,"Box of 100",100,220.00,SPC
+ORS-SAC,"Oral Rehydration Salts Sachet","Oral rehydration salts",,Other,OTC,45.00,,,,SPC
+LRT-SYR,"Loratadine Syrup 5 mg/5 ml 60 ml",Loratadine,"5 mg/5 ml",Syrup,OTC,,Bottle,60,290.00,"A. Baur"

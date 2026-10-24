@@ -1,0 +1,9 @@
+# Installed by scripts/provision-server.sh. One file per client and
+# environment in /etc/caddy/sites (scripts/add-client.sh). Caddy gets and
+# renews each domain's Let's Encrypt certificate by itself. PHP sees the
+# visitor's own address (REMOTE_ADDR over FastCGI) and HTTPS=on.
+{
+	email {{ACME_EMAIL}}
+}
+
+import /etc/caddy/sites/*.caddy
