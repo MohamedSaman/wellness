@@ -1,0 +1,205 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+/*
+  The shop's colour theme in the admin panel (App\Support\ThemePresets,
+  App\Services\ThemeService). A themed preset puts data-pos-theme on <html>
+  and its colours in --pos-* variables (light, and again under .dark); the
+  rules below only match then, so a classic (retail) panel looks exactly as
+  Filament draws it. Primary, success, danger and warning are Filament's
+  own palettes, registered from the preset (AdminPanelProvider).
+*/
+
+html[data-pos-theme] {
+    & .fi-body {
+        background-color: var(--pos-background);
+        color: var(--pos-foreground);
+    }
+
+    /* The sidebar: dark tint, light text, the active item on a pale chip. */
+    & .fi-sidebar,
+    & :not(.fi-body-has-topbar) .fi-sidebar-header {
+        background-color: var(--pos-sidebar);
+    }
+
+    & .fi-sidebar {
+        & .fi-sidebar-group-label,
+        & .fi-sidebar-group-btn .fi-icon,
+        & .fi-sidebar-group-dropdown-trigger-btn .fi-icon {
+            color: var(--pos-sidebar-muted);
+        }
+
+        & .fi-sidebar-item-label,
+        & .fi-sidebar-database-notifications-btn-label,
+        & .fi-sidebar-item-btn > .fi-icon,
+        & .fi-sidebar-database-notifications-btn > .fi-icon {
+            color: var(--pos-sidebar-fg);
+        }
+
+        & .fi-sidebar-item-grouped-border-part,
+        & .fi-sidebar-item-grouped-border-part-not-first,
+        & .fi-sidebar-item-grouped-border-part-not-last {
+            background-color: var(--pos-sidebar-muted);
+        }
+
+        & .fi-sidebar-item.fi-sidebar-item-has-url > .fi-sidebar-item-btn:hover,
+        & .fi-sidebar-item.fi-sidebar-item-has-url > .fi-sidebar-item-btn:focus-visible,
+        & .fi-sidebar-database-notifications-btn:hover,
+        & .fi-sidebar-group-dropdown-trigger-btn:hover {
+            background-color: var(--pos-sidebar-border);
+        }
+
+        & .fi-sidebar-item.fi-active > .fi-sidebar-item-btn {
+            background-color: var(--pos-sidebar-active);
+
+            & > .fi-icon,
+            & > .fi-sidebar-item-label {
+                color: var(--pos-sidebar-active-fg);
+            }
+
+            & > .fi-sidebar-item-grouped-border > .fi-sidebar-item-grouped-border-part {
+                background-color: var(--pos-sidebar-active-fg);
+            }
+        }
+
+        & .fi-sidebar-footer,
+        & .fi-sidebar-header-controls::after {
+            border-color: var(--pos-sidebar-border);
+        }
+    }
+
+    & .fi-topbar {
+        background-color: var(--pos-card);
+        --tw-ring-color: var(--pos-border);
+    }
+
+    /* Cards: white (or the dark card colour), 14px corners, a soft shadow, a faint border. */
+    & .fi-section:not(.fi-section-not-contained):not(.fi-aside),
+    & .fi-ta-ctn,
+    & .fi-wi-stats-overview-stat,
+    & .pos-card {
+        border-radius: var(--pos-radius);
+        background-color: var(--pos-card);
+        box-shadow: var(--pos-shadow);
+        --tw-ring-color: var(--pos-border);
+    }
+
+    /* Primary buttons: the preset's exact colour, darker on hover (Filament's own hover is lighter). */
+    & .fi-btn.fi-color-primary:not(.fi-outlined):not(label) {
+        --bg: var(--pos-primary) !important;
+        --dark-bg: var(--pos-primary) !important;
+        --hover-bg: var(--pos-primary-hover) !important;
+        --dark-hover-bg: var(--pos-primary-hover) !important;
+        --text: var(--pos-primary-fg) !important;
+        --dark-text: var(--pos-primary-fg) !important;
+        --hover-text: var(--pos-primary-fg) !important;
+        --dark-hover-text: var(--pos-primary-fg) !important;
+    }
+}
+
+/*
+  The clinic dashboard's widgets (app/Filament/Widgets/Clinic). They show
+  under any preset, so every colour falls back to Filament's own when the
+  shop is classic.
+*/
+.pos-card {
+    @apply relative h-full rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10;
+}
+
+.pos-card-title {
+    @apply text-base leading-6 font-semibold text-gray-950 dark:text-white;
+}
+
+.pos-muted {
+    color: var(--pos-muted, var(--color-gray-500));
+}
+
+.pos-primary-text {
+    color: var(--pos-primary-text, var(--color-primary-600));
+}
+
+.dark .pos-primary-text {
+    color: var(--pos-primary-text, var(--color-primary-400));
+}
+
+.pos-danger-text {
+    color: var(--pos-danger-text, var(--color-danger-600));
+}
+
+.dark .pos-danger-text {
+    color: var(--pos-danger-text, var(--color-danger-400));
+}
+
+.pos-soft-primary {
+    background-color: var(--pos-primary-soft, var(--color-primary-50));
+}
+
+.dark .pos-soft-primary {
+    background-color: var(--pos-primary-soft, color-mix(in oklab, var(--color-primary-400) 10%, transparent));
+}
+
+.pos-soft-danger {
+    background-color: var(--pos-danger-soft, var(--color-danger-50));
+}
+
+.dark .pos-soft-danger {
+    background-color: var(--pos-danger-soft, color-mix(in oklab, var(--color-danger-400) 10%, transparent));
+}
+
+/* A status chip: Completed in the primary colour, Voided and High in red, Medium in amber. */
+.pos-chip {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap;
+
+    &.pos-chip-primary {
+        background-color: var(--pos-primary-soft, var(--color-primary-50));
+        color: var(--pos-primary-text, var(--color-primary-700));
+    }
+
+    &.pos-chip-danger {
+        background-color: var(--pos-danger-soft, var(--color-danger-50));
+        color: var(--pos-danger-text, var(--color-danger-700));
+    }
+
+    &.pos-chip-warning {
+        background-color: var(--pos-warning-soft, var(--color-warning-50));
+        color: var(--pos-warning-text, var(--color-warning-700));
+    }
+}
+
+.dark .pos-chip {
+    &.pos-chip-primary {
+        background-color: var(--pos-primary-soft, color-mix(in oklab, var(--color-primary-400) 10%, transparent));
+        color: var(--pos-primary-text, var(--color-primary-300));
+    }
+
+    &.pos-chip-danger {
+        background-color: var(--pos-danger-soft, color-mix(in oklab, var(--color-danger-400) 10%, transparent));
+        color: var(--pos-danger-text, var(--color-danger-300));
+    }
+
+    &.pos-chip-warning {
+        background-color: var(--pos-warning-soft, color-mix(in oklab, var(--color-warning-400) 10%, transparent));
+        color: var(--pos-warning-text, var(--color-warning-300));
+    }
+}
+
+/* A progress bar's track and fill. */
+.pos-bar {
+    @apply h-2 w-full overflow-hidden rounded-full;
+    background-color: var(--pos-primary-soft, var(--color-gray-100));
+
+    & > span {
+        @apply block h-full rounded-full;
+        background-color: var(--pos-primary, var(--color-primary-600));
+    }
+
+    &.pos-bar-danger > span {
+        background-color: var(--pos-danger, var(--color-danger-600));
+    }
+}
+
+.dark .pos-bar {
+    background-color: var(--pos-primary-soft, rgb(255 255 255 / 0.1));
+}

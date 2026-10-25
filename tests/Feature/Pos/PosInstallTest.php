@@ -63,8 +63,8 @@ class PosInstallTest extends TestCase
 
         // The profile's starting settings (client answers, 2026-10-20; prescriber and bank
         // transfer reference from branch 8; no expiry but the prescriber on receipts from
-        // branch 9, 2026-10-21; the teal brand colour from feat/dashboard-charts-branding; an open shift to
-        // sell, 2026-10-22); the rest are the shop defaults.
+        // branch 9, 2026-10-21; an open shift to sell, 2026-10-22; the Clinic Teal theme from
+        // feat/clinic-theme-dashboard, which replaced the teal brand colour); the rest are the shop defaults.
         $this->assertSameIgnoringKeyOrder([
             'near_expiry_warning_days' => 90,
             'receive_at_default_location' => true,
@@ -74,7 +74,7 @@ class PosInstallTest extends TestCase
             'receipt_show_expiry' => false,
             'receipt_show_prescriber' => true,
             'require_open_shift' => true,
-            'brand_color' => '#0f766e',
+            'theme_preset' => 'clinic_teal',
         ], $shop->settings);
         $this->assertSame(0, $shop->setting('min_days_to_expiry_for_sale'));
     }

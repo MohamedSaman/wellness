@@ -18,7 +18,9 @@ use Livewire\Livewire;
  * one brand colour becomes a full shade scale, readable in light and dark
  * mode; it is the admin panel's primary colour and the till's accent, never
  * a status colour. "Suggest from logo" reads the logo's dominant colour
- * here, with GD. The clinic starts teal (its install profile).
+ * here, with GD. The clinic no longer seeds one (it starts on the Clinic
+ * Teal theme, ThemePresetTest); these tests give it the teal it used to
+ * start with, as an owner would.
  */
 class BrandingTest extends PharmacyTestCase
 {
@@ -30,6 +32,7 @@ class BrandingTest extends PharmacyTestCase
         parent::setUp();
 
         Filament::setCurrentPanel('admin');
+        $this->shop->update(['settings' => [...($this->shop->settings ?? []), 'brand_color' => '#0f766e']]);
     }
 
     /** A PNG with a white background, a block of $color and a thin black frame. */
@@ -113,7 +116,7 @@ class BrandingTest extends PharmacyTestCase
         $this->assertNull(BrandingService::dominantColor('<svg xmlns="http://www.w3.org/2000/svg"/>'));
     }
 
-    public function test_the_clinic_starts_teal_from_its_install_profile(): void
+    public function test_the_teal_brand_colour_is_read_back(): void
     {
         $this->assertSame('#0f766e', $this->shop->setting('brand_color'));
         $this->assertSame('#0f766e', app(BrandingService::class)->color($this->shop));
@@ -180,6 +183,8 @@ class BrandingTest extends PharmacyTestCase
 
     public function test_the_brand_colour_is_the_panels_primary_and_never_a_status_colour(): void
     {
+        // On the classic theme the status colours are Filament's own (a themed preset sets them: ThemePresetTest).
+        $this->shop->update(['settings' => [...($this->shop->settings ?? []), 'theme_preset' => 'classic']]);
         $palette = BrandPalette::from('#0f766e')->forFilament();
 
         $html = $this->actingAs($this->owner)->get(Filament::getUrl())->assertOk()->getContent();

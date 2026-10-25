@@ -8,10 +8,18 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-sans:
-        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
-        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Noto Color Emoji';
+    /* --app-font: a themed preset's font (ThemeService); unset, Instrument Sans as before. */
+    --font-sans: var(
+        --app-font,
+        Instrument Sans,
+        ui-sans-serif,
+        system-ui,
+        sans-serif,
+        'Apple Color Emoji',
+        'Segoe UI Emoji',
+        'Segoe UI Symbol',
+        'Noto Color Emoji'
+    );
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -40,6 +48,16 @@
 
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
+
+    /* The colour theme's extra tokens (App\Support\ThemePresets). */
+    --color-primary-hover: var(--primary-hover);
+    --color-primary-soft: var(--primary-soft);
+    --color-primary-text: var(--primary-text);
+    --color-danger-text: var(--danger-text);
+    --color-danger-soft: var(--danger-soft);
+    --color-warning: var(--warning);
+    --color-warning-text: var(--warning-text);
+    --color-warning-soft: var(--warning-soft);
 
     --color-border: var(--border);
     --color-input: var(--input);
@@ -82,10 +100,17 @@
 @layer utilities {
     body,
     html {
-        --font-sans:
-            'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
-            'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-            'Noto Color Emoji';
+        --font-sans: var(
+            --app-font,
+            'Instrument Sans',
+            ui-sans-serif,
+            system-ui,
+            sans-serif,
+            'Apple Color Emoji',
+            'Segoe UI Emoji',
+            'Segoe UI Symbol',
+            'Noto Color Emoji'
+        );
     }
 }
 
@@ -124,6 +149,14 @@
     --sidebar-border: hsl(0 0% 91%);
     --sidebar-ring: hsl(217.2 91.2% 59.8%);
     --sidebar: hsl(0 0% 98%);
+    --primary-hover: var(--primary);
+    --primary-soft: var(--accent);
+    --primary-text: var(--primary);
+    --danger-text: hsl(0 72% 42%);
+    --danger-soft: hsl(0 86% 97%);
+    --warning: hsl(26 90% 37%);
+    --warning-text: hsl(26 90% 37%);
+    --warning-soft: hsl(48 96% 89%);
 }
 
 .dark {
@@ -160,6 +193,14 @@
     --sidebar-border: hsl(0 0% 15.9%);
     --sidebar-ring: hsl(217.2 91.2% 59.8%);
     --sidebar: hsl(240 5.9% 10%);
+    --primary-hover: var(--primary);
+    --primary-soft: var(--accent);
+    --primary-text: var(--primary);
+    --danger-text: hsl(0 94% 82%);
+    --danger-soft: hsl(0 50% 15%);
+    --warning: hsl(26 90% 37%);
+    --warning-text: hsl(46 97% 65%);
+    --warning-soft: hsl(40 65% 14%);
 }
 
 @layer base {
@@ -169,4 +210,13 @@
     body {
         @apply bg-background text-foreground;
     }
+}
+
+/*
+  A themed preset (ThemeService puts data-pos-theme on <html>): cards get the
+  theme's corners and soft shadow. Classic pages never match.
+*/
+html[data-pos-theme] [data-slot='card'] {
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-shadow);
 }

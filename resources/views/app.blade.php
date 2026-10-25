@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}"  @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+{{-- The shop's colour theme (Settings → Appearance; ThemeService): a themed preset names itself on <html>, so its styles apply from the first paint. Classic sets nothing. --}}
+@php($theme = app(\App\Services\ThemeService::class))
+@php($themePreset = $theme->isThemed() ? $theme->preset() : null)
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}"  @class(['dark' => ($appearance ?? 'system') == 'dark']) @if ($themePreset) data-pos-theme="{{ $themePreset }}" @endif>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -40,7 +43,8 @@
         @endif
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
         <link rel="manifest" href="/manifest.webmanifest">
-        <meta name="theme-color" content="{{ $branding->tillColors()['theme'] ?? '#ff2d20' }}">
+        <meta name="theme-color" content="{{ $branding->tillColors()['theme'] ?? $theme->themeColor() ?? '#ff2d20' }}">
+        {!! $theme->appStyle() !!}
         {!! $branding->tillStyle() !!}
 
         @fonts

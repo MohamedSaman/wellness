@@ -10,11 +10,21 @@ import { defineConfig, lazyPlugins } from 'vite-plus';
 export default defineConfig({
     plugins: lazyPlugins(() => [
         laravel({
-            input: ['resources/css/app.css', 'resources/js/app.ts'],
+            input: [
+                'resources/css/app.css',
+                'resources/js/app.ts',
+                'resources/css/filament/admin/theme.css',
+            ],
             refresh: true,
             fonts: [
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
+                }),
+                // The themed presets' font (App\Support\ThemePresets). Not
+                // preloaded: a classic (retail) page never asks for it.
+                bunny('Inter', {
+                    weights: [400, 500, 600, 700],
+                    preload: false,
                 }),
             ],
         }),
