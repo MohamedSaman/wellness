@@ -61,7 +61,11 @@ final class BrandPalette
         return is_string($hex) && preg_match('/^#[0-9a-f]{6}$/i', $hex) === 1;
     }
 
-    public static function from(string $hex): self
+    /**
+     * @param  int|null  $anchor  the shade the colour itself becomes; by default the one nearest its lightness
+     *                            (a theme preset puts its primary on 600, the panel's button shade)
+     */
+    public static function from(string $hex, ?int $anchor = null): self
     {
         if (! self::isValid($hex)) {
             throw new \InvalidArgumentException("Not a colour: {$hex}. Use #rrggbb.");
@@ -71,12 +75,16 @@ final class BrandPalette
         [$lightness, $chroma, $hue] = self::toOklch($brand);
         $achromatic = $chroma < 0.02;
 
-        // The brand sits at the shade nearest its own lightness.
-        $anchor = 50;
+        // The brand sits at the shade nearest its own lightness, unless the caller says which.
+        $placed = $anchor !== null && array_key_exists($anchor, self::STEPS);
 
-        foreach (self::STEPS as $shade => [$step]) {
-            if (abs($step - $lightness) < abs(self::STEPS[$anchor][0] - $lightness)) {
-                $anchor = $shade;
+        if (! $placed) {
+            $anchor = 50;
+
+            foreach (self::STEPS as $shade => [$step]) {
+                if (abs($step - $lightness) < abs(self::STEPS[$anchor][0] - $lightness)) {
+                    $anchor = $shade;
+                }
             }
         }
 
@@ -84,7 +92,17 @@ final class BrandPalette
         $chromas = [];
         $shades = [];
 
+        $anchorStep = self::STEPS[$anchor][0];
+
         foreach (self::STEPS as $shade => [$step, $relative]) {
+            // A placed colour far from its own step stretches the scale around it, so the
+            // shades either side stay evenly spaced (lighter towards white, darker towards black).
+            if ($placed && $shade !== $anchor) {
+                $step = $step > $anchorStep
+                    ? 1 - (1 - $step) * (1 - $lightness) / (1 - $anchorStep)
+                    : $step * $lightness / $anchorStep;
+            }
+
             $lightnesses[$shade] = $shade === $anchor ? $lightness : $step;
             $chromas[$shade] = $achromatic ? $chroma : min(0.37, $chroma * $relative / self::STEPS[$anchor][1]);
             $shades[$shade] = $shade === $anchor ? $brand : self::toHex($lightnesses[$shade], $chromas[$shade], $hue);
