@@ -144,7 +144,15 @@ class ThemeService
     /** The till and settings pages' style block (empty for classic), printed before the brand colour's. */
     public function appStyle(?Shop $shop = null): string
     {
-        $vars = self::appVariables($this->preset($shop));
+        $css = self::appCss($this->preset($shop));
+
+        return $css === '' ? '' : "<style>{$css}</style>";
+    }
+
+    /** A preset's rules for the till and settings pages; the Appearance page's live preview uses the same. */
+    public static function appCss(string $preset): string
+    {
+        $vars = self::appVariables($preset);
 
         if ($vars === null) {
             return '';
@@ -152,10 +160,41 @@ class ThemeService
 
         // Hex values and fixed strings only (ThemePresets), so nothing here can break out of the block.
         // body too: app.css sets --font-sans on body as well as html, from --app-font.
-        return '<style>html[data-pos-theme],html[data-pos-theme] body{'.self::declarations($vars['light']).'}'
+        return 'html[data-pos-theme],html[data-pos-theme] body{'.self::declarations($vars['light']).'}'
             .'html[data-pos-theme].dark,html[data-pos-theme].dark body{'.self::declarations($vars['dark']).'}'
             .'html[data-pos-theme]{background-color:'.$vars['light']['--background'].'}'
-            .'html[data-pos-theme].dark{background-color:'.$vars['dark']['--background'].'}</style>';
+            .'html[data-pos-theme].dark{background-color:'.$vars['dark']['--background'].'}';
+    }
+
+    /**
+     * The Appearance page's choices: each preset's name, its rules (applied
+     * to the page as a live preview) and the colours its swatches and
+     * preview card are drawn in. Classic's are app.css's own, approximately.
+     *
+     * @return list<array{key: string, label: string, css: string, colors: array{light: array<string, string>, dark: array<string, string>}}>
+     */
+    public function pickerOptions(): array
+    {
+        $classic = [
+            'light' => ['sidebar' => '#fafafa', 'sidebar_fg' => '#3f3f46', 'sidebar_active' => '#f0f0f0', 'sidebar_active_fg' => '#4d4d4d', 'primary' => '#171717', 'primary_fg' => '#fafafa', 'primary_soft' => '#f5f5f5', 'primary_text' => '#171717', 'background' => '#ffffff', 'card' => '#ffffff', 'border' => '#ededed', 'foreground' => '#0a0a0a', 'muted' => '#737373', 'danger' => '#ef4444', 'danger_text' => '#b91c1c', 'danger_soft' => '#fef2f2'],
+            'dark' => ['sidebar' => '#18181b', 'sidebar_fg' => '#f4f4f5', 'sidebar_active' => '#292929', 'sidebar_active_fg' => '#f4f4f5', 'primary' => '#fafafa', 'primary_fg' => '#171717', 'primary_soft' => '#262626', 'primary_text' => '#fafafa', 'background' => '#0a0a0a', 'card' => '#0a0a0a', 'border' => '#262626', 'foreground' => '#fafafa', 'muted' => '#a3a3a3', 'danger' => '#ef4444', 'danger_text' => '#fca5a5', 'danger_soft' => '#3f1d1d'],
+        ];
+
+        $options = [];
+
+        foreach (ThemePresets::options() as $key => $label) {
+            $light = ThemePresets::tokens($key, 'light');
+            $dark = ThemePresets::tokens($key, 'dark');
+
+            $options[] = [
+                'key' => $key,
+                'label' => $label,
+                'css' => self::appCss($key),
+                'colors' => $light === null || $dark === null ? $classic : ['light' => $light, 'dark' => $dark],
+            ];
+        }
+
+        return $options;
     }
 
     /**

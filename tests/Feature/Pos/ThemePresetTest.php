@@ -2,18 +2,23 @@
 
 namespace Tests\Feature\Pos;
 
+use App\Models\User;
 use App\Services\BrandingService;
 use App\Services\ThemeService;
 use App\Support\BrandPalette;
 use App\Support\ThemePresets;
 use Filament\Facades\Filament;
+use Inertia\Testing\AssertableInertia;
 
 /**
  * The clinic's colour theme (feat/clinic-theme-dashboard): it starts on
  * Clinic Teal with no brand colour; the preset reaches the till and settings
  * pages (CSS variables, data-pos-theme on <html>) and the admin panel
  * (primary, success, danger and warning palettes, its variables in <head>
- * before anything is drawn); a brand colour still overrides primary.
+ * before anything is drawn); a brand colour still overrides primary. Only
+ * the owner changes it (Settings → Appearance): a role, not a permission,
+ * so a manager-like user, a non-owner given settings.manage and the cashier
+ * are all refused.
  */
 class ThemePresetTest extends PharmacyTestCase
 {
@@ -107,5 +112,77 @@ class ThemePresetTest extends PharmacyTestCase
     public function test_the_sign_in_page_already_wears_the_theme(): void
     {
         $this->assertStringContainsString('data-pos-theme="clinic_teal"', (string) $this->get(route('login'))->assertOk()->getContent());
+    }
+
+    /** A user with the given permissions and no role. */
+    private function userWith(string ...$permissions): User
+    {
+        $user = User::factory()->create(['shop_id' => $this->shop->getKey()]);
+        $user->givePermissionTo($permissions);
+
+        return $user;
+    }
+
+    public function test_the_owner_changes_the_theme_and_it_clears_the_brand_colour(): void
+    {
+        $this->usePreset('clinic_teal', '#7c3aed');
+
+        $this->actingAs($this->owner)
+            ->patch(route('appearance.theme.update'), ['preset' => 'ocean_blue'])
+            ->assertRedirect(route('appearance.edit'))
+            ->assertSessionHasNoErrors();
+
+        $shop = $this->shop->fresh();
+        $this->assertSame('ocean_blue', $shop->setting('theme_preset'));
+        $this->assertNull($shop->setting('brand_color'));
+        // The shop's other settings are kept.
+        $this->assertSame(90, $shop->setting('near_expiry_warning_days'));
+
+        // Both panels wear it from the next page on.
+        $this->assertStringContainsString('data-pos-theme="ocean_blue"', (string) $this->get(route('pos.index'))->getContent());
+        $this->assertStringContainsString('posTheme="ocean_blue"', (string) $this->get(Filament::getUrl())->getContent());
+    }
+
+    public function test_only_the_owner_may_change_the_theme(): void
+    {
+        $manager = $this->userWith('admin.access', 'reports.view');
+        $settingsManager = $this->userWith('admin.access', 'settings.manage');
+
+        foreach (['cashier' => $this->cashier, 'manager' => $manager, 'settings.manage' => $settingsManager] as $who => $user) {
+            $this->actingAs($user)
+                ->patch(route('appearance.theme.update'), ['preset' => 'plum'])
+                ->assertForbidden();
+            $this->assertSame('clinic_teal', $this->shop->fresh()->setting('theme_preset'), $who);
+        }
+    }
+
+    public function test_a_preset_that_does_not_exist_is_refused(): void
+    {
+        $this->actingAs($this->owner)
+            ->from(route('appearance.edit'))
+            ->patch(route('appearance.theme.update'), ['preset' => 'neon'])
+            ->assertSessionHasErrors('preset');
+
+        $this->assertSame('clinic_teal', $this->shop->fresh()->setting('theme_preset'));
+    }
+
+    public function test_the_appearance_page_offers_the_presets_to_the_owner_only(): void
+    {
+        $this->actingAs($this->owner)->get(route('appearance.edit'))->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('settings/Appearance')
+                ->where('theme.current', 'clinic_teal')
+                ->where('theme.hasBrandColor', false)
+                ->has('theme.presets', 5)
+                ->where('theme.presets.0.key', 'classic')
+                ->where('theme.presets.0.css', '')
+                ->where('theme.presets.1.key', 'clinic_teal')
+                ->where('theme.presets.1.css', ThemeService::appCss('clinic_teal'))
+                ->where('theme.presets.1.colors.light.primary', '#0f766e'));
+
+        foreach ([$this->cashier, $this->userWith('admin.access', 'settings.manage')] as $user) {
+            $this->actingAs($user)->get(route('appearance.edit'))->assertOk()
+                ->assertInertia(fn (AssertableInertia $page) => $page->component('settings/Appearance')->where('theme', null));
+        }
     }
 }

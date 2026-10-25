@@ -13,6 +13,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\View;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
@@ -49,11 +50,12 @@ final class BrandingForm
     public static function color(): ColorPicker
     {
         return ColorPicker::make('brand_color')
-            ->label('Brand colour')
+            ->label('Custom primary colour (overrides the theme)')
             ->hex()
             ->regex('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/')
             ->live(debounce: 300)
-            ->helperText('The admin panel\'s main colour and the till\'s buttons. Empty: the standard colours. Red, amber and green for alerts never change.')
+            // The colour theme (Settings → Appearance) sets every colour; this replaces only its primary.
+            ->helperText(new HtmlString(e('Replaces the colour theme\'s main colour in the admin panel and on the till\'s buttons. Empty: the theme\'s own. Alert colours never change. The whole colour theme is set in ').'<a href="'.e(route('appearance.edit')).'" class="underline">Settings → Appearance</a>.'))
             ->hintAction(
                 Action::make('suggestFromLogo')
                     ->label('Suggest from logo')

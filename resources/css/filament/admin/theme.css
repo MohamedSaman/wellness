@@ -45,7 +45,9 @@ html[data-pos-theme] {
         }
 
         & .fi-sidebar-item.fi-sidebar-item-has-url > .fi-sidebar-item-btn:hover,
-        & .fi-sidebar-item.fi-sidebar-item-has-url > .fi-sidebar-item-btn:focus-visible,
+        &
+            .fi-sidebar-item.fi-sidebar-item-has-url
+            > .fi-sidebar-item-btn:focus-visible,
         & .fi-sidebar-database-notifications-btn:hover,
         & .fi-sidebar-group-dropdown-trigger-btn:hover {
             background-color: var(--pos-sidebar-border);
@@ -59,7 +61,9 @@ html[data-pos-theme] {
                 color: var(--pos-sidebar-active-fg);
             }
 
-            & > .fi-sidebar-item-grouped-border > .fi-sidebar-item-grouped-border-part {
+            &
+                > .fi-sidebar-item-grouped-border
+                > .fi-sidebar-item-grouped-border-part {
                 background-color: var(--pos-sidebar-active-fg);
             }
         }
@@ -137,7 +141,10 @@ html[data-pos-theme] {
 }
 
 .dark .pos-soft-primary {
-    background-color: var(--pos-primary-soft, color-mix(in oklab, var(--color-primary-400) 10%, transparent));
+    background-color: var(
+        --pos-primary-soft,
+        color-mix(in oklab, var(--color-primary-400) 10%, transparent)
+    );
 }
 
 .pos-soft-danger {
@@ -145,7 +152,10 @@ html[data-pos-theme] {
 }
 
 .dark .pos-soft-danger {
-    background-color: var(--pos-danger-soft, color-mix(in oklab, var(--color-danger-400) 10%, transparent));
+    background-color: var(
+        --pos-danger-soft,
+        color-mix(in oklab, var(--color-danger-400) 10%, transparent)
+    );
 }
 
 /* A status chip: Completed in the primary colour, Voided and High in red, Medium in amber. */
@@ -170,17 +180,26 @@ html[data-pos-theme] {
 
 .dark .pos-chip {
     &.pos-chip-primary {
-        background-color: var(--pos-primary-soft, color-mix(in oklab, var(--color-primary-400) 10%, transparent));
+        background-color: var(
+            --pos-primary-soft,
+            color-mix(in oklab, var(--color-primary-400) 10%, transparent)
+        );
         color: var(--pos-primary-text, var(--color-primary-300));
     }
 
     &.pos-chip-danger {
-        background-color: var(--pos-danger-soft, color-mix(in oklab, var(--color-danger-400) 10%, transparent));
+        background-color: var(
+            --pos-danger-soft,
+            color-mix(in oklab, var(--color-danger-400) 10%, transparent)
+        );
         color: var(--pos-danger-text, var(--color-danger-300));
     }
 
     &.pos-chip-warning {
-        background-color: var(--pos-warning-soft, color-mix(in oklab, var(--color-warning-400) 10%, transparent));
+        background-color: var(
+            --pos-warning-soft,
+            color-mix(in oklab, var(--color-warning-400) 10%, transparent)
+        );
         color: var(--pos-warning-text, var(--color-warning-300));
     }
 }
