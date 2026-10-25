@@ -90,6 +90,10 @@ html[data-pos-theme] {
         --tw-ring-color: var(--pos-border);
     }
 
+    & .pos-card.pos-card-alert {
+        background-color: var(--pos-danger-soft);
+    }
+
     /* Primary buttons: the preset's exact colour, darker on hover (Filament's own hover is lighter). */
     & .fi-btn.fi-color-primary:not(.fi-outlined):not(label) {
         --bg: var(--pos-primary) !important;
@@ -221,4 +225,93 @@ html[data-pos-theme] {
 
 .dark .pos-bar {
     background-color: var(--pos-primary-soft, rgb(255 255 255 / 0.1));
+}
+
+/* Dots for insights and the activity line. */
+.pos-dot-primary {
+    background-color: var(--pos-primary, var(--color-primary-600));
+}
+
+.pos-dot-warning {
+    background-color: var(--pos-warning, var(--color-warning-600));
+}
+
+.pos-dot-danger {
+    background-color: var(--pos-danger, var(--color-danger-600));
+}
+
+.pos-timeline-line {
+    background-color: var(--pos-border, var(--color-gray-200));
+}
+
+.dark .pos-timeline-line {
+    background-color: var(--pos-border, rgb(255 255 255 / 0.1));
+}
+
+/* The stock alerts card: a soft red. */
+.pos-card.pos-card-alert {
+    background-color: var(--pos-danger-soft, var(--color-danger-50));
+}
+
+.dark .pos-card.pos-card-alert {
+    background-color: var(
+        --pos-danger-soft,
+        color-mix(in oklab, var(--color-danger-400) 10%, transparent)
+    );
+}
+
+/* The stock value ring: General Pharmacy in the primary colour, the doctor's in a lighter tint. */
+.pos-ring-track {
+    stroke: var(--pos-primary-soft, var(--color-gray-100));
+}
+
+.pos-ring-1 {
+    stroke: var(--color-primary-600);
+}
+
+.pos-ring-2 {
+    stroke: var(--color-primary-300);
+}
+
+.pos-swatch-1 {
+    background-color: var(--color-primary-600);
+}
+
+.pos-swatch-2 {
+    background-color: var(--color-primary-300);
+}
+
+/* The greeting's drawing. */
+.pos-hero-blob {
+    fill: var(--pos-primary-soft, var(--color-primary-50));
+}
+
+.pos-hero-paper {
+    fill: var(--pos-card, var(--color-white));
+}
+
+.pos-hero-fill {
+    fill: currentColor;
+    opacity: 0.35;
+}
+
+.dark {
+    & .pos-hero-blob {
+        fill: var(--pos-primary-soft, rgb(255 255 255 / 0.05));
+    }
+
+    & .pos-hero-paper {
+        fill: var(--pos-card, var(--color-gray-900));
+    }
+}
+
+/* A KPI that is an alert: its number in red. */
+.fi-wi-stats-overview-stat.pos-kpi-alert .fi-wi-stats-overview-stat-value {
+    color: var(--pos-danger-text, var(--color-danger-600));
+}
+
+.dark
+    .fi-wi-stats-overview-stat.pos-kpi-alert
+    .fi-wi-stats-overview-stat-value {
+    color: var(--pos-danger-text, var(--color-danger-400));
 }
