@@ -13,9 +13,11 @@ class DashboardController extends Controller
 {
     /**
      * /dashboard: owners (anyone who may use the admin panel) go to the admin
-     * dashboard; everyone else gets a short welcome, with a way to the till
-     * when they may sell. Signing in still takes a cashier straight to the
-     * till (User::homePath()).
+     * dashboard. In a clinic (pharmacy module) everyone else gets a short
+     * welcome, with a way to the till when they may sell; any other shop
+     * sends cashiers to the till and anyone else to their profile settings,
+     * as before. Signing in still takes a cashier straight to the till
+     * (User::homePath()).
      */
     public function __invoke(Request $request): RedirectResponse|Response
     {
@@ -24,6 +26,12 @@ class DashboardController extends Controller
 
         if ($user->can('admin.access')) {
             return redirect('/admin');
+        }
+
+        if (! (app(CurrentShop::class)->get()?->hasModule('pharmacy') ?? false)) {
+            $home = $user->homePath();
+
+            return redirect($home === '/dashboard' ? route('profile.edit') : $home);
         }
 
         return Inertia::render('Dashboard', [
