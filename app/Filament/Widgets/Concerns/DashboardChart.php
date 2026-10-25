@@ -20,10 +20,6 @@ trait DashboardChart
 {
     use NeedsReportsPermission;
 
-    protected ?string $pollingInterval = '60s';
-
-    protected ?string $maxHeight = '300px';
-
     /** How long a chart's figures are reused, in seconds. */
     public const CACHE_SECONDS = 60;
 
@@ -39,6 +35,22 @@ trait DashboardChart
             '90' => 'Last 90 days',
             ...array_diff_key(ReportPeriod::PRESETS, ['custom' => true]),
         ];
+    }
+
+    /*
+     * Polling and height are methods, not properties: a trait property must
+     * match any redeclaration exactly, so a chart that set its own
+     * $pollingInterval or $maxHeight would be a fatal error. A chart
+     * overrides these methods instead.
+     */
+    protected function getPollingInterval(): ?string
+    {
+        return '60s';
+    }
+
+    protected function getMaxHeight(): ?string
+    {
+        return '300px';
     }
 
     protected function getFilters(): ?array
