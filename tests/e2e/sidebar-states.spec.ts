@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import type { Browser, Locator, Page } from '@playwright/test';
+import { measure } from './helpers';
+import type { Measure } from './helpers';
 
 /**
  * The sidebar's item states under every colour theme, light and dark: the
@@ -19,83 +21,6 @@ import type { Browser, Locator, Page } from '@playwright/test';
 const presets = ['clinic_teal', 'ocean_blue', 'plum', 'slate', 'classic'];
 const modes = ['light', 'dark'] as const;
 const screenshots = 'storage/app/screenshots/sidebar';
-
-type Measure = {
-    text: number;
-    icon: number | null;
-    colour: string;
-    weight: string;
-};
-
-/**
- * Runs in the page: the contrast of an element's text colour (and of its
- * icon's, if any) against everything painted under it, every background
- * up to the first opaque one composited on a 1×1 canvas, so any CSS colour
- * (oklch, color-mix, alpha) counts as the browser draws it.
- */
-async function measure(label: Locator, icon?: Locator): Promise<Measure> {
-    const one = (el: Element): [number, string, string] => {
-        const canvas = document.createElement('canvas');
-        canvas.width = canvas.height = 1;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-        const pixel = (): number[] =>
-            Array.from(ctx.getImageData(0, 0, 1, 1).data);
-        const layers: string[] = [];
-
-        for (let up: Element | null = el; up; up = up.parentElement) {
-            const background = getComputedStyle(up).backgroundColor;
-            ctx.clearRect(0, 0, 1, 1);
-            ctx.fillStyle = background;
-            ctx.fillRect(0, 0, 1, 1);
-            const alpha = pixel()[3];
-
-            if (alpha > 0) {
-                layers.unshift(background);
-            }
-
-            if (alpha === 255) {
-                break;
-            }
-        }
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, 1, 1);
-        for (const layer of layers) {
-            ctx.fillStyle = layer;
-            ctx.fillRect(0, 0, 1, 1);
-        }
-        const under = pixel();
-        const colour = getComputedStyle(el).color;
-        ctx.fillStyle = colour;
-        ctx.fillRect(0, 0, 1, 1);
-        const over = pixel();
-
-        const luminance = ([r, g, b]: number[]): number =>
-            [r, g, b]
-                .map((c) => c / 255)
-                .map((c) =>
-                    c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
-                )
-                .reduce(
-                    (sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i],
-                    0,
-                );
-        const [light, dark] = [luminance(under), luminance(over)].sort(
-            (a, b) => b - a,
-        );
-
-        return [
-            (light + 0.05) / (dark + 0.05),
-            colour,
-            getComputedStyle(el).fontWeight,
-        ];
-    };
-
-    const [text, colour, weight] = await label.evaluate(one);
-    const iconRatio = icon ? (await icon.evaluate(one))[0] : null;
-
-    return { text, icon: iconRatio, colour, weight };
-}
 
 /** Sets the shop's colour theme as the owner does: Settings → Appearance, pick, Save. */
 async function usePreset(page: Page, preset: string): Promise<void> {
