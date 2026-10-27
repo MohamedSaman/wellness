@@ -10,6 +10,7 @@ use App\Http\Middleware\LogOutIdleUsers;
 use App\Http\Middleware\RequireTwoFactor;
 use App\Models\User;
 use App\Services\BrandingService;
+use App\Services\ThemeService;
 use App\Support\CurrentShop;
 use Filament\Actions\ActionGroup;
 use Filament\Http\Middleware\Authenticate;
@@ -54,13 +55,19 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
-            // The shop's brand colour, when it has one (Shop settings → Branding), replaces
-            // the amber. Registered as a closure so it is read when the page renders, once
-            // the user (and so the shop) is known; only primary changes, never the status colours.
+            // The shop's colour theme (Settings → Appearance; ThemeService): a themed preset
+            // replaces the amber with its primary (success too) and sets danger and warning;
+            // classic keeps the amber. A brand colour (Shop settings → Branding) still replaces
+            // primary on top. Registered as a closure so it is read when the page renders, once
+            // the user (and so the shop) is known.
             ->bootUsing(function (): void {
-                FilamentColor::register(fn (): array => self::brandColors());
+                FilamentColor::register(fn (): array => app(ThemeService::class)->panelColors());
             })
-            ->favicon(fn (): ?string => app(BrandingService::class)->faviconUrl())
+            // Sidebar, page and card colours of a themed preset (scoped to html[data-pos-theme]).
+            ->viteTheme('resources/css/filament/admin/theme.css')
+            // The shop's name on the tab and the top bar; its favicon, else its logo, else the plain mark.
+            ->brandName(fn (): string => app(BrandingService::class)->name())
+            ->favicon(fn (): string => app(BrandingService::class)->iconUrl())
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
@@ -78,6 +85,8 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
                 fn (): string => self::canUsePos() ? view('filament.open-pos-button')->render() : '',
             )
+            // First in <head>: the preset's name on <html> and its variables, before anything is drawn.
+            ->renderHook(PanelsRenderHook::HEAD_START, fn (): string => app(ThemeService::class)->panelHead())
             ->renderHook(PanelsRenderHook::STYLES_AFTER, fn (): string => view('filament.sticky-row-actions')->render())
             ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.idle-logout', ['seconds' => self::idleSeconds()])->render())
             ->renderHook(
@@ -112,14 +121,6 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 AdminIpAllowlist::class,
             ], isPersistent: true);
-    }
-
-    /** @return array<string, array<int, string>> */
-    private static function brandColors(): array
-    {
-        $palette = app(BrandingService::class)->palette();
-
-        return $palette === null ? [] : ['primary' => $palette->forFilament()];
     }
 
     /** The signed-in user's idle limit in the panel (seconds, 0 = none), for the idle script. */

@@ -9,6 +9,7 @@ use App\Http\Middleware\RequireTwoFactor;
 use App\Http\Middleware\SecurityHeaders;
 use App\Models\DeviceToken;
 use App\Models\Shop;
+use App\Models\User;
 use App\Observers\AuditObserver;
 use App\Support\CurrentShop;
 use Illuminate\Auth\Events\Login;
@@ -21,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Pennant\Feature;
@@ -42,6 +44,10 @@ class PosServiceProvider extends ServiceProvider
         $this->registerModules();
         $this->registerAuditing();
         $this->registerRateLimiters();
+
+        // The shop's colour theme (Settings → Appearance) is the owner's alone: a role, not a
+        // permission, so no other role can be given it (feat/clinic-theme-dashboard).
+        Gate::define('change-theme', fn (User $user): bool => $user->hasRole('owner'));
 
         // /up, for the external uptime monitor (docs/deploy/CLOUD.md): down when the
         // database is, not only when PHP is.

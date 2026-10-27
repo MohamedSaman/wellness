@@ -3,21 +3,53 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\CurrentShop;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class DashboardController extends Controller
 {
     /**
-     * /dashboard is only a signpost: owners go to the admin dashboard, cashiers
-     * to the till, and anyone with neither role to their profile settings.
+     * /dashboard: owners (anyone who may use the admin panel) go to the admin
+     * dashboard. In a clinic (pharmacy module) everyone else gets a short
+     * welcome, with a way to the till when they may sell; any other shop
+     * sends cashiers to the till and anyone else to their profile settings,
+     * as before. Signing in still takes a cashier straight to the till
+     * (User::homePath()).
      */
-    public function __invoke(Request $request): RedirectResponse
+    public function __invoke(Request $request): RedirectResponse|Response
     {
         /** @var User $user */
         $user = $request->user();
-        $home = $user->homePath();
 
-        return redirect($home === '/dashboard' ? route('profile.edit') : $home);
+        if ($user->can('admin.access')) {
+            return redirect('/admin');
+        }
+
+        if (! (app(CurrentShop::class)->get()?->hasModule('pharmacy') ?? false)) {
+            $home = $user->homePath();
+
+            return redirect($home === '/dashboard' ? route('profile.edit') : $home);
+        }
+
+        return Inertia::render('Dashboard', [
+            'firstName' => (string) strtok(trim($user->name), ' '),
+            'greeting' => self::greeting($user),
+            'canUsePos' => $user->can('pos.checkout'),
+        ]);
+    }
+
+    /** Good morning, afternoon or evening by the shop's clock (Asia/Colombo for the clinic). */
+    public static function greeting(User $user): string
+    {
+        $hour = now(app(CurrentShop::class)->get()->timezone ?? config('app.timezone'))->hour;
+
+        return match (true) {
+            $hour < 12 => 'Good morning',
+            $hour < 17 => 'Good afternoon',
+            default => 'Good evening',
+        };
     }
 }

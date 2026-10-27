@@ -89,6 +89,11 @@ return [
         // colours. The favicon is a file on the public disk. The logo is shops.logo_path.
         'brand_color' => null,
         'favicon_path' => null,
+        // The colour theme (Settings → Appearance, owner only; App\Support\ThemePresets):
+        // classic, clinic_teal, ocean_blue, plum or slate. Null: Clinic Teal for a pharmacy
+        // shop, classic (the look from before themes) for any other. Choosing one clears
+        // brand_color, which otherwise still overrides the theme's primary colour.
+        'theme_preset' => null,
         // Security (Administration → Security, docs/deploy/CLOUD.md). A signed-in user who
         // does nothing for this many minutes is signed out: in the admin panel and the rest
         // of the site, and at the till (/pos). 0 = never. A till that is offline stays
@@ -386,8 +391,9 @@ return [
                 'receipt_show_prescriber' => true,
                 // Decided 2026-10-22: a till sells only with an open shift (no "Sell without a shift").
                 'require_open_shift' => true,
-                // A calm teal for a clinic; the owner can change it (Shop settings → Branding).
-                'brand_color' => '#0f766e',
+                // A calm clinic look (feat/clinic-theme-dashboard); the owner can change it
+                // (Settings → Appearance). It replaces the teal brand colour seeded before.
+                'theme_preset' => 'clinic_teal',
             ],
         ],
     ],

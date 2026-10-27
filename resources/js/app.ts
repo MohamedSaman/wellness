@@ -1,4 +1,4 @@
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, usePage } from '@inertiajs/vue3';
 import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
@@ -6,13 +6,13 @@ import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
 import { initializeIdleLogout } from '@/lib/idleLogout';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+// The tab title ends with the shop's name (shared `name`, BrandingService::name).
+const appName = (): string => usePage().props.name ?? '';
 
 void createInertiaApp({
-    title: (title) => (title ? `${title} - ${appName}` : appName),
+    title: (title) => (title ? `${title} - ${appName()}` : appName()),
     layout: (name) => {
         switch (true) {
-            case name === 'Welcome':
             // The checkout screen and receipts use their own full-screen layout.
             case name.startsWith('pos/'):
                 return null;

@@ -57,6 +57,51 @@ class BrandingService
         return is_string($path) && $path !== '' ? Storage::disk('public')->url($path) : null;
     }
 
+    public function logoUrl(?Shop $shop = null): ?string
+    {
+        $path = ($shop ?? $this->shop())?->logo_path;
+
+        return is_string($path) && $path !== '' ? Storage::disk('public')->url($path) : null;
+    }
+
+    /** The name on the tab, the sign-in page and the sidebar: the shop's, else the install's. */
+    public function name(?Shop $shop = null): string
+    {
+        $name = ($shop ?? $this->shop())?->name;
+
+        return is_string($name) && $name !== '' ? $name : (string) config('app.name');
+    }
+
+    /** The browser's icon: the favicon, else the logo, else a cross for a clinic or the plain mark. */
+    public function iconUrl(?Shop $shop = null): string
+    {
+        $shop ??= $this->shop();
+
+        return $this->faviconUrl($shop)
+            ?? $this->logoUrl($shop)
+            ?? (($shop?->hasModule('pharmacy') ?? false) ? '/favicon-clinic.svg' : '/favicon.svg');
+    }
+
+    /**
+     * What every Inertia page knows of the shop (shared as `brand`): the
+     * sign-in page's panel and the sidebar's logo. No tagline field yet, so
+     * it follows the shop's kind.
+     *
+     * @return array{name: string, logoUrl: string|null, tagline: string, clinic: bool}
+     */
+    public function pageBrand(?Shop $shop = null): array
+    {
+        $shop ??= $this->shop();
+        $clinic = $shop?->hasModule('pharmacy') ?? false;
+
+        return [
+            'name' => $this->name($shop),
+            'logoUrl' => $this->logoUrl($shop),
+            'tagline' => $clinic ? 'Pharmacy & OPD system' : 'Point of sale & stock',
+            'clinic' => $clinic,
+        ];
+    }
+
     /**
      * The till's colours (resources/css/app.css tokens): light mode buttons
      * on shade 600 with shade 50 text, dark mode on shade 400 with shade 950

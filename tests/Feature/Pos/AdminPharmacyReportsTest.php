@@ -22,6 +22,7 @@ use App\Filament\Pages\Reports\StockValuationReport;
 use App\Filament\Pages\Reports\SummaryReportPage;
 use App\Filament\Pages\Reports\SupplierAgingReport;
 use App\Filament\Widgets\BestSellersTable;
+use App\Filament\Widgets\Clinic\LocationPerformance;
 use App\Filament\Widgets\CounterSalesStats;
 use App\Models\Device;
 use App\Models\ProductVariant;
@@ -366,7 +367,8 @@ class AdminPharmacyReportsTest extends BatchTestCase
         $this->aBusyDay();
         $this->actingAs($this->owner);
 
-        $this->get(Dashboard::getUrl())->assertOk()->assertSeeLivewire(CounterSalesStats::class);
+        // The clinic's dashboard lays out its own widgets (feat/clinic-theme-dashboard); the counters' figures are still these.
+        $this->get(Dashboard::getUrl())->assertOk()->assertSeeLivewire(LocationPerformance::class)->assertDontSeeLivewire(CounterSalesStats::class);
 
         Livewire::test(CounterSalesStats::class)
             ->assertSee('General Pharmacy today')

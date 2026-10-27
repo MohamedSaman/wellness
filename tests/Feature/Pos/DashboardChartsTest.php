@@ -7,6 +7,9 @@ use App\Enums\PaymentMethod;
 use App\Enums\ReturnReason;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Support\ChartColors;
+use App\Filament\Widgets\Clinic\ClinicKpis;
+use App\Filament\Widgets\Clinic\SalesTrendChart;
+use App\Filament\Widgets\Clinic\StockValueDonut;
 use App\Filament\Widgets\IncomeChart;
 use App\Filament\Widgets\NetSalesChart;
 use App\Filament\Widgets\PaymentMethodsChart;
@@ -232,15 +235,18 @@ class DashboardChartsTest extends BatchTestCase
         $this->assertSame($before + 2_000, $this->minor(array_sum($this->chart(PaymentMethodsChart::class, 'today')['datasets'][0]['data'])));
     }
 
-    public function test_the_owner_sees_every_chart_on_the_dashboard(): void
+    public function test_the_clinic_dashboard_has_its_own_layout_instead_of_the_period_charts(): void
     {
-        $this->actingAs($this->owner)->get(Dashboard::getUrl())
+        // feat/clinic-theme-dashboard: the clinic's dashboard (ClinicDashboardTest); these charts stay the retail dashboard's.
+        $page = $this->actingAs($this->owner)->get(Dashboard::getUrl())
             ->assertOk()
-            ->assertSeeLivewire(NetSalesChart::class)
-            ->assertSeeLivewire(IncomeChart::class)
-            ->assertSeeLivewire(TopItemsChart::class)
-            ->assertSeeLivewire(PaymentMethodsChart::class)
-            ->assertSeeLivewire(StockValueChart::class);
+            ->assertSeeLivewire(ClinicKpis::class)
+            ->assertSeeLivewire(SalesTrendChart::class)
+            ->assertSeeLivewire(StockValueDonut::class);
+
+        foreach ([NetSalesChart::class, IncomeChart::class, TopItemsChart::class, PaymentMethodsChart::class, StockValueChart::class] as $chart) {
+            $page->assertDontSeeLivewire($chart);
+        }
     }
 
     public function test_the_chart_options_fit_inside_the_html_attribute_they_are_written_into(): void
