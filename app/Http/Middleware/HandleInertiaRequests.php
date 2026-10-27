@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Services\BrandingService;
 use Closure;
 use Filament\Facades\Filament;
 use Illuminate\Http\RedirectResponse;
@@ -68,7 +69,9 @@ class HandleInertiaRequests extends Middleware
     {
         return [
             ...parent::share($request),
-            'name' => config('app.name'),
+            // The shop's name and logo (the tab title, the sign-in page, the sidebar), signed in or not.
+            'name' => fn (): string => app(BrandingService::class)->name(),
+            'brand' => fn (): array => app(BrandingService::class)->pageBrand(),
             'auth' => [
                 'user' => $request->user(),
             ],

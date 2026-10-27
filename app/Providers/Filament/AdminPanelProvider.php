@@ -65,7 +65,9 @@ class AdminPanelProvider extends PanelProvider
             })
             // Sidebar, page and card colours of a themed preset (scoped to html[data-pos-theme]).
             ->viteTheme('resources/css/filament/admin/theme.css')
-            ->favicon(fn (): ?string => app(BrandingService::class)->faviconUrl())
+            // The shop's name on the tab and the top bar; its favicon, else its logo, else the plain mark.
+            ->brandName(fn (): string => app(BrandingService::class)->name())
+            ->favicon(fn (): string => app(BrandingService::class)->iconUrl())
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([

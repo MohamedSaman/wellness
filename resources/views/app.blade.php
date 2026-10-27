@@ -33,15 +33,11 @@
             }
         </style>
 
-        {{-- The shop's branding (Shop settings → Branding): its favicon and the till's accent colour. --}}
+        {{-- The shop's branding (Shop settings → Branding): its name, icon and the till's accent colour. --}}
         @php($branding = app(\App\Services\BrandingService::class))
-        @if ($favicon = $branding->faviconUrl())
-            <link rel="icon" href="{{ $favicon }}">
-        @else
-            <link rel="icon" href="/favicon.ico" sizes="any">
-            <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        @endif
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        {{-- The favicon, else the logo, else a cross for a clinic or the plain mark (BrandingService::iconUrl). --}}
+        <link rel="icon" href="{{ $branding->iconUrl() }}">
+        <link rel="apple-touch-icon" href="{{ $branding->faviconUrl() ?? $branding->logoUrl() ?? '/apple-touch-icon.png' }}">
         <link rel="manifest" href="/manifest.webmanifest">
         <meta name="theme-color" content="{{ $branding->tillColors()['theme'] ?? $theme->themeColor() ?? '#ff2d20' }}">
         {!! $theme->appStyle() !!}
@@ -51,7 +47,7 @@
 
         @vite(['resources/css/app.css', 'resources/js/app.ts', "resources/js/pages/{$page['component']}.vue"])
         <x-inertia::head>
-            <title>{{ config('app.name', 'Laravel') }}</title>
+            <title>{{ $branding->name() }}</title>
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">
