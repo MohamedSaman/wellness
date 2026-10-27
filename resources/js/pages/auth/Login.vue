@@ -14,8 +14,8 @@ import PasskeyVerify from '@/components/PasskeyVerify.vue';
 
 defineOptions({
     layout: {
-        title: 'Log in to your account',
-        description: 'Enter your email and password below to log in',
+        title: 'Sign in',
+        description: 'Enter your email and password to continue.',
     },
 });
 
@@ -26,11 +26,11 @@ defineProps<{
 </script>
 
 <template>
-    <Head title="Log in" />
+    <Head title="Sign in" />
 
     <div
         v-if="status"
-        class="mb-4 text-center text-sm font-medium text-green-600"
+        class="mb-4 text-center text-sm font-medium text-primary-text"
     >
         {{ status }}
     </div>
@@ -97,7 +97,7 @@ defineProps<{
                 data-test="login-button"
             >
                 <Spinner v-if="processing" />
-                Log in
+                Sign in
             </Button>
         </div>
     </Form>
