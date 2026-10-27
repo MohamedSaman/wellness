@@ -31,6 +31,11 @@ class HomeAndSignInTest extends PharmacyTestCase
 
     public function test_the_sign_in_page_is_the_shops(): void
     {
+        // As production serves it: no SSR bundle is built or run there, so the page is rendered in the
+        // browser, which makes the title "Sign in - <shop>" (e2e login-page.spec.ts). Off here too, so
+        // a Vite dev server running on this machine can't render it on the server instead.
+        config(['inertia.ssr.enabled' => false]);
+
         $html = (string) $this->get(route('login'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
@@ -44,7 +49,7 @@ class HomeAndSignInTest extends PharmacyTestCase
                 ]))
             ->getContent();
 
-        $this->assertStringContainsString('<title data-inertia="">Sign in - '.e($this->shop->name).'</title>', $html);
+        $this->assertStringContainsString('<title>'.e($this->shop->name).'</title>', $html);
         $this->assertStringContainsString('<link rel="icon" href="/favicon-clinic.svg">', $html);
 
         foreach (['laravel.com', 'laracasts', 'Deploy now', 'cloud.laravel'] as $starter) {
