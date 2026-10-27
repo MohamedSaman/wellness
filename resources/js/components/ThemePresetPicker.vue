@@ -180,10 +180,11 @@ function save(): void {
                 :style="{ backgroundColor: preview.sidebar }"
             >
                 <span
-                    class="rounded-md px-2 py-1 text-xs font-medium"
+                    class="rounded-md px-2 py-1 text-xs font-semibold"
                     :style="{
-                        backgroundColor: preview.sidebar_active,
+                        backgroundColor: preview.sidebar_active_bg,
                         color: preview.sidebar_active_fg,
+                        boxShadow: `inset 3px 0 0 ${preview.sidebar_accent}`,
                     }"
                     >Dashboard</span
                 >

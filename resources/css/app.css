@@ -220,3 +220,46 @@ html[data-pos-theme] [data-slot='card'] {
     border-radius: var(--card-radius);
     box-shadow: var(--card-shadow);
 }
+
+/*
+  A themed preset's sidebar (ThemeService's --sidebar-* variables, the same
+  states as the admin panel's): light text and muted group labels, hover a
+  faint white wash (shadcn's own accent), the active item a stronger one
+  with white semibold text and a bar in the accent tint, the keyboard focus
+  ring the accent too. Classic pages never match.
+*/
+html[data-pos-theme] {
+    & [data-sidebar='group-label'] {
+        color: var(--sidebar-muted);
+    }
+
+    & [data-sidebar='menu-button'],
+    & [data-sidebar='menu-sub-button'] {
+        &[data-active='true'] {
+            position: relative;
+            background-color: var(--sidebar-active);
+            color: var(--sidebar-active-foreground);
+            font-weight: 600;
+
+            &:hover {
+                background-color: var(--sidebar-active-hover);
+            }
+
+            &::before {
+                content: '';
+                position: absolute;
+                inset-block: 0.375rem;
+                inset-inline-start: 0;
+                width: 3px;
+                border-radius: 9999px;
+                background-color: var(--sidebar-indicator);
+            }
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--sidebar-ring);
+            outline-offset: 2px;
+            box-shadow: none;
+        }
+    }
+}
