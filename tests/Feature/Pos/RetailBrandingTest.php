@@ -19,7 +19,8 @@ class RetailBrandingTest extends AdminTestCase
         $till = (string) $this->get(route('pos.index'))->assertOk()->getContent();
         $this->assertStringNotContainsString('html:root{', $till);
         $this->assertStringContainsString('<meta name="theme-color" content="#ff2d20">', $till);
-        $this->assertStringContainsString('<link rel="icon" href="/favicon.ico" sizes="any">', $till);
+        // The plain mark, not the starter kit's Laravel logo (BrandingService::iconUrl).
+        $this->assertStringContainsString('<link rel="icon" href="/favicon.svg">', $till);
     }
 
     public function test_a_retail_shop_that_sets_a_brand_colour_gets_it_in_the_panel_and_the_till(): void
