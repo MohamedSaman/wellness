@@ -33,6 +33,44 @@ class ThemePresetsTest extends TestCase
         }
     }
 
+    public function test_every_presets_sidebar_icons_focus_ring_and_active_bar_reach_3_to_1_in_light_and_dark_mode(): void
+    {
+        foreach (array_diff(ThemePresets::keys(), [ThemePresets::CLASSIC]) as $preset) {
+            foreach (['light', 'dark'] as $mode) {
+                $tokens = (array) ThemePresets::tokens($preset, $mode);
+
+                foreach (ThemePresets::uiContrastPairs() as [$colour, $surface]) {
+                    $ratio = BrandPalette::contrast($tokens[$colour], $tokens[$surface]);
+                    $this->assertGreaterThanOrEqual(ThemePresets::AA_UI, $ratio, "{$preset} {$mode}: {$colour} on {$surface} is ".round($ratio, 2).':1');
+                }
+            }
+        }
+    }
+
+    public function test_every_presets_sidebar_states_are_white_washes_over_its_sidebar(): void
+    {
+        foreach (array_diff(ThemePresets::keys(), [ThemePresets::CLASSIC]) as $preset) {
+            foreach (['light', 'dark'] as $mode) {
+                $tokens = (array) ThemePresets::tokens($preset, $mode);
+                $lightness = fn (string $token): float => BrandPalette::toOklch($tokens[$token])[0];
+
+                // Each state is lighter than the one before, so hover, active and active + hover all look different.
+                $this->assertLessThan($lightness('sidebar_hover_bg'), $lightness('sidebar'), "{$preset} {$mode}");
+                $this->assertLessThan($lightness('sidebar_active_bg'), $lightness('sidebar_hover_bg'), "{$preset} {$mode}");
+                $this->assertLessThan($lightness('sidebar_active_hover_bg'), $lightness('sidebar_active_bg'), "{$preset} {$mode}");
+                $this->assertSame('#ffffff', $tokens['sidebar_active_fg'], "{$preset} {$mode}");
+
+                // The accent is a light tint of the primary's own hue.
+                $this->assertGreaterThan(0.8, $lightness('sidebar_accent'), "{$preset} {$mode}");
+            }
+        }
+
+        $light = (array) ThemePresets::tokens(ThemePresets::CLINIC_TEAL, 'light');
+        $dark = (array) ThemePresets::tokens(ThemePresets::CLINIC_TEAL, 'dark');
+        $this->assertSame(['#225a54', '#31655f', '#3a6c66', '#53ecde'], [$light['sidebar_hover_bg'], $light['sidebar_active_bg'], $light['sidebar_active_hover_bg'], $light['sidebar_accent']]);
+        $this->assertSame(['#1f403c', '#2d4c49', '#375451', '#53ecde'], [$dark['sidebar_hover_bg'], $dark['sidebar_active_bg'], $dark['sidebar_active_hover_bg'], $dark['sidebar_accent']]);
+    }
+
     public function test_every_themed_preset_sets_the_same_tokens_as_hex(): void
     {
         $expected = array_keys((array) ThemePresets::tokens(ThemePresets::CLINIC_TEAL));
@@ -56,8 +94,8 @@ class ThemePresetsTest extends TestCase
         $dark = (array) ThemePresets::tokens(ThemePresets::CLINIC_TEAL, 'dark');
 
         $this->assertSame(
-            ['#0f4c45', '#e6f2f0', '#cfe6e1', '#0f4c45', '#0f766e', '#115e59', '#dcebe8', '#eef4f3', '#ffffff', '#e2ecea', '#0f1f1c', '#5b6b68', '#c81e2b', '#fce8ea', '#b45309', '#fef3c7'],
-            [$light['sidebar'], $light['sidebar_fg'], $light['sidebar_active'], $light['sidebar_active_fg'], $light['primary'], $light['primary_hover'], $light['primary_soft'], $light['background'], $light['card'], $light['border'], $light['foreground'], $light['muted'], $light['danger'], $light['danger_soft'], $light['warning'], $light['warning_soft']],
+            ['#0f4c45', '#e6f2f0', '#31655f', '#ffffff', '#0f766e', '#115e59', '#dcebe8', '#eef4f3', '#ffffff', '#e2ecea', '#0f1f1c', '#5b6b68', '#c81e2b', '#fce8ea', '#b45309', '#fef3c7'],
+            [$light['sidebar'], $light['sidebar_fg'], $light['sidebar_active_bg'], $light['sidebar_active_fg'], $light['primary'], $light['primary_hover'], $light['primary_soft'], $light['background'], $light['card'], $light['border'], $light['foreground'], $light['muted'], $light['danger'], $light['danger_soft'], $light['warning'], $light['warning_soft']],
         );
         $this->assertSame(
             ['#0b2f2b', '#0b1514', '#12201e', '#1f302d', '#0f766e'],

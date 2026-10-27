@@ -94,12 +94,19 @@ class ThemeService
             '--sidebar-background' => $t['sidebar'],
             '--sidebar' => $t['sidebar'],
             '--sidebar-foreground' => $t['sidebar_fg'],
-            '--sidebar-primary' => $t['sidebar_active'],
-            '--sidebar-primary-foreground' => $t['sidebar_active_fg'],
-            '--sidebar-accent' => $t['sidebar_active'],
+            // The logo's square: a pale chip with the mark in the sidebar's colour.
+            '--sidebar-primary' => $t['sidebar_fg'],
+            '--sidebar-primary-foreground' => $t['sidebar'],
+            // The sidebar's own accent is its hover; the active item and its bar are app.css's rules.
+            '--sidebar-accent' => $t['sidebar_hover_bg'],
             '--sidebar-accent-foreground' => $t['sidebar_active_fg'],
             '--sidebar-border' => $t['sidebar_border'],
-            '--sidebar-ring' => $t['primary'],
+            '--sidebar-ring' => $t['sidebar_accent'],
+            '--sidebar-muted' => $t['sidebar_muted'],
+            '--sidebar-active' => $t['sidebar_active_bg'],
+            '--sidebar-active-hover' => $t['sidebar_active_hover_bg'],
+            '--sidebar-active-foreground' => $t['sidebar_active_fg'],
+            '--sidebar-indicator' => $t['sidebar_accent'],
             '--card-radius' => ThemePresets::RADIUS,
             '--card-shadow' => $shadow,
             '--app-font' => "'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'",
@@ -176,8 +183,8 @@ class ThemeService
     public function pickerOptions(): array
     {
         $classic = [
-            'light' => ['sidebar' => '#fafafa', 'sidebar_fg' => '#3f3f46', 'sidebar_active' => '#f0f0f0', 'sidebar_active_fg' => '#4d4d4d', 'primary' => '#171717', 'primary_fg' => '#fafafa', 'primary_soft' => '#f5f5f5', 'primary_text' => '#171717', 'background' => '#ffffff', 'card' => '#ffffff', 'border' => '#ededed', 'foreground' => '#0a0a0a', 'muted' => '#737373', 'danger' => '#ef4444', 'danger_text' => '#b91c1c', 'danger_soft' => '#fef2f2'],
-            'dark' => ['sidebar' => '#18181b', 'sidebar_fg' => '#f4f4f5', 'sidebar_active' => '#292929', 'sidebar_active_fg' => '#f4f4f5', 'primary' => '#fafafa', 'primary_fg' => '#171717', 'primary_soft' => '#262626', 'primary_text' => '#fafafa', 'background' => '#0a0a0a', 'card' => '#0a0a0a', 'border' => '#262626', 'foreground' => '#fafafa', 'muted' => '#a3a3a3', 'danger' => '#ef4444', 'danger_text' => '#fca5a5', 'danger_soft' => '#3f1d1d'],
+            'light' => ['sidebar' => '#fafafa', 'sidebar_fg' => '#3f3f46', 'sidebar_active_bg' => '#f0f0f0', 'sidebar_active_fg' => '#4d4d4d', 'sidebar_accent' => '#f0f0f0', 'primary' => '#171717', 'primary_fg' => '#fafafa', 'primary_soft' => '#f5f5f5', 'primary_text' => '#171717', 'background' => '#ffffff', 'card' => '#ffffff', 'border' => '#ededed', 'foreground' => '#0a0a0a', 'muted' => '#737373', 'danger' => '#ef4444', 'danger_text' => '#b91c1c', 'danger_soft' => '#fef2f2'],
+            'dark' => ['sidebar' => '#18181b', 'sidebar_fg' => '#f4f4f5', 'sidebar_active_bg' => '#292929', 'sidebar_active_fg' => '#f4f4f5', 'sidebar_accent' => '#292929', 'primary' => '#fafafa', 'primary_fg' => '#171717', 'primary_soft' => '#262626', 'primary_text' => '#fafafa', 'background' => '#0a0a0a', 'card' => '#0a0a0a', 'border' => '#262626', 'foreground' => '#fafafa', 'muted' => '#a3a3a3', 'danger' => '#ef4444', 'danger_text' => '#fca5a5', 'danger_soft' => '#3f1d1d'],
         ];
 
         $options = [];

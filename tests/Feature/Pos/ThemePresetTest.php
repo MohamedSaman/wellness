@@ -86,6 +86,24 @@ class ThemePresetTest extends PharmacyTestCase
         $this->assertStringContainsString('--warning-600:'.ThemeService::palette($tokens['warning'])->forFilament()[600].';', $panel);
     }
 
+    public function test_the_sidebars_item_states_reach_the_admin_panel_and_the_settings_pages(): void
+    {
+        $this->usePreset('ocean_blue');
+
+        foreach (['light', 'dark'] as $mode) {
+            $tokens = (array) ThemePresets::tokens('ocean_blue', $mode);
+
+            $panel = (string) $this->actingAs($this->owner)->get(Filament::getUrl())->assertOk()->getContent();
+            foreach (['sidebar_hover_bg', 'sidebar_active_bg', 'sidebar_active_hover_bg', 'sidebar_active_fg', 'sidebar_accent'] as $token) {
+                $this->assertStringContainsString('--pos-'.str_replace('_', '-', $token).':'.$tokens[$token].';', $panel);
+            }
+
+            $settings = (string) $this->get(route('profile.edit'))->assertOk()->getContent();
+            $this->assertStringContainsString('--sidebar-accent:'.$tokens['sidebar_hover_bg'].';--sidebar-accent-foreground:#ffffff;', $settings);
+            $this->assertStringContainsString('--sidebar-muted:'.$tokens['sidebar_muted'].';--sidebar-active:'.$tokens['sidebar_active_bg'].';--sidebar-active-hover:'.$tokens['sidebar_active_hover_bg'].';--sidebar-active-foreground:#ffffff;--sidebar-indicator:'.$tokens['sidebar_accent'].';', $settings);
+        }
+    }
+
     public function test_a_brand_colour_still_overrides_the_presets_primary_and_nothing_else(): void
     {
         $this->usePreset('clinic_teal', '#7c3aed');
