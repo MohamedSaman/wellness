@@ -57,8 +57,9 @@ class SupplierPayableResource extends PermissionResource
 
     public static function table(Table $table): Table
     {
+        // One action on a row: a calendar icon (its name as the tooltip), so the column stays narrow.
         return static::payablesTable($table, withSupplier: true)
-            ->recordActions([static::dueDateAction()]);
+            ->recordActions([static::dueDateAction()->iconButton()->tooltip('Change due date')]);
     }
 
     /** The payables table, on this screen (every supplier) and on a supplier's page. */
@@ -69,17 +70,21 @@ class SupplierPayableResource extends PermissionResource
         $late = fn (SupplierPayable $record): int => $record->status->isOpen() ? $record->daysOverdue($today) : 0;
         $money = fn (?int $state): ?string => ShopMoney::format($state);
 
+        // Fits a 1280 px window beside the sidebar: Supplier wraps (a document number never
+        // breaks), money is right-aligned, and Invoice date and Paid (Amount less
+        // Outstanding) start hidden; so does Status with every supplier listed, which
+        // the Supplier column needs the room for (Amount against Outstanding shows it).
         return $table
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['supplier', 'goodsReceipt']))
             ->columns([
-                TextColumn::make('supplier.name')->label('Supplier')->searchable()->sortable()->visible($withSupplier),
+                TextColumn::make('supplier.name')->label('Supplier')->searchable()->sortable()->wrap()->visible($withSupplier),
                 TextColumn::make('document')
                     ->label('Document')
                     ->state(fn (SupplierPayable $record): string => $record->documentLabel())
                     ->weight('bold')
                     ->description(fn (SupplierPayable $record): ?string => $record->invoice_no === null ? null : 'Invoice '.$record->invoice_no),
                 TextColumn::make('invoice_no')->label('Invoice')->searchable()->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('invoice_date')->label('Invoice date')->date()->placeholder('-')->toggleable(),
+                TextColumn::make('invoice_date')->label('Invoice date')->date()->placeholder('-')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('due_on')
                     ->label('Due')
                     ->date()
@@ -88,16 +93,19 @@ class SupplierPayableResource extends PermissionResource
                     ->weight(fn (SupplierPayable $record): ?string => $late($record) > 0 ? 'bold' : null),
                 TextColumn::make('days_overdue')
                     ->label('Overdue')
-                    ->state(fn (SupplierPayable $record): int => $late($record))
-                    ->formatStateUsing(fn (int $state): string => $state > 0 ? $state.' '.str('day')->plural($state) : '-')
-                    ->color(fn (int $state): ?string => $state > 0 ? 'danger' : null),
-                TextColumn::make('amount')->formatStateUsing($money),
-                TextColumn::make('allocated')->label('Paid')->formatStateUsing($money)->toggleable(),
+                    ->state(fn (SupplierPayable $record): ?int => $late($record) ?: null)
+                    ->formatStateUsing(fn (int $state): string => $state.' '.str('day')->plural($state))
+                    ->badge()
+                    ->color('danger')
+                    ->placeholder('-'),
+                TextColumn::make('amount')->formatStateUsing($money)->alignEnd(),
+                TextColumn::make('allocated')->label('Paid')->formatStateUsing($money)->alignEnd()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('outstanding')
                     ->label('Outstanding')
                     ->state(fn (SupplierPayable $record): int => $record->outstanding())
                     ->formatStateUsing($money)
                     ->weight('bold')
+                    ->alignEnd()
                     ->summarize(Summarizer::make()
                         ->label('Outstanding')
                         ->using(fn (QueryBuilder $query): int => (int) $query->sum(DB::raw("CASE WHEN status = 'reversed' THEN 0 ELSE amount - allocated END")))
@@ -105,7 +113,8 @@ class SupplierPayableResource extends PermissionResource
                 TextColumn::make('status')
                     ->badge()
                     ->formatStateUsing(fn (PayableStatus $state): string => $state->label())
-                    ->color(fn (PayableStatus $state): string => $state->color()),
+                    ->color(fn (PayableStatus $state): string => $state->color())
+                    ->toggleable(isToggledHiddenByDefault: $withSupplier),
             ])
             ->filters([
                 SelectFilter::make('supplier_id')

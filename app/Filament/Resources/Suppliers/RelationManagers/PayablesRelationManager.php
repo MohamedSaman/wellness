@@ -10,6 +10,7 @@ use App\Models\SupplierPayable;
 use App\Models\User;
 use App\Services\SupplierService;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -41,7 +42,8 @@ class PayablesRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return SupplierPayableResource::payablesTable($table, withSupplier: false)
-            ->recordActions([
+            // Two actions on a row: a ⋮ menu, so the column stays narrow beside the amounts.
+            ->recordActions([ActionGroup::make([
                 SupplierPayableResource::dueDateAction(),
                 Action::make('reverseOpeningInvoice')
                     ->label('Reverse')
@@ -72,6 +74,6 @@ class PayablesRelationManager extends RelationManager
                         Notification::make()->title('Opening invoice reversed')->success()->send();
                         $this->redirect(SupplierResource::getUrl('view', ['record' => $this->getOwnerRecord()]));
                     }),
-            ]);
+            ])]);
     }
 }

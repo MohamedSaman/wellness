@@ -24,9 +24,10 @@ class PayablesAging extends StatsOverviewWidget
         return ListSupplierPayables::class;
     }
 
+    /** Three to a row at most: six beside the sidebar cut the amounts off, even at 1920 px. */
     protected function getColumns(): int|array
     {
-        return ['default' => 2, 'md' => 3, 'xl' => 6];
+        return ['default' => 2, 'md' => 3];
     }
 
     protected function getStats(): array
