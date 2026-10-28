@@ -147,8 +147,9 @@ class StockLevelsTableTest extends AdminTestCase
     }
 
     /**
-     * Stacking itself needs a browser; this guards the two pieces that fix it:
-     * the ⋮ menu floats (fixed, flips, anchored right) and the open row is lifted.
+     * Stacking itself needs a browser (tests/e2e/admin-tables.spec.ts); this
+     * guards the pieces: the ⋮ menu floats (fixed, flips, anchored right), and
+     * no style of ours pins the actions cell over the other columns.
      */
     public function test_the_row_menu_floats_above_the_table(): void
     {
@@ -157,6 +158,6 @@ class StockLevelsTableTest extends AdminTestCase
         $html = $this->get(StockLevelResource::getUrl())->assertOk()->getContent();
 
         $this->assertStringContainsString('x-float.placement.bottom-end.flip.teleport', $html);
-        $this->assertStringContainsString("td:has(> .fi-ta-actions [aria-expanded='true'])", $html);
+        $this->assertStringNotContainsString('td:has(> .fi-ta-actions', $html);
     }
 }
