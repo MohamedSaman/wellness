@@ -49,12 +49,15 @@ class AllocationsRelationManager extends RelationManager
                 TextColumn::make('allocated_on')->label('Date')->date()->sortable(),
                 TextColumn::make('credit')
                     ->label('From')
-                    ->state(fn (SupplierAllocation $record): string => $record->credit->label()),
+                    ->state(fn (SupplierAllocation $record): string => $record->credit->label())
+                    ->wrap(),
                 TextColumn::make('payable')
                     ->label('To')
-                    ->state(fn (SupplierAllocation $record): string => $payables->describe($record->payable)),
+                    ->state(fn (SupplierAllocation $record): string => $payables->describe($record->payable))
+                    ->wrap(),
                 TextColumn::make('amount')
                     ->formatStateUsing(fn (int $state): ?string => ShopMoney::format($state))
+                    ->alignEnd()
                     ->color(fn (int $state): ?string => $state < 0 ? 'danger' : null)
                     ->description(fn (SupplierAllocation $record): ?string => $record->reversal !== null ? 'Undone' : null),
                 TextColumn::make('note')->limit(60)->wrap()->placeholder('-'),

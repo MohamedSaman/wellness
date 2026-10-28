@@ -249,12 +249,13 @@ class GoodsReceiptResource extends PermissionResource
                         default => null,
                     }),
                 TextColumn::make('received_on')->label('Received')->date()->sortable(),
-                TextColumn::make('supplier.name')->label('Supplier')->searchable(),
+                TextColumn::make('supplier.name')->label('Supplier')->searchable()->wrap(),
                 TextColumn::make('supplier_invoice_no')->label('Invoice')->placeholder('-')->searchable(),
-                TextColumn::make('location.name')->label('Location')->visible(fn (): bool => PurchasingForm::multiLocation()),
-                TextColumn::make('purchaseOrder.po_number')->label('Order')->placeholder('-')->toggleable(),
-                TextColumn::make('status')->badge()->formatStateUsing(fn (GoodsReceiptStatus $state): string => $state->label())->color(fn (GoodsReceiptStatus $state): string => $state->color()),
-                TextColumn::make('total')->formatStateUsing(fn (int $state): ?string => ShopMoney::format($state)),
+                TextColumn::make('location.name')->label('Location')->wrap()->visible(fn (): bool => PurchasingForm::multiLocation()),
+                TextColumn::make('purchaseOrder.po_number')->label('Order')->placeholder('-')->toggleable(isToggledHiddenByDefault: true),
+                // Starts hidden so the list fits 1280 px: a draft already shows as "Draft" under GRN.
+                TextColumn::make('status')->badge()->formatStateUsing(fn (GoodsReceiptStatus $state): string => $state->label())->color(fn (GoodsReceiptStatus $state): string => $state->color())->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('total')->formatStateUsing(fn (int $state): ?string => ShopMoney::format($state))->alignEnd(),
                 static::paymentColumn(),
             ])
             ->filters([
@@ -284,6 +285,9 @@ class GoodsReceiptResource extends PermissionResource
                 ? null
                 : ShopMoney::format($record->payable->outstanding()).' due '.$record->payable->due_on->format('d/m/Y'))
             ->placeholder('-')
+            // "LKR 1,800.00 due 08/10/2026" on two lines at most.
+            ->wrap()
+            ->extraAttributes(['style' => 'min-width: 8rem'])
             ->visible(fn (): bool => PayablesForm::canSee());
     }
 

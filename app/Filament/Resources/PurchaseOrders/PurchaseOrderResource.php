@@ -136,12 +136,12 @@ class PurchaseOrderResource extends PermissionResource
             ->columns([
                 TextColumn::make('po_number')->label('Order')->weight('bold')->searchable(),
                 TextColumn::make('created_at')->label('Made')->date()->sortable(),
-                TextColumn::make('supplier.name')->label('Supplier')->searchable(),
-                TextColumn::make('location.name')->label('Deliver to')->visible(fn (): bool => PurchasingForm::multiLocation()),
+                TextColumn::make('supplier.name')->label('Supplier')->searchable()->wrap(),
+                TextColumn::make('location.name')->label('Deliver to')->wrap()->visible(fn (): bool => PurchasingForm::multiLocation()),
                 TextColumn::make('status')->badge()->formatStateUsing(fn (PurchaseOrderStatus $state): string => $state->label())->color(fn (PurchaseOrderStatus $state): string => $state->color()),
                 TextColumn::make('expected_on')->label('Expected')->date()->placeholder('-')->sortable(),
                 TextColumn::make('items_count')->label('Lines'),
-                TextColumn::make('total')->label('Expected total')->formatStateUsing(fn (int $state): ?string => ShopMoney::format($state)),
+                TextColumn::make('total')->label('Expected total')->formatStateUsing(fn (int $state): ?string => ShopMoney::format($state))->alignEnd(),
             ])
             ->filters([
                 SelectFilter::make('status')->options(PurchaseOrderStatus::options()),
