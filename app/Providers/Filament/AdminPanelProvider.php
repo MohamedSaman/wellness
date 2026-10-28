@@ -35,9 +35,10 @@ class AdminPanelProvider extends PanelProvider
     public function boot(): void
     {
         // Action menus (⋮) float with fixed positioning, so a table's horizontal-scroll
-        // wrapper never clips them (see sticky-row-actions.blade.php for the stacking
-        // side). Anchored to the button's right edge so they open into the page, and
-        // flipped upwards when there is no room below.
+        // wrapper never clips them. Anchored to the button's right edge so they open
+        // into the page, and flipped upwards when there is no room below. Row actions
+        // are an ordinary last column (not pinned): a pinned cell covered the columns
+        // that scrolled under it, the amounts on Payables among them.
         ActionGroup::configureUsing(fn (ActionGroup $group): ActionGroup => $group
             ->dropdownTeleport()
             ->defaultDropdownPlacement('bottom-end'));
@@ -87,7 +88,6 @@ class AdminPanelProvider extends PanelProvider
             )
             // First in <head>: the preset's name on <html> and its variables, before anything is drawn.
             ->renderHook(PanelsRenderHook::HEAD_START, fn (): string => app(ThemeService::class)->panelHead())
-            ->renderHook(PanelsRenderHook::STYLES_AFTER, fn (): string => view('filament.sticky-row-actions')->render())
             ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.idle-logout', ['seconds' => self::idleSeconds()])->render())
             ->renderHook(
                 PanelsRenderHook::BODY_END,

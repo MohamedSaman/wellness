@@ -54,7 +54,7 @@ class ProductsTable
                 TextColumn::make('drugDetail.dosage_form')
                     ->label('Form')
                     ->formatStateUsing(fn (?DosageForm $state): ?string => $state?->label())
-                    ->toggleable()
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->visible(fn (): bool => self::pharmacy()),
                 TextColumn::make('drugDetail.registration_no')
                     ->label('NMRA reg. no.')
@@ -64,16 +64,20 @@ class ProductsTable
                 TextColumn::make('tax_category')
                     ->label('Tax')
                     ->formatStateUsing(fn (?TaxCategory $state): string => $state === TaxCategory::Exempt ? 'Exempt' : 'Standard')
-                    ->toggleable()
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->visible(fn (): bool => self::pharmacy()),
-                TextColumn::make('category.name')->sortable()->toggleable(),
+                // A pharmacy's list has more columns: there Category and Variants (a medicine has
+                // one) start hidden, like Form and Tax, so the list fits 1280 px beside the sidebar.
+                TextColumn::make('category.name')->sortable()->wrap()->toggleable(isToggledHiddenByDefault: fn (): bool => self::pharmacy()),
                 TextColumn::make('brand.name')
                     ->label(fn (): string => self::pharmacy() ? 'Manufacturer' : 'Brand')
                     ->sortable()
+                    ->wrap()
                     ->toggleable(),
-                TextColumn::make('variants_count')->counts('variants')->label('Variants')->toggleable(),
+                TextColumn::make('variants_count')->counts('variants')->label('Variants')->toggleable(isToggledHiddenByDefault: fn (): bool => self::pharmacy()),
                 TextColumn::make('from_price')
                     ->label('Price')
+                    ->alignEnd()
                     ->state(function (Product $record): ?string {
                         $priceListId = app(CurrentShop::class)->getOrFail()->defaultPriceList()->getKey();
                         $lowest = $record->variants->flatMap->prices->where('price_list_id', $priceListId)->min('price');
@@ -86,7 +90,7 @@ class ProductsTable
                     ->badge()
                     ->color('warning')
                     ->tooltip('Created while receiving goods: it can be received, but is not for sale until an admin reviews it and sets its prices.'),
-                IconColumn::make('is_active')->boolean(),
+                IconColumn::make('is_active')->label('Active')->boolean(),
             ])
             ->filters([
                 SelectFilter::make('category_id')->label('Category')->options(fn () => Category::query()->orderBy('name')->pluck('name', 'id')),
@@ -140,7 +144,7 @@ class ProductsTable
             ])
             ->defaultSort('name')
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()->iconButton()->tooltip('Edit'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
