@@ -13,6 +13,7 @@ use App\Models\Category;
 use App\Models\Generic;
 use App\Models\Product;
 use App\Support\CurrentShop;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
@@ -145,8 +146,10 @@ class ProductsTable
             ])
             ->defaultSort('name')
             ->recordActions([
-                EditAction::make()->iconButton()->tooltip('Edit'),
-                DuplicateProductAction::make()->iconButton()->tooltip('Duplicate'),
+                ActionGroup::make([
+                    EditAction::make(),
+                    DuplicateProductAction::make(),
+                ]),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

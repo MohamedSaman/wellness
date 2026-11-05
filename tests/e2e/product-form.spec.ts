@@ -56,9 +56,7 @@ test.describe('layout', () => {
             const more = row(page, 0).locator('section.fi-section').first();
             await more.locator('.fi-section-header').first().click();
             await page.getByRole('button', { name: '+ Add pack' }).click();
-            await expect(
-                page.locator('[id$=".factor"]').first(),
-            ).toBeVisible();
+            await expect(page.locator('[id$=".factor"]').first()).toBeVisible();
 
             if (browserName === 'chromium') {
                 mkdirSync(screenshots, { recursive: true });
@@ -131,7 +129,7 @@ test.describe('opening stock fields', () => {
         await expect(page.locator('.fi-fo-repeater-item')).toHaveCount(2);
     });
 
-    test('follow each row\'s own opening stock, with no trip to the server', async ({
+    test("follow each row's own opening stock, with no trip to the server", async ({
         page,
     }) => {
         const first = row(page, 0);
@@ -209,7 +207,7 @@ test.describe('a failed save', () => {
         page,
     }) => {
         await page.goto('/admin/products');
-        await page.locator('tbody .fi-ta-row a').first().click();
+        await page.locator('tbody .fi-ta-row .fi-ta-cell a').first().click();
         await expect(page).toHaveURL(/\/edit$/);
 
         // Everything but the Product block starts collapsed on edit.
@@ -236,10 +234,14 @@ test.describe('a failed save', () => {
 
         await expect(footer(page)).toContainText('3 errors');
         await expect(reorder).toBeVisible();
-        await expect(page.locator('[id="form.drug.storage_note"]')).toBeVisible();
+        await expect(
+            page.locator('[id="form.drug.storage_note"]'),
+        ).toBeVisible();
 
         // Scroll away, then back to the first error, clear of the top bar.
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.evaluate(() =>
+            window.scrollTo(0, document.body.scrollHeight),
+        );
         await footer(page).click();
 
         const first = page.locator('[data-validation-error]').first();
@@ -277,14 +279,19 @@ test('a product is duplicated from its row in the list, and saved as new', async
     const row = page.locator('tbody .fi-ta-row').first();
     const original = await row.getByRole('link').first().innerText();
 
-    await row.getByRole('link', { name: 'Duplicate' }).click();
+    await row.locator('.fi-dropdown-trigger button').click();
+    await page
+        .locator('.fi-dropdown-list-item:visible', { hasText: 'Duplicate' })
+        .click();
     await expect(page).toHaveURL(/\/admin\/products\/create\?duplicate=/);
 
     const name = page.locator('[id="form.name"]');
     await expect(name).toHaveValue(/.+/);
     await expect(page.locator('[id$=".sku"]').first()).toHaveValue('');
     await expect(page.locator('[id$=".barcode"]').first()).toHaveValue('');
-    await expect(page.locator('[id$=".opening_stock"]').first()).toHaveValue('0');
+    await expect(page.locator('[id$=".opening_stock"]').first()).toHaveValue(
+        '0',
+    );
     await expect(page.getByText('Copied from')).toBeVisible();
 
     const copy = `Copy ${Date.now()}`;
