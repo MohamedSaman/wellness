@@ -476,7 +476,8 @@ class AdminProductFormTest extends BatchTestCase
         $component = $this->duplicating($product);
         $rows = array_values($component->get('data.variants'));
 
-        $this->assertEquals([$this->option($category, 'Small'), $this->option($category, 'Large')], array_column($rows, 'options'));
+        // In any order: nothing sorts a product's variants, and MySQL may differ from SQLite.
+        $this->assertEqualsCanonicalizing([$this->option($category, 'Small'), $this->option($category, 'Large')], array_column($rows, 'options'));
 
         // The attribute is no longer a variant axis of the category.
         $category->productAttributes()->updateExistingPivot(ProductAttribute::query()->sole()->getKey(), ['is_variant_axis' => false]);

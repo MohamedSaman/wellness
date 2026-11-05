@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Products\Pages\Concerns;
 
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Form;
 use Filament\Support\Enums\Width;
@@ -47,7 +48,7 @@ trait ProductFormPage
         ]);
     }
 
-    /** @return array<Action> */
+    /** @return array<Action|ActionGroup> */
     protected function getFormActions(): array
     {
         return [...parent::getFormActions(), $this->getJumpToFirstErrorAction()];
