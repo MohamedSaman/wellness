@@ -142,6 +142,11 @@ class ProductFormData
      * option stays only while its attribute is still one of the category's
      * variant axes; otherwise the field is left for the user to choose.
      *
+     * A medicine is usually copied to enter another strength or form, so what
+     * describes that one also starts empty: the name (it prints on the receipt,
+     * and nothing generates it, so it must be typed again), the description
+     * and the NMRA registration, which belongs to one strength and form.
+     *
      * @return array<string, mixed>
      */
     public static function forDuplicate(Product $product): array
@@ -170,6 +175,12 @@ class ProductFormData
                 array_filter($variant['packs'], fn (array $pack): bool => (bool) $pack['is_active']),
             )),
         ], $variants));
+
+        if ($data['is_medicine']) {
+            $data['name'] = null;
+            $data['description'] = null;
+            $data['drug']['registration_no'] = null;
+        }
 
         return $data;
     }

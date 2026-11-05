@@ -55,7 +55,9 @@ class CreateProduct extends CreateRecord
 
         Notification::make()
             ->title("Copied from {$product->name}")
-            ->body('SKU, barcodes, cost and opening stock start empty.')
+            ->body($product->drugDetail === null
+                ? 'SKU, barcodes, cost and opening stock start empty.'
+                : 'Check name and strength. Name prints on the receipt.')
             ->info()
             ->send();
     }

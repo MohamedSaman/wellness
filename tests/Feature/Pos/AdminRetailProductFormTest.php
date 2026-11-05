@@ -63,6 +63,7 @@ class AdminRetailProductFormTest extends PosTestCase
 
         $this->assertCount($product->variants()->where('is_active', true)->count(), $rows);
         $this->assertNotEmpty(array_filter($rows[0]['options']));
+        $component->assertFormSet(['name' => $product->name]);
 
         $component->fillForm(['name' => 'Copied helmet'])->call('create')->assertHasNoFormErrors();
 

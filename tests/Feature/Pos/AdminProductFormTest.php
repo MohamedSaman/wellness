@@ -25,6 +25,7 @@ use App\Services\ProductCatalogService;
 use App\Support\CurrentShop;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -397,11 +398,9 @@ class AdminProductFormTest extends BatchTestCase
     {
         $component = $this->duplicating($this->panadol())
             ->assertFormSet([
-                'name' => 'Panadol 500 mg Tablets',
                 'unit' => 'Tablet',
                 'drug.brand_name' => 'Panadol',
                 'drug.strength_value' => '500',
-                'drug.registration_no' => 'NMRA-1',
             ]);
 
         $row = array_values($component->get('data.variants'))[0];
@@ -428,6 +427,52 @@ class AdminProductFormTest extends BatchTestCase
         $this->assertEquals(180, $packs[0]['price']);
         $this->assertNull($packs[0]['id']);
         $this->assertNull($packs[0]['barcode']);
+    }
+
+    public function test_a_medicine_copy_starts_without_what_describes_that_strength(): void
+    {
+        $original = $this->panadol();
+        $original->update(['description' => 'Panadol 500 mg, film coated']);
+
+        $this->duplicating($original)
+            ->assertFormSet(['name' => null, 'description' => null, 'drug.registration_no' => null])
+            ->assertNotified(
+                Notification::make()
+                    ->title('Copied from Panadol 500 mg Tablets')
+                    ->body('Check name and strength. Name prints on the receipt.')
+                    ->info(),
+            );
+    }
+
+    public function test_a_medicine_copy_cant_be_saved_until_its_name_is_typed_again(): void
+    {
+        $products = Product::query()->count();
+        $original = $this->panadol();
+
+        $this->duplicating($original)
+            ->fillForm(['drug.strength_value' => '1000'])
+            ->call('create')
+            ->assertHasFormErrors(['name' => 'required']);
+
+        $this->assertSame($products + 1, Product::query()->count());
+    }
+
+    public function test_a_copy_of_something_that_is_not_a_medicine_keeps_its_name(): void
+    {
+        $product = app(ProductCatalogService::class)->create(
+            ['name' => 'Consultation', 'unit' => 'pcs', 'description' => 'Doctor\'s fee'],
+            [['sku' => 'CONSULT', 'price' => 150_000]],
+            user: $this->owner,
+        );
+
+        $this->duplicating($product)
+            ->assertFormSet(['name' => 'Consultation', 'description' => 'Doctor\'s fee'])
+            ->assertNotified(
+                Notification::make()
+                    ->title('Copied from Consultation')
+                    ->body('SKU, barcodes, cost and opening stock start empty.')
+                    ->info(),
+            );
     }
 
     public function test_duplicating_a_medicine_and_changing_its_strength_saves_a_new_product(): void
