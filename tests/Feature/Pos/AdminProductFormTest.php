@@ -16,6 +16,7 @@ use App\Models\ProductAttribute;
 use App\Models\StockBatch;
 use App\Models\StockLevel;
 use App\Models\StockMovement;
+use App\Services\Data\BatchInput;
 use App\Services\Data\DrugData;
 use App\Services\ProductCatalogService;
 use Filament\Facades\Filament;
@@ -162,5 +163,24 @@ class AdminProductFormTest extends BatchTestCase
             ->assertSeeHtml('isCollapsed: true');
 
         Livewire::test(CreateProduct::class)->assertDontSeeHtml('isCollapsed: true');
+    }
+
+    public function test_the_locked_base_unit_says_why_on_the_page_and_other_help_is_behind_an_icon(): void
+    {
+        $product = app(ProductCatalogService::class)->create(
+            ['name' => 'Panadol', 'unit' => 'Tablet'],
+            [['price' => 1_000, 'opening_stock' => 5, 'opening_batch' => new BatchInput('B1', '12/2030')]],
+            user: $this->owner,
+            drug: new DrugData(['Paracetamol'], DosageForm::Tablet, DrugSchedule::Otc),
+        );
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->assertSeeHtml('id="form.unit-helper-text"')
+            ->assertSee('Locked: this product has stock movements');
+
+        // Help text is not on the page as text any more, only behind its icon.
+        Livewire::test(CreateProduct::class)
+            ->assertDontSeeHtml('id="form.unit-helper-text"')
+            ->assertSee('Stock is counted in this unit (Tablet, Bottle, Vial).');
     }
 }

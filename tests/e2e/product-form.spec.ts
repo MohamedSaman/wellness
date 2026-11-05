@@ -69,6 +69,34 @@ test.describe('layout', () => {
     }
 });
 
+test('help text is one icon away, with its wording unchanged', async ({
+    page,
+}) => {
+    await page.goto('/admin/products/create');
+
+    // A text field, and a toggle (its label sits beside the switch).
+    for (const [id, text] of [
+        ['form.drug.brand_name', null],
+        ['form.name', 'As it should appear on the receipt'],
+        ['form.whole_units_only', 'Sold, received, counted and returned'],
+    ] as const) {
+        const wrapper = page
+            .locator('[data-field-wrapper]')
+            .filter({ has: page.locator(`[id="${id}"]`) })
+            .first();
+
+        if (text === null) {
+            await expect(wrapper.locator('.fi-sc-icon')).toHaveCount(0);
+            continue;
+        }
+
+        await expect(page.getByText(text)).toBeHidden();
+        await wrapper.locator('.fi-sc-icon').first().hover();
+        await expect(page.getByText(text)).toBeVisible();
+        await page.mouse.move(0, 0);
+    }
+});
+
 test('a collapsed section sums up what was just typed', async ({ page }) => {
     await page.goto('/admin/products/create');
 

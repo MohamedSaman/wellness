@@ -31,6 +31,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
@@ -45,6 +46,9 @@ class ProductForm
      * own visible() and required() rules stay as they were.
      */
     private const HAS_OPENING_STOCK_JS = "Number(\$get('opening_stock')) > 0";
+
+    /** Help text sits behind this icon on the field's label; the wording is the same as it ever was. */
+    private const INFO = Heroicon::OutlinedInformationCircle;
 
     /** Product details fit the room the form has, whatever the sidebar leaves it. */
     private const DETAIL_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 3, '@6xl' => 4];
@@ -128,13 +132,13 @@ class ProductForm
                                 ->visible(fn (Get $get): bool => blank($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
                             TextInput::make('average_cost')
                                 ->label('Average cost')
-                                ->helperText('Weighted average. Changes with Stock In or Revalue cost.')
+                                ->hintIcon(self::INFO, tooltip: 'Weighted average. Changes with Stock In or Revalue cost.')
                                 ->disabled()
                                 ->dehydrated(false)
                                 ->visible(fn (Get $get): bool => filled($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
                             TextInput::make('last_cost')
                                 ->label('Last cost')
-                                ->helperText('Unit cost of the latest delivery.')
+                                ->hintIcon(self::INFO, tooltip: 'Unit cost of the latest delivery.')
                                 ->disabled()
                                 ->dehydrated(false)
                                 ->placeholder('-')
@@ -145,7 +149,7 @@ class ProductForm
                                 ->numeric()
                                 ->minValue(0)
                                 ->default(0)
-                                ->helperText('Recorded as the first stock movement.')
+                                ->hintIcon(self::INFO, tooltip: 'Recorded as the first stock movement.')
                                 ->visible(fn (Get $get): bool => blank($get('id'))),
                             // multi_location: which location the opening stock is counted at.
                             Select::make('opening_location_id')
@@ -165,14 +169,14 @@ class ProductForm
                             TextInput::make('opening_expiry')
                                 ->label('Opening batch expiry')
                                 ->placeholder('03/2027')
-                                ->helperText('The month or date printed on the pack.')
+                                ->hintIcon(self::INFO, tooltip: 'The month or date printed on the pack.')
                                 ->maxLength(10)
                                 ->required(fn (Get $get): bool => self::opensBatch($get) && (float) $get('opening_stock') > 0)
                                 ->visible(fn (Get $get): bool => self::opensBatch($get))
                                 ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             Toggle::make('opening_accept_near_expiry')
                                 ->label('Accept short expiry')
-                                ->helperText('Owner only: receive it even though it expires soon.')
+                                ->hintIcon(self::INFO, tooltip: 'Owner only: receive it even though it expires soon.')
                                 ->visible(fn (Get $get): bool => self::opensBatch($get) && (auth()->user()?->can('batches.manage') ?? false))
                                 ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             Toggle::make('is_active')->default(true)->visible(fn (Get $get): bool => filled($get('id'))),
@@ -180,7 +184,7 @@ class ProductForm
                                 ->label('Sell loose')
                                 ->default(true)
                                 ->visible(fn (): bool => self::pharmacy())
-                                ->helperText(fn (Get $get): string => 'Sell a single '.($get('../../unit') ?: 'unit').' as well as the packs. An item with no packs always sells this way.'),
+                                ->hintIcon(self::INFO, tooltip: fn (Get $get): string => 'Sell a single '.($get('../../unit') ?: 'unit').' as well as the packs. An item with no packs always sells this way.'),
                             ...self::looseSaleByLocation(),
                             self::packsRepeater(),
                         ]),
@@ -211,7 +215,7 @@ class ProductForm
                     ->required()
                     ->maxLength(255)
                     ->columnSpan(['@md' => 2])
-                    ->helperText(fn (): ?string => self::pharmacy() ? 'As it should appear on the receipt: brand, strength and form ("Panadol 500 mg Tablets").' : null),
+                    ->hintIcon(fn (): ?Heroicon => self::pharmacy() ? self::INFO : null, tooltip: 'As it should appear on the receipt: brand, strength and form ("Panadol 500 mg Tablets").'),
                 Select::make('category_id')
                     ->label('Category')
                     ->relationship('category', 'name')
@@ -219,7 +223,7 @@ class ProductForm
                     ->preload()
                     ->live()
                     ->afterStateUpdated(fn (Set $set) => $set('product_attributes', []))
-                    ->helperText('The category decides which attributes (Size, Colour ...) this product uses.'),
+                    ->hintIcon(self::INFO, tooltip: 'The category decides which attributes (Size, Colour ...) this product uses.'),
                 // A pharmacy's brands are its manufacturers (GSK, State Pharmaceuticals).
                 Select::make('brand_id')
                     ->label(fn (): string => self::pharmacy() ? 'Manufacturer' : 'Brand')
@@ -243,9 +247,9 @@ class ProductForm
                     ->live(onBlur: true)
                     ->disabled(fn (?Product $record): bool => self::baseUnitLocked($record))
                     ->dehydrated()
-                    ->helperText(fn (?Product $record): ?string => self::baseUnitLocked($record)
-                        ? 'Locked: this product has stock movements, all counted in this unit.'
-                        : (self::pharmacy() ? 'Stock is counted in this unit (Tablet, Bottle, Vial). It is locked once stock moves.' : null)),
+                    // Stays on show: it says why the field can't be changed.
+                    ->helperText(fn (?Product $record): ?string => self::baseUnitLocked($record) ? 'Locked: this product has stock movements, all counted in this unit.' : null)
+                    ->hintIcon(fn (?Product $record): ?Heroicon => self::pharmacy() && ! self::baseUnitLocked($record) ? self::INFO : null, tooltip: 'Stock is counted in this unit (Tablet, Bottle, Vial). It is locked once stock moves.'),
                 Select::make('tax_category')
                     ->label('Tax')
                     ->options(TaxCategory::options())
@@ -253,8 +257,8 @@ class ProductForm
                     ->selectablePlaceholder(false)
                     ->required()
                     ->visible(fn (): bool => self::pharmacy())
-                    ->helperText("Medicines are usually exempt. The shop's tax rate applies to standard items only."),
-                Toggle::make('track_stock')->default(true)->live()->helperText(fn (): string => self::pharmacy()
+                    ->hintIcon(self::INFO, tooltip: "Medicines are usually exempt. The shop's tax rate applies to standard items only."),
+                Toggle::make('track_stock')->default(true)->live()->hintIcon(self::INFO, tooltip: fn (): string => self::pharmacy()
                     ? 'Turn off for services such as a consultation fee.'
                     : 'Turn off for services such as fitting or labour.'),
                 // Services only: a stock item is always sold at its list price (docs/PHARMACY.md §4.3).
@@ -262,14 +266,14 @@ class ProductForm
                     ->label('Price can be changed at the till')
                     ->default(false)
                     ->visible(fn (Get $get): bool => ! (bool) $get('track_stock'))
-                    ->helperText('The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
+                    ->hintIcon(self::INFO, tooltip: 'The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
                 // Pharmacy: stock in batches with expiry dates, sold first expiry first out.
                 Toggle::make('track_batches')
                     ->label('Batches and expiry')
                     ->default(true)
                     ->live()
                     ->visible(fn (Get $get): bool => self::pharmacy() && (bool) $get('track_stock'))
-                    ->helperText(fn (?Product $record): string => $record?->exists === true
+                    ->hintIcon(self::INFO, tooltip: fn (?Product $record): string => $record?->exists === true
                         ? 'Stock is received with a batch number and expiry, and sold first expiry first out. Can only be changed while the item has no stock.'
                         : 'Stock is received with a batch number and expiry, and sold first expiry first out. On for every medicine.'),
                 Toggle::make('whole_units_only')
@@ -277,7 +281,7 @@ class ProductForm
                     ->default(true)
                     ->live()
                     ->visible(fn (): bool => self::pharmacy())
-                    ->helperText('Sold, received, counted and returned in whole units of whatever unit is used: 1 strip or 3 tablets, never half a tablet or half a box.'),
+                    ->hintIcon(self::INFO, tooltip: 'Sold, received, counted and returned in whole units of whatever unit is used: 1 strip or 3 tablets, never half a tablet or half a box.'),
             ]);
     }
 
@@ -338,11 +342,11 @@ class ProductForm
                             $set('track_batches', $state);
                         }
                     })
-                    ->helperText('Turn off for a consultation fee or sundries.'),
+                    ->hintIcon(self::INFO, tooltip: 'Turn off for a consultation fee or sundries.'),
                 TagsInput::make('drug.generic_names')
                     ->label('Generic name')
                     ->placeholder('Paracetamol')
-                    ->helperText('Add each one for a combination (Amoxicillin, Clavulanic acid).')
+                    ->hintIcon(self::INFO, tooltip: 'Add each one for a combination (Amoxicillin, Clavulanic acid).')
                     ->suggestions(fn (): array => Generic::query()->orderBy('name')->limit(500)->pluck('name')->all())
                     ->required()
                     ->visible($isMedicine)
@@ -372,7 +376,7 @@ class ProductForm
                     ->required()
                     ->live()
                     ->afterStateUpdated(fn (?string $state, Get $get, Set $set, ?Product $record) => self::applyUnitDefaults($state, $get, $set, $record))
-                    ->helperText(fn (?Product $record): ?string => $record?->exists === true ? null : 'Fills in the base unit, loose sale and packs below; change them as needed.')
+                    ->hintIcon(fn (?Product $record): ?Heroicon => $record?->exists === true ? null : self::INFO, tooltip: 'Fills in the base unit, loose sale and packs below; change them as needed.')
                     ->visible($isMedicine),
                 Select::make('drug.schedule')
                     ->label('Schedule')
@@ -391,13 +395,13 @@ class ProductForm
                     ->minValue(0)
                     ->maxValue(3650)
                     ->placeholder(fn (): string => 'Shop setting ('.(int) app(CurrentShop::class)->getOrFail()->setting('min_days_to_expiry_for_sale', 0).')')
-                    ->helperText('Blank uses the shop setting. For example 30 for insulin.')
+                    ->hintIcon(self::INFO, tooltip: 'Blank uses the shop setting. For example 30 for insulin.')
                     ->visible($isMedicine),
                 Select::make('drug.storage_condition')
                     ->label('Storage condition')
                     ->options(StorageCondition::options())
                     ->placeholder('Not set')
-                    ->helperText('Fridge items are not put back on the shelf when returned, by default.')
+                    ->hintIcon(self::INFO, tooltip: 'Fridge items are not put back on the shelf when returned, by default.')
                     ->visible($isMedicine),
                 TextInput::make('drug.storage_note')
                     ->label('Storage note')
@@ -487,14 +491,14 @@ class ProductForm
                     ->minValue(fn (Get $get): int|float => $get('../../../../whole_units_only') ? 1 : 0.001)
                     ->integer(fn (Get $get): bool => (bool) $get('../../../../whole_units_only'))
                     // A hint, not a suffix: in a pack row the suffix left no room to type.
-                    ->helperText(fn (Get $get): string => ($get('../../../../unit') ?: 'Base unit').' per pack'),
+                    ->hintIcon(self::INFO, tooltip: fn (Get $get): string => ($get('../../../../unit') ?: 'Base unit').' per pack'),
                 TextInput::make('barcode')->maxLength(100),
                 TextInput::make('price')
                     ->label(fn (): string => 'Price ('.self::currency().')')
                     ->numeric()
                     ->minValue(0)
                     // Clearing an existing pack's price keeps it; untick "Sold" to stop selling it.
-                    ->helperText(fn (Get $get): ?string => blank($get('id')) ? 'Empty: not for sale yet.' : null)
+                    ->hintIcon(fn (Get $get): ?Heroicon => blank($get('id')) ? self::INFO : null, tooltip: 'Empty: not for sale yet.')
                     ->visible(fn (): bool => auth()->user()?->can('prices.manage') ?? false),
                 Toggle::make('is_sellable')->label('Sold')->default(true),
                 Toggle::make('is_purchasable')->label('Bought')->default(true),
@@ -528,7 +532,7 @@ class ProductForm
                 ->label("Sell loose at {$location->code}")
                 ->options(['yes' => 'Yes', 'no' => 'No'])
                 ->placeholder('As "Sell loose"')
-                ->helperText($location->name),
+                ->hintIcon(self::INFO, tooltip: $location->name),
         )->all());
     }
 
