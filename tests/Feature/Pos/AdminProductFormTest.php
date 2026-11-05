@@ -161,11 +161,11 @@ class AdminProductFormTest extends BatchTestCase
             ->assertSee('Tablet · Stock tracked · Batches and expiry · Whole units only')
             ->assertSee('No description');
 
-        // Medicine, Selling & stock, More details and the variant's More.
-        $this->assertSame(4, substr_count($edit->html(), 'isCollapsed: true'));
+        // Medicine, Selling & stock, More details, the variant's More and its location rules.
+        $this->assertSame(5, substr_count($edit->html(), 'isCollapsed: true'));
 
-        // Only the variant's More.
-        $this->assertSame(1, substr_count(Livewire::test(CreateProduct::class)->html(), 'isCollapsed: true'));
+        // Only the variant's More and its location rules.
+        $this->assertSame(2, substr_count(Livewire::test(CreateProduct::class)->html(), 'isCollapsed: true'));
     }
 
     public function test_the_locked_base_unit_says_why_on_the_page_and_other_help_is_behind_an_icon(): void
@@ -212,6 +212,34 @@ class AdminProductFormTest extends BatchTestCase
 
         Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
             ->assertSee('More · Reorder 5 · Shelf A3 · Sell loose No · 2 packs');
+    }
+
+    public function test_selling_loose_per_location_is_one_line_of_what_each_location_does(): void
+    {
+        $product = $this->syrup([['price' => 400, 'allow_unit_sale' => false, 'packs' => [['name' => 'Bottle', 'factor' => 100, 'price' => 38_000]]]]);
+        $form = ProductFormData::fromProduct($product);
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->assertSee('Sell loose: No at all locations');
+
+        $doctors = Location::query()->where('code', 'DOC')->sole();
+        $form['variants'][0]['loose_at'] = [$doctors->getKey() => 'yes'];
+
+        $component = Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->fillForm(['variants' => $form['variants']])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $component->assertSee('No at GEN, Yes at DOC');
+    }
+
+    public function test_an_item_with_no_packs_sells_loose_whatever_its_setting_says(): void
+    {
+        $product = $this->syrup([['price' => 400, 'allow_unit_sale' => false]]);
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->assertSee('Sell loose: Yes at all locations')
+            ->assertSee('Sell loose Yes · 0 packs');
     }
 
     public function test_a_product_with_three_variants_saves_and_edits_with_the_fields_under_more(): void

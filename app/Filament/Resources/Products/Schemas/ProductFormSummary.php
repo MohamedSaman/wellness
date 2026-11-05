@@ -5,8 +5,10 @@ namespace App\Filament\Resources\Products\Schemas;
 use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Enums\TaxCategory;
+use App\Models\Location;
 use App\Support\Quantity;
 use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -65,9 +67,42 @@ class ProductFormSummary
             'More',
             'Reorder '.Quantity::format((float) $get('reorder_level')),
             'Shelf '.($get('bin_location') ?: '-'),
-            $pharmacy ? 'Sell loose '.((bool) $get('allow_unit_sale') ? 'Yes' : 'No') : null,
+            $pharmacy ? 'Sell loose '.(self::sellsLoose($get, $get('allow_unit_sale')) ? 'Yes' : 'No') : null,
             $pharmacy ? $packs.' '.Str::plural('pack', $packs) : null,
         ]);
+    }
+
+    /**
+     * Whether a single base unit sells at each location, the "Customise per
+     * location" fields read together with "Sell loose".
+     *
+     * @param  Collection<int, Location>  $locations
+     */
+    public static function looseSale(Get $get, Collection $locations): string
+    {
+        /** @var array<int|string, string|null> $overrides */
+        $overrides = (array) ($get('loose_at') ?? []);
+
+        $answers = $locations->mapWithKeys(fn (Location $location): array => [
+            $location->code => self::sellsLoose($get, match ($overrides[$location->getKey()] ?? null) {
+                'yes' => true,
+                'no' => false,
+                default => $get('allow_unit_sale'),
+            }) ? 'Yes' : 'No',
+        ]);
+
+        if ($answers->unique()->count() === 1) {
+            return "Sell loose: {$answers->first()} at all locations";
+        }
+
+        return 'Sell loose: '.$answers->map(fn (string $answer, string $code): string => "{$answer} at {$code}")->implode(', ');
+    }
+
+    /** A variant with no pack on sale can only sell loose (Q16), whatever its setting says. */
+    private static function sellsLoose(Get $get, mixed $setting): bool
+    {
+        return (bool) $setting || collect((array) ($get('packs') ?? []))
+            ->doesntContain(fn (array $pack): bool => (bool) ($pack['is_sellable'] ?? true) && (bool) ($pack['is_active'] ?? true));
     }
 
     /** @param  array<int, mixed>  $parts */

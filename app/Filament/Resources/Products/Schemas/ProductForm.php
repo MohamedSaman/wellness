@@ -231,6 +231,7 @@ class ProductForm
                 Toggle::make('allow_unit_sale')
                     ->label('Sell loose')
                     ->default(true)
+                    ->live()
                     ->visible(fn (): bool => self::pharmacy())
                     ->hintIcon(self::INFO, tooltip: fn (Get $get): string => 'Sell a single '.($get('../../unit') ?: 'unit').' as well as the packs. An item with no packs always sells this way.'),
                 ...self::looseSaleByLocation(),
@@ -560,9 +561,11 @@ class ProductForm
     /**
      * Selling loose per location (pharmacy with several locations): Yes, No,
      * or as "Sell loose" above. Syrup: No at General Pharmacy, Yes at
-     * Doctor's Medicines. Checkout honours it from branch 8.
+     * Doctor's Medicines. Checkout honours it from branch 8. One line until
+     * someone wants to change it; a collapsed section keeps every location's
+     * field on the page, so its rule is saved either way.
      *
-     * @return list<Select>
+     * @return list<Section>
      */
     private static function looseSaleByLocation(): array
     {
@@ -572,13 +575,26 @@ class ProductForm
             return [];
         }
 
-        return array_values(Location::query()->where('is_active', true)->ordered()->get()->map(
-            fn (Location $location): Select => Select::make("loose_at.{$location->getKey()}")
-                ->label("Sell loose at {$location->code}")
-                ->options(['yes' => 'Yes', 'no' => 'No'])
-                ->placeholder('As "Sell loose"')
-                ->hintIcon(self::INFO, tooltip: $location->name),
-        )->all());
+        $locations = Location::query()->where('is_active', true)->ordered()->get();
+
+        return [
+            Section::make('Customise per location')
+                ->description(fn (Get $get): string => ProductFormSummary::looseSale($get, $locations))
+                ->compact()
+                ->collapsible()
+                ->collapsed()
+                ->columnSpanFull()
+                ->columns(self::DETAIL_COLUMNS)
+                ->gridContainer()
+                ->schema(array_values($locations->map(
+                    fn (Location $location): Select => Select::make("loose_at.{$location->getKey()}")
+                        ->label("Sell loose at {$location->code}")
+                        ->options(['yes' => 'Yes', 'no' => 'No'])
+                        ->placeholder('As "Sell loose"')
+                        ->live()
+                        ->hintIcon(self::INFO, tooltip: $location->name),
+                )->all())),
+        ];
     }
 
     private static function pharmacy(): bool
