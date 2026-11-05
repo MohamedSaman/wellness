@@ -3,6 +3,7 @@ import InvoiceBlockController from '@/actions/App/Http/Controllers/Pos/Sync/Invo
 import SaleSyncController from '@/actions/App/Http/Controllers/Pos/Sync/SaleSyncController';
 import TillController from '@/actions/App/Http/Controllers/Pos/TillController';
 import { ApiError, postJson, queryString } from '@/lib/http';
+import { blackLogo } from '@/lib/receipt/logo';
 import type { VehicleMake } from '@/types/pos';
 import { db, getMeta, metaKeys, setMeta, withBarcodes } from './db';
 import type {
@@ -46,6 +47,8 @@ type SyncResult = {
     needs_review: boolean;
     message: string | null;
 };
+
+type ReceiptLogo = { source: string; dataUrl: string };
 
 export async function tokenFor(tillUuid: string): Promise<string | null> {
     return getMeta<string>(metaKeys.token(tillUuid));
@@ -111,19 +114,20 @@ async function tillRequest<T>(
 }
 
 /**
- * Owner only: give this browser a device token for the till. A fresh start
+ * The device token for this browser: the owner registering the till
+ * (Set up offline sales) or an approved till preparing itself. A fresh start
  * for its offline invoice numbers too: the ones reserved before are dropped
  * (only a gap in the numbering), so a till registered again after a go-live
  * reset, which deletes its blocks on the server, never reuses one.
  */
-export async function registerTill(tillUuid: string): Promise<void> {
-    const { token } = await postJson<{ token: string }>(
-        TillController.register.url(),
-        { device: tillUuid },
-    );
+async function requestToken(url: string, tillUuid: string): Promise<void> {
+    const { token } = await postJson<{ token: string }>(url, {
+        device: tillUuid,
+    });
 
     await db.transaction('rw', db.meta, async () => {
         await setMeta(metaKeys.token(tillUuid), token);
+        await db.meta.delete(metaKeys.denied(tillUuid));
 
         const numbers = await getMeta<InvoiceNumbers>(metaKeys.invoiceNumbers);
 
@@ -131,6 +135,49 @@ export async function registerTill(tillUuid: string): Promise<void> {
             await db.meta.delete(metaKeys.invoiceNumbers);
         }
     });
+}
+
+/** Owner only: approves the till and makes this browser the till. */
+export function registerTill(tillUuid: string): Promise<void> {
+    return requestToken(TillController.register.url(), tillUuid);
+}
+
+/**
+ * An approved till taking its token, with whoever is signed in. One tab at a
+ * time, and not when another tab just did: the till has one token.
+ */
+export async function prepareTill(tillUuid: string): Promise<void> {
+    const run = async () => {
+        if (
+            (await tokenFor(tillUuid)) !== null &&
+            !(await isDenied(tillUuid))
+        ) {
+            return;
+        }
+
+        await requestToken(TillController.prepare.url(), tillUuid);
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+        await navigator.locks.request('pos-till-prepare', run);
+    } else {
+        await run();
+    }
+}
+
+export async function isDenied(tillUuid: string): Promise<boolean> {
+    return (await getMeta<boolean>(metaKeys.denied(tillUuid))) === true;
+}
+
+export async function setDenied(
+    tillUuid: string,
+    denied: boolean,
+): Promise<void> {
+    if (denied) {
+        await setMeta(metaKeys.denied(tillUuid), true);
+    } else {
+        await db.meta.delete(metaKeys.denied(tillUuid));
+    }
 }
 
 export async function forgetTill(tillUuid: string): Promise<void> {
@@ -231,6 +278,39 @@ export async function syncCatalog(
     forgetSearchCache();
 
     return first.till.location_id ?? null;
+}
+
+/**
+ * Keeps the shop's logo on this till, in black and white, for offline
+ * receipts (a pharmacy's): the page that prints it has no server to ask, and
+ * the service worker only holds a logo some receipt already loaded. Read
+ * again only when the logo changes. Failing keeps what is there.
+ */
+export async function cacheReceiptLogo(): Promise<void> {
+    const shop = await getMeta<OfflineShop>(metaKeys.shop);
+    const source = shop?.pharmacy ? shop.logoUrl : null;
+
+    if (source === null || source === undefined) {
+        await db.meta.delete(metaKeys.receiptLogo);
+
+        return;
+    }
+
+    const saved = await getMeta<ReceiptLogo>(metaKeys.receiptLogo);
+
+    if (saved?.source === source) {
+        return;
+    }
+
+    const dataUrl = await blackLogo(source);
+
+    if (dataUrl !== null) {
+        await setMeta(metaKeys.receiptLogo, { source, dataUrl });
+    }
+}
+
+export async function receiptLogo(): Promise<string | null> {
+    return (await getMeta<ReceiptLogo>(metaKeys.receiptLogo))?.dataUrl ?? null;
 }
 
 function numbersLeft(numbers: InvoiceNumbers | null): number {

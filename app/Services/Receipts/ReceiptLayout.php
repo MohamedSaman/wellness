@@ -7,9 +7,15 @@ use Illuminate\Support\Str;
 
 /**
  * The thermal receipt as lines of fixed-width text (docs/PHARMACY.md §9,
- * branch 9): 48 characters on 80 mm paper, 32 on 58 mm. The same lines go
- * to an ESC/POS printer (EscPos::encode()) and to the browser, which prints
- * them in a monospaced font at the paper's width, so both look the same.
+ * branch 9): 48 characters on 80 mm paper, 32 on 58 mm. An ESC/POS printer
+ * (EscPos::encode()) prints those in its own font. The browser prints them in
+ * a monospaced font at the paper's width.
+ *
+ * Large print ($shop['receipt']['largePrint'], a pharmacy): 36 characters on
+ * 80 mm, because the browser's text has to be 12 px or more for a thermal
+ * head to print it solid, and 48 columns of that do not fit the 72 mm the
+ * head can reach. The grand total is double height. Only the browser's copy:
+ * ESC/POS is laid out for the printer's own font (forPrinter()).
  *
  * It works on the plain receipt payloads of ReceiptService (sale(), refund(),
  * voidSlip()), which are built from the sale's own rows: nothing here reads
@@ -29,7 +35,12 @@ final class ReceiptLayout
 {
     public const COLUMNS = [80 => 48, 58 => 32];
 
+    /** 2 mm a character (12.6 px) across the 72 mm of 80 mm paper. 58 mm paper keeps its columns. */
+    public const LARGE_COLUMNS = [80 => 36];
+
     private int $width;
+
+    private bool $largePrint;
 
     private bool $showBatch;
 
@@ -52,7 +63,8 @@ final class ReceiptLayout
     {
         /** @var array<string, mixed> $options */
         $options = $shop['receipt'] ?? [];
-        $this->width = self::columns((int) ($options['paperWidth'] ?? 80));
+        $this->largePrint = (bool) ($options['largePrint'] ?? false);
+        $this->width = self::columns((int) ($options['paperWidth'] ?? 80), $this->largePrint);
         $this->showBatch = (bool) ($options['showBatch'] ?? true);
         $this->showExpiry = (bool) ($options['showExpiry'] ?? true);
         $this->showPrescriber = (bool) ($options['showPrescriber'] ?? false);
@@ -60,9 +72,26 @@ final class ReceiptLayout
     }
 
     /** Characters a line for a paper width in mm (80 unless 58). */
-    public static function columns(int $paperWidth): int
+    public static function columns(int $paperWidth, bool $largePrint = false): int
     {
-        return self::COLUMNS[$paperWidth] ?? self::COLUMNS[80];
+        $paper = $paperWidth === 58 ? 58 : 80;
+
+        return $largePrint ? (self::LARGE_COLUMNS[$paper] ?? self::COLUMNS[$paper]) : self::COLUMNS[$paper];
+    }
+
+    /**
+     * The shop as ESC/POS prints it: the printer's own font, so never large print.
+     *
+     * @param  array<string, mixed>  $shop  ReceiptService::shop()
+     * @return array<string, mixed>
+     */
+    public static function forPrinter(array $shop): array
+    {
+        /** @var array<string, mixed> $options */
+        $options = $shop['receipt'] ?? [];
+        unset($options['largePrint']);
+
+        return [...$shop, 'receipt' => $options];
     }
 
     /**
@@ -137,7 +166,7 @@ final class ReceiptLayout
         $this->rule();
         $this->items([...$sale, 'items' => $refund['items'], 'medicinesTotal' => $refund['medicinesRefund']], fn (array $item): ?int => $item['refund'] ?? null, withReturns: false);
         $this->rule();
-        $this->row('REFUND TOTAL '.$this->shop['currency'], $this->money((int) $refund['refundTotal']), bold: true);
+        $this->grandTotal('REFUND TOTAL '.$this->shop['currency'], $this->money((int) $refund['refundTotal']));
         $this->rule();
         $this->payments(['payments' => [['method' => $refund['method'], 'amount' => (int) $refund['refundTotal'], 'reference' => $refund['reference'] ?? null]]]);
         $this->text('Reason: '.$refund['reason']);
@@ -185,7 +214,7 @@ final class ReceiptLayout
         $this->text('Paid');
         $this->payments($sale);
         $this->rows([['Change', $this->money((int) $sale['changeDue'])]]);
-        $this->row('TO GIVE BACK '.$this->shop['currency'], $this->money((int) $sale['grandTotal']), bold: true);
+        $this->grandTotal('TO GIVE BACK '.$this->shop['currency'], $this->money((int) $sale['grandTotal']));
         $this->text('Reason: '.$void['reason']);
         $this->footer();
         $this->reprinted($sale['reprint'] ?? null);
@@ -394,7 +423,7 @@ final class ReceiptLayout
             $this->row('Tax '.$rate.'%'.(($sale['pricesIncludeTax'] ?? false) ? ' (incl.)' : ''), $this->money((int) $sale['taxTotal']));
         }
 
-        $this->row($totalLabel.' '.$this->shop['currency'], $this->money((int) $sale['grandTotal']), bold: true);
+        $this->grandTotal($totalLabel.' '.$this->shop['currency'], $this->money((int) $sale['grandTotal']));
 
         /** @var list<array<string, mixed>> $items */
         $items = $sale['items'];
@@ -543,12 +572,18 @@ final class ReceiptLayout
         $this->row($text, '', $indent, $hang, $bold, amount: false);
     }
 
+    /** The amount the document is about: bold, and double height in large print. */
+    private function grandTotal(string $label, string $amount): void
+    {
+        $this->row($label, $amount, bold: true, tall: $this->largePrint);
+    }
+
     /**
      * $left wrapped at the paper's width (continuation lines indented by
      * $hang more), with $right on the last line, right-aligned. When the last
      * line has no room for it, its last words move down until it does.
      */
-    private function row(string $left, string $right = '', int $indent = 0, int $hang = 0, bool $bold = false, bool $amount = true): void
+    private function row(string $left, string $right = '', int $indent = 0, int $hang = 0, bool $bold = false, bool $amount = true, bool $tall = false): void
     {
         $left = self::ascii($left);
         $right = self::ascii($right);
@@ -565,7 +600,7 @@ final class ReceiptLayout
 
         if ($right === '') {
             foreach ($lines as $line) {
-                $this->push($line, $bold);
+                $this->push($line, $bold, $tall);
             }
 
             return;
@@ -586,10 +621,10 @@ final class ReceiptLayout
         }
 
         foreach ($lines as $line) {
-            $this->push($line, $bold);
+            $this->push($line, $bold, $tall);
         }
 
-        $this->push(str_pad($last, $this->width - strlen($right)).$right, $bold);
+        $this->push(str_pad($last, $this->width - strlen($right)).$right, $bold, $tall);
     }
 
     /**

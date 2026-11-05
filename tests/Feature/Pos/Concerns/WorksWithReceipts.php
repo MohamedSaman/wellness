@@ -15,6 +15,7 @@ use App\Services\Data\CheckoutData;
 use App\Services\Data\DrugData;
 use App\Services\Data\PaymentInput;
 use App\Services\ProductCatalogService;
+use App\Services\Receipts\ReceiptLayout;
 use App\Services\ReceiptService;
 
 /**
@@ -110,7 +111,8 @@ trait WorksWithReceipts
     protected function printed(string $document, array $payload, int $paperWidth = 80): string
     {
         $receipts = app(ReceiptService::class);
-        $shop = $receipts->shop();
+        // The 48-column layout, as ESC/POS prints it; large print has its own test (ReceiptLargePrintTest).
+        $shop = ReceiptLayout::forPrinter($receipts->shop());
         $shop['receipt']['paperWidth'] = $paperWidth;
 
         return implode("\n", array_column($receipts->thermal($document, $payload, $shop)['lines'], 'text'));

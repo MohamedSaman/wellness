@@ -16,6 +16,10 @@ Every release is a semantic version tag (`v1.2.0`; a pre-release `v1.2.0-rc.1` g
 - Security: two-factor authentication required for the owner in production, passwords by role (12+ characters for admin users, 10+ for till-only users, never one known from a breach), idle sign-out of the admin panel (the till's is available, off by default), Content-Security-Policy, admin IP allowlist, audit log retention (Administration → Security), a login cap per address; `pos:admin-ip`, `pos:audit-prune`.
 - `pos:go-live-reset`: removes the rehearsal's transactions before go-live ([docs/deploy/GO-LIVE.md](docs/deploy/GO-LIVE.md)).
 - Handover pack: user guides, quick references and the handover checklist ([docs/handover](docs/handover/README.md)).
+- Offline ready by default ([TILLS.md](docs/deploy/TILLS.md#offline-ready-by-default)): a till the owner approved takes its sync token, downloads the catalog and reserves invoice numbers by itself, with no button, and keeps them fresh. The top bar says **Ready for offline**, **Preparing offline...**, **Not ready for offline - reconnect** or **Offline not available on this till - ask the owner**. A till never approved, or revoked, does not prepare itself.
+- Administration → Tills: **Offline sales allowed**, and **Reset offline on this till** for a till whose Chrome was reset or whose PC was replaced (audited).
+- Liberation Mono (unmodified, SIL Open Font License) bundled for receipts, licence in `resources/fonts/liberation-mono/LICENSE.txt`.
+- First print test on the real printer ([TILLS.md](docs/deploy/TILLS.md#first-print-test-on-the-real-printer)), with the XP-80C fallback.
 
 ### Changed
 
@@ -25,6 +29,22 @@ Every release is a semantic version tag (`v1.2.0`; a pre-release `v1.2.0-rc.1` g
 - No Discount button, line discount or F4 for a cashier whose discount limit is 0.
 - The till's **Stock requests** link only at a till away from the default location (the OPD's, not General Pharmacy's).
 - A receipt window the till opened closes itself once printed (kiosk printing).
+- A pharmacy's receipts, reprints and refund and void slips print larger and solid black for thermal printers: 12.6 px at 36 columns on 80 mm inside the 72 mm the head reaches, totals bold and double height, a black and white logo. ESC/POS (QZ Tray) stays at the printer's 48 columns. Retail's receipts are unchanged.
+- **Sync now** is **Refresh now**: the till refreshes by itself, this is the fallback.
+- **Revoke offline access** also takes the till's approval away, and so does the go-live reset. A till the server turned down stops selling offline; the sales it holds stay.
+
+### Fixed
+
+- A pharmacy's offline receipt prints exactly as the online one: only the receipt, on 80 mm paper, with the logo, and without Chrome's page title and address. The page length is measured, because Chrome ignores `size: 80mm auto`.
+
+### Release and deploy notes
+
+This is a **minor** release: it has a migration, `2026_11_05_000001_add_offline_allowed_to_devices`, which adds `devices.offline_allowed` and rolls back. The migration approves every till that already holds a sync token, so those keep working with nothing to do; any other till stays off until the owner approves it.
+
+1. **Back up first:** `pos:backup`, and check it finished ([docs/deploy/CLOUD.md](docs/deploy/CLOUD.md)).
+2. Deploy.
+3. On each till, reload and check the top bar shows **Ready for offline**. If it says **Offline not available on this till - ask the owner**, use Administration → Tills: **Offline sales allowed** for a till never approved, **Reset offline on this till** for one whose Chrome no longer has its registration.
+4. Run the [first print test on the real printer](docs/deploy/TILLS.md#first-print-test-on-the-real-printer) on each till. If Chrome ignores the measured page length with the XP-80C driver, set the driver's paper to **80(72.1) x 297 mm**.
 
 ## [1.0-retail] - 2026-10-15
 

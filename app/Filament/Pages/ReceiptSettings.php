@@ -198,13 +198,14 @@ class ReceiptSettings extends Page
             'showBatch' => (bool) ($data['receipt_show_batch'] ?? true),
             'showExpiry' => (bool) ($data['receipt_show_expiry'] ?? true),
             'showPrescriber' => (bool) ($data['receipt_show_prescriber'] ?? false),
+            ...($shop->hasModule('pharmacy') ? ['largePrint' => true] : []),
         ];
         $opdMedicines = ($data['opd_receipt_medicines'] ?? 'names') === 'totals' ? 'totals' : 'names';
         $layout = fn (): ReceiptLayout => new ReceiptLayout($receiptShop);
         $samples = ReceiptPreviewSamples::for($shop, $opdMedicines);
 
         return [
-            'columns' => ReceiptLayout::columns($receiptShop['receipt']['paperWidth']),
+            'columns' => ReceiptLayout::columns($receiptShop['receipt']['paperWidth'], $shop->hasModule('pharmacy')),
             'receipts' => $shop->hasModule('pharmacy')
                 ? ['General Pharmacy bill' => $layout()->sale($samples['gen']), 'OPD bill' => $layout()->sale($samples['opd'])]
                 : ['Refund slip' => $layout()->refund($samples['refund'])],

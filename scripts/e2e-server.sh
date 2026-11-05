@@ -34,5 +34,8 @@ rm -f "$database"
 touch "$database"
 php artisan migrate:fresh --seed --force --no-interaction > /dev/null
 
+# offline-print.spec.ts gives the clinic a logo for its test: it must be reachable.
+php artisan storage:link > /dev/null 2>&1 || true
+
 # --no-reload passes the variables above through to the PHP server.
 exec php artisan serve --no-reload --host=127.0.0.1 --port="$port"

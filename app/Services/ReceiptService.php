@@ -41,7 +41,7 @@ use Illuminate\Support\Facades\Storage;
  * A retail shop's sale receipt is the HTML receipt it always had
  * (ReceiptView.vue); its refund and void slips use the thermal layout.
  *
- * @phpstan-type PrintOptions array{paperWidth: int, showBatch: bool, showExpiry: bool, showPrescriber: bool}
+ * @phpstan-type PrintOptions array{paperWidth: int, showBatch: bool, showExpiry: bool, showPrescriber: bool, largePrint?: bool}
  * @phpstan-type ReceiptShop array{name: string, address: ?string, phone: ?string, taxNumber: ?string, logoUrl: ?string, header: ?string, footer: ?string, currency: string, decimals: int, receipt: PrintOptions}
  */
 class ReceiptService
@@ -104,29 +104,39 @@ class ReceiptService
 
     /**
      * A receipt payload laid out for the shop's paper: the lines the browser
-     * prints, and the same as ESC/POS bytes (base64) for a thermal printer.
+     * prints, and the receipt as ESC/POS bytes (base64) for a thermal printer,
+     * laid out for that printer's own font (ReceiptLayout::forPrinter()).
      *
      * @param  'sale'|'refund'|'void'  $document
      * @param  array<string, mixed>  $payload  sale(), refund() or voidSlip()
      * @param  ReceiptShop|null  $shop  shop(), or the shop as Receipt settings' preview has it
-     * @return array{paperWidth: int, columns: int, lines: list<array{text: string, bold: bool, tall: bool}>, escpos: string}
+     * @return array{paperWidth: int, columns: int, largePrint: bool, lines: list<array{text: string, bold: bool, tall: bool}>, escpos: string}
      */
     public function thermal(string $document, array $payload, ?array $shop = null): array
     {
         $shop ??= $this->shop();
-        $layout = new ReceiptLayout($shop);
-        $lines = match ($document) {
-            'sale' => $layout->sale($payload),
-            'refund' => $layout->refund($payload),
-            'void' => $layout->voidSlip($payload),
+        $laidOut = function (array $shop) use ($document, $payload): array {
+            $layout = new ReceiptLayout($shop);
+
+            return match ($document) {
+                'sale' => $layout->sale($payload),
+                'refund' => $layout->refund($payload),
+                'void' => $layout->voidSlip($payload),
+            };
         };
         $paperWidth = (int) $shop['receipt']['paperWidth'];
+        $largePrint = (bool) ($shop['receipt']['largePrint'] ?? false);
+        $lines = $laidOut($shop);
 
         return [
             'paperWidth' => $paperWidth,
-            'columns' => ReceiptLayout::columns($paperWidth),
+            'columns' => ReceiptLayout::columns($paperWidth, $largePrint),
+            'largePrint' => $largePrint,
             'lines' => $lines,
-            'escpos' => base64_encode(EscPos::encode($lines, $this->logoRaster($paperWidth))),
+            'escpos' => base64_encode(EscPos::encode(
+                $largePrint ? $laidOut(ReceiptLayout::forPrinter($shop)) : $lines,
+                $this->logoRaster($paperWidth),
+            )),
         ];
     }
 
@@ -218,6 +228,8 @@ class ReceiptService
             'showBatch' => (bool) $shop->setting('receipt_show_batch', true),
             'showExpiry' => (bool) $shop->setting('receipt_show_expiry', true),
             'showPrescriber' => (bool) $shop->setting('receipt_show_prescriber', false),
+            // A pharmacy's receipts are set larger for the thermal head (ReceiptLayout); retail's stay as they were.
+            ...($shop->hasModule('pharmacy') ? ['largePrint' => true] : []),
         ];
     }
 

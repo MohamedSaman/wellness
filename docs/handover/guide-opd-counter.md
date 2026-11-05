@@ -182,7 +182,7 @@ Cashiers cannot do returns, refunds or cancel (void) a bill. **Ask the Admin.**
 - The top bar shows **Offline** (amber), and how many sales are waiting, for example **Offline – 3 sales waiting to sync**.
 - Keep selling. OPD bills, the Medicines amount, prescriptions, payment and receipts all work offline.
 - **Sale complete** says **Saved on this till. It will sync when the connection is back.**
-- When the internet is back the sales go up by themselves. You can press **Sync now**.
+- When the internet is back the sales go up by themselves. You can press **Refresh now**.
 
 Not available offline: **Recent sales** and reprints, **Stock requests**, and **Close shift** (until every sale is sent).
 
@@ -190,7 +190,7 @@ While sales are waiting: do not sign out, do not press **Change till**, and do n
 
 ## 11. End of day
 
-1. Make sure the top bar says **Online** and no sales are waiting. Press **Sync now** if needed.
+1. Make sure the top bar says **Online** and no sales are waiting. Press **Refresh now** if needed.
 2. Press **Close shift**.
 3. Count the drawer and type it in **Counted cash (LKR)**.
 4. Check the **Difference**. Count again if it is red.

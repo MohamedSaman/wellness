@@ -86,6 +86,8 @@ class PosController extends Controller
             'offline' => [
                 'enabled' => $shop->hasModule('offline_sync'),
                 'canRegister' => $user->can('tills.manage'),
+                // The owner approved this till: it prepares itself. The server decides again when it asks.
+                'allowed' => (bool) $till?->offline_allowed,
             ],
             'tills' => $tills->map(fn (Device $device): array => [
                 'uuid' => $device->uuid,

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { FileText, Printer } from '@lucide/vue';
-import { computed, onMounted } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import ReceiptView from '@/components/pos/ReceiptView.vue';
 import ThermalReceipt from '@/components/pos/ThermalReceipt.vue';
 import { Button } from '@/components/ui/button';
+import { blackLogo } from '@/lib/receipt/logo';
+import { printReceiptPage } from '@/lib/receipt/printPage';
 import { receiptPrinter } from '@/lib/receiptPrinter';
 import type { ReceiptSale, ReceiptShop, ThermalReceiptData } from '@/types/pos';
 
@@ -26,14 +28,54 @@ const paperWidth = computed(
     () => props.thermal?.paperWidth ?? props.shop.receipt?.paperWidth ?? 80,
 );
 
+const largePrint = computed(() => props.thermal?.largePrint ?? false);
+const documentTitle = computed(
+    () =>
+        props.title ??
+        `${props.sale?.reprint ? 'Duplicate receipt' : 'Receipt'} ${props.sale?.invoiceNo ?? ''}`,
+);
+
+/** A pharmacy's logo in black and white (lib/receipt/logo.ts), as soon as it is ready. */
+const logo = ref(props.shop.logoUrl);
+const logoReady =
+    largePrint.value && props.shop.logoUrl
+        ? blackLogo(props.shop.logoUrl).then((black) => {
+              logo.value = black ?? props.shop.logoUrl;
+          })
+        : Promise.resolve();
+
+const receipt = ref<HTMLElement | null>(null);
+
+async function printLargePrint(): Promise<void> {
+    await logoReady;
+    await nextTick();
+
+    const element = receipt.value?.querySelector<HTMLElement>('.receipt');
+
+    if (element) {
+        await printReceiptPage({
+            receipt: element,
+            paperWidth: paperWidth.value,
+            title: documentTitle.value,
+        });
+    }
+}
+
 const print = () =>
-    receiptPrinter().print({ escpos: props.thermal?.escpos ?? null });
+    receiptPrinter().print({
+        escpos: props.thermal?.escpos ?? null,
+        browserPrint: largePrint.value
+            ? () => void printLargePrint()
+            : undefined,
+    });
 
 onMounted(() => {
-    // The paper's width for the print dialog (80 or 58 mm, set per shop).
-    const page = document.createElement('style');
-    page.textContent = `@media print { @page { size: ${paperWidth.value}mm auto; margin: 0; } }`;
-    document.head.appendChild(page);
+    // The paper's margins for the print dialog (a pharmacy's page is set when printing).
+    if (!largePrint.value) {
+        const page = document.createElement('style');
+        page.textContent = `@media print { @page { size: ${paperWidth.value}mm auto; margin: 0; } }`;
+        document.head.appendChild(page);
+    }
 
     // Opened by "Print receipt" on the checkout screen, or by a reprint.
     if (new URLSearchParams(window.location.search).get('print') === '1') {
@@ -52,14 +94,10 @@ onMounted(() => {
 </script>
 
 <template>
-    <Head
-        :title="
-            title ??
-            `${sale?.reprint ? 'Duplicate receipt' : 'Receipt'} ${sale?.invoiceNo ?? ''}`
-        "
-    />
+    <Head :title="documentTitle" />
 
     <div
+        ref="receipt"
         class="receipt-screen min-h-dvh bg-neutral-100 p-4 dark:bg-neutral-900"
     >
         <div
@@ -90,7 +128,8 @@ onMounted(() => {
             :lines="thermal.lines"
             :columns="thermal.columns"
             :paper-width="thermal.paperWidth"
-            :logo-url="shop.logoUrl"
+            :logo-url="logo"
+            :large-print="thermal.largePrint"
         />
         <ReceiptView v-else-if="sale" :shop="shop" :sale="sale" />
     </div>

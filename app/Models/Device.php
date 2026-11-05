@@ -14,6 +14,7 @@ use Laravel\Sanctum\NewAccessToken;
 
 /**
  * @property bool $opd_billing the till rings up OPD bills (consultation + one Medicines amount)
+ * @property bool $offline_allowed the owner approved this till for offline sales: it prepares itself (TillOfflineService)
  * @property int|null $pending_uploads offline sales the till last said it holds to upload (System health)
  * @property int|null $clock_offset_seconds the till's clock against the server's when it last reported (+ = ahead)
  * @property Carbon|null $reported_at when the till last reported them
@@ -38,6 +39,7 @@ class Device extends Model
      */
     protected $attributes = [
         'opd_billing' => false,
+        'offline_allowed' => false,
     ];
 
     protected function casts(): array
@@ -50,7 +52,18 @@ class Device extends Model
             'reported_at' => 'datetime',
             'next_invoice_number' => 'integer',
             'opd_billing' => 'boolean',
+            'offline_allowed' => 'boolean',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // Taking the approval away takes the tokens too, however it is done (the Tills form).
+        static::updated(function (Device $device): void {
+            if ($device->wasChanged('offline_allowed') && ! $device->offline_allowed) {
+                $device->revokeSyncTokens();
+            }
+        });
     }
 
     /** @return BelongsTo<Location, $this> */

@@ -257,11 +257,13 @@ export type CompletedSale = {
 
 /** How the shop prints receipts (Receipt settings, branch 9); read when printing. */
 export type ReceiptPrintOptions = {
-    /** Millimetres: 80 (48 characters a line) or 58 (32). */
+    /** Millimetres: 80 (48 characters a line, 36 in large print) or 58 (32). */
     paperWidth: number;
     showBatch: boolean;
     showExpiry: boolean;
     showPrescriber: boolean;
+    /** A pharmacy only: 36 characters on 80 mm paper (ReceiptLayout). */
+    largePrint?: boolean;
 };
 
 export type ReceiptShop = {
@@ -282,6 +284,8 @@ export type ReceiptShop = {
 export type ThermalReceiptData = {
     paperWidth: number;
     columns: number;
+    /** A pharmacy: 36 columns on 80 mm (ReceiptLayout), Liberation Mono, pure black. */
+    largePrint: boolean;
     lines: ThermalLine[];
     /** The same receipt as ESC/POS bytes, base64. */
     escpos: string;

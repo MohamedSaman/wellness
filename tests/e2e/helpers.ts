@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import type { Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 /**
  * What the end-to-end specs share: the check that nothing sticks out of its
@@ -183,6 +183,140 @@ export async function addItem(page: Page, query: string): Promise<void> {
         .first()
         .click();
     await expect(lines).toHaveCount(before + 1);
+}
+
+/**
+ * The owner frees a till for the next browser (Administration → Tills, Reset
+ * offline on this till). The tills are shared between tests, and each test's
+ * browser starts with no token, so without this it would be refused.
+ */
+export async function resetTill(
+    context: BrowserContext,
+    code: string,
+    action = 'Reset offline on this till',
+): Promise<void> {
+    const admin = await context.newPage();
+
+    await admin.goto('/admin/devices');
+    await admin
+        .getByRole('row', { name: new RegExp(`\\b${code}\\b`) })
+        .getByRole('button', { name: 'Actions' })
+        .click();
+    await admin.getByRole('menuitem', { name: action }).click();
+
+    const confirm = admin.getByRole('button', { name: 'Confirm' });
+    await confirm.click();
+    await expect(confirm).toHaveCount(0);
+    await admin.close();
+}
+
+/** Waits for the till to say it can sell offline. Nothing is clicked. */
+export async function expectReady(page: Page): Promise<void> {
+    await expect(page.locator('[data-test=offline-readiness]')).toHaveAttribute(
+        'data-state',
+        'ready',
+        { timeout: 60_000 },
+    );
+}
+
+/** The connection is down and the till is showing it. */
+export async function goOffline(
+    page: Page,
+    context: BrowserContext,
+): Promise<void> {
+    await context.setOffline(true);
+    await expect(page.locator('[data-test=connection-badge]')).toHaveText(
+        /^\s*Offline/,
+    );
+}
+
+/** Rings up a sale on the till's own catalog; returns its invoice number, the Sale complete dialog open. */
+export async function sellOffline(page: Page): Promise<string> {
+    await page.locator('[data-test=pos-search]').fill('Panadol');
+    await page
+        .locator('[data-test=search-result]', { hasText: 'Panadol' })
+        .first()
+        .click();
+    await expect(page.locator('[data-test=cart-line]')).toHaveCount(1);
+
+    const pay = dialog(page, 'Payment');
+    // F9 waits for the cart's price (worked out on the till while offline): press again until it opens.
+    await expect(async () => {
+        await page.keyboard.press('F9');
+        await expect(pay).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+    await pay.getByRole('button', { name: 'Exact' }).click();
+    await pay.locator('[data-test=complete-sale]').click();
+
+    const done = page.locator('[data-test=sale-done]');
+    await expect(done.locator('[data-test=saved-offline]')).toBeVisible();
+
+    return ((await done.getByText(/^Invoice /).textContent()) ?? '')
+        .replace('Invoice', '')
+        .trim();
+}
+
+/** Runs in the page: reads this till's IndexedDB (lib/offline/db.ts). */
+export async function offlineMeta(page: Page): Promise<{
+    keys: string[];
+    lastCatalogSync: number | null;
+    invoiceNumbersLeft: number;
+    lastSaleUuid: string | null;
+}> {
+    return page.evaluate(
+        () =>
+            new Promise((resolve, reject) => {
+                const open = indexedDB.open('pos-offline');
+
+                open.onerror = () => reject(open.error);
+                open.onsuccess = () => {
+                    const tx = open.result.transaction(['meta', 'outbox']);
+                    const meta = tx.objectStore('meta').getAll();
+                    const sales = tx.objectStore('outbox').getAll();
+
+                    tx.oncomplete = () => {
+                        const rows = meta.result as {
+                            key: string;
+                            value: never;
+                        }[];
+                        const value = (key: string) =>
+                            rows.find((row) => row.key === key)?.value as
+                                | Record<string, never>
+                                | undefined;
+                        const numbers = value('invoiceNumbers') as
+                            | {
+                                  next: number;
+                                  ranges: { first: number; last: number }[];
+                              }
+                            | undefined;
+
+                        open.result.close();
+                        resolve({
+                            keys: rows.map((row) => row.key),
+                            lastCatalogSync: (value('lastCatalogSync') ??
+                                null) as number | null,
+                            invoiceNumbersLeft: (numbers?.ranges ?? []).reduce(
+                                (left, range) =>
+                                    left +
+                                    Math.max(
+                                        0,
+                                        range.last -
+                                            Math.max(
+                                                range.first,
+                                                numbers?.next ?? 0,
+                                            ) +
+                                            1,
+                                    ),
+                                0,
+                            ),
+                            lastSaleUuid:
+                                (sales.result as { uuid: string }[]).at(-1)
+                                    ?.uuid ?? null,
+                        });
+                    };
+                };
+            }),
+    );
 }
 
 export type Measure = {

@@ -190,7 +190,7 @@ The top bar shows the connection:
 
 1. Keep selling as normal: search, scan, prescription, payment and receipt all work.
 2. After **Complete sale** the till says **Saved on this till. It will sync when the connection is back.** The receipt still prints.
-3. When the internet comes back, the till sends the sales by itself. You can also press **Sync now**.
+3. When the internet comes back, the till sends the sales by itself. You can also press **Refresh now**.
 
 **What does not work offline:**
 
@@ -205,11 +205,12 @@ The top bar shows the connection:
 
 **Messages you might see:**
 
-| Message                                                                    | What to do                                                                               |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **Offline sales are not set up on this till. Ask the owner to set it up.** | Tell the Admin. Until it is done, this till cannot sell offline.                         |
-| **This till has no offline invoice numbers left. Reconnect to get more.**  | The till needs the internet before it can sell more offline. Use the other till or wait. |
-| **2 sales refused by the server – press Sync now to retry**                | Press **Sync now**. If it stays, tell the Admin.                                         |
+| Message                                                                   | What to do                                                                               |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Offline not available on this till - ask the owner**                    | Tell the Admin. Until it is done, this till cannot sell offline.                         |
+| **Not ready for offline - reconnect**                                     | The till needs the internet to finish getting ready. It does the rest by itself.         |
+| **This till has no offline invoice numbers left. Reconnect to get more.** | The till needs the internet before it can sell more offline. Use the other till or wait. |
+| **2 sales refused by the server – press Refresh now to retry**            | Press **Refresh now**. If it stays, tell the Admin.                                      |
 
 ## 15. Close your shift and count the cash
 

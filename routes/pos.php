@@ -25,6 +25,7 @@ Route::middleware(['auth', 'can:pos.checkout'])->prefix('pos')->name('pos.')->gr
     Route::post('till', [TillController::class, 'store'])->name('till.store');
     Route::delete('till', [TillController::class, 'destroy'])->name('till.destroy');
     Route::post('till/register', [TillController::class, 'register'])->middleware('module:offline_sync')->name('till.register');
+    Route::post('till/prepare', [TillController::class, 'prepare'])->middleware(['module:offline_sync', 'throttle:30,1'])->name('till.prepare');
 
     Route::post('shift/open', [ShiftController::class, 'open'])->name('shift.open');
     Route::get('shift/expected', [ShiftController::class, 'expected'])->name('shift.expected');
