@@ -707,6 +707,19 @@ class AdminProductFormTest extends BatchTestCase
         $this->get(ProductResource::getUrl('create'))->assertOk();
     }
 
+    public function test_clicking_a_row_in_the_list_opens_edit(): void
+    {
+        $product = $this->panadol();
+        $edit = ProductResource::getUrl('edit', ['record' => $product]);
+
+        $component = Livewire::test(ListProducts::class);
+
+        $this->assertSame($edit, $component->instance()->getTable()->getRecordUrl($product));
+
+        // Every cell is the link: not only the Edit in the row's menu, at the same address.
+        $this->assertGreaterThan(1, preg_match_all('/<a\b[^>]*href="'.preg_quote($edit, '/').'"[^>]*class="[^"]*fi-ta-(record-content|cell|col)/', $component->html()));
+    }
+
     public function test_only_who_can_create_products_sees_duplicate(): void
     {
         $product = $this->panadol();
