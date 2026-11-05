@@ -51,6 +51,8 @@ class DemoClinicCountersSeeder extends Seeder
             $month = fn (int $months): string => now($shop->timezone)->addMonths($months)->format('m/Y');
 
             Device::query()->create(['location_id' => $doctors->getKey(), 'name' => 'OPD counter', 'code' => 'T2', 'opd_billing' => true]);
+            // T1 is approved for offline sales and prepares itself; T2 waits for the owner.
+            Device::query()->where('code', 'T1')->update(['offline_allowed' => true]);
 
             $opd = $this->user($shop, 'OPD Cashier', 'opd@clinic.test', 'cashier');
             $locations->setAllowedLocations($opd, [(int) $doctors->getKey()], $owner);

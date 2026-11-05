@@ -99,11 +99,11 @@ class GoLiveResetService
                 $removed['stock_movements'] = $this->stock->forgetMovements($movementIds);
             }
 
-            // Every till numbers from 000001 again, and is registered again for offline sales.
+            // Every till numbers from 000001 again, and the owner approves it for offline sales again.
             $tills = Device::query()->get();
 
             foreach ($tills as $till) {
-                $till->forceFill(['next_invoice_number' => 1, 'pending_uploads' => null, 'reported_at' => null])->saveQuietly();
+                $till->forceFill(['next_invoice_number' => 1, 'pending_uploads' => null, 'reported_at' => null, 'offline_allowed' => false])->saveQuietly();
                 $till->revokeSyncTokens();
             }
 
