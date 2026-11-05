@@ -76,6 +76,131 @@ test.describe('layout', () => {
     }
 });
 
+test.describe('a variant row', () => {
+    const tops = async (page: Page, names: string[]): Promise<number[]> => {
+        const values: number[] = [];
+
+        for (const name of names) {
+            const box = await field(row(page, 0), name).boundingBox();
+            values.push(Math.round(box!.y));
+        }
+
+        return values;
+    };
+
+    const main = ['sku', 'barcode', 'price', 'cost', 'opening_stock'];
+
+    test.beforeEach(async ({ page }) => {
+        await page.goto('/admin/products/create');
+        await field(row(page, 0), 'opening_stock').fill('10');
+    });
+
+    test('is one line on a wide screen', async ({ page }) => {
+        await page.setViewportSize({ width: 1920, height: 1080 });
+
+        const lines = await tops(page, [
+            ...main,
+            'opening_batch_no',
+            'opening_expiry',
+        ]);
+        expect(new Set(lines).size).toBe(1);
+    });
+
+    test('is two lines on a laptop, with every label on one line', async ({
+        page,
+    }) => {
+        await page.setViewportSize({ width: 1366, height: 768 });
+
+        const lines = await tops(page, [
+            ...main,
+            'opening_batch_no',
+            'opening_expiry',
+        ]);
+        expect(new Set(lines).size).toBe(2);
+
+        const tallest = await row(page, 0)
+            .locator('.fi-fo-field-label-ctn')
+            .evaluateAll((labels) =>
+                Math.max(
+                    ...labels
+                        .filter((label) => label.getClientRects().length > 0)
+                        .map((label) => label.getBoundingClientRect().height),
+                ),
+            );
+        expect(tallest).toBeLessThan(32);
+    });
+
+    test('stacks into a card on a phone', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+
+        const lines = await tops(page, main);
+        expect(new Set(lines).size).toBe(main.length);
+    });
+});
+
+test('what is set under More reaches the database with More collapsed', async ({
+    page,
+}) => {
+    await page.goto('/admin/products/create');
+    const first = row(page, 0);
+    const more = first.locator('section.fi-section').first();
+    const name = `Under more ${Date.now()}`;
+
+    await page.locator('[id="form.drug.generic_names"]').fill('Paracetamol');
+    await page.locator('[id="form.drug.generic_names"]').press('Enter');
+
+    for (const [id, option] of [
+        ['form.drug.dosage_form', 'Tablet'],
+        ['form.drug.schedule', 'Over the counter'],
+    ] as const) {
+        await page
+            .locator(`select[id="${id}"]`)
+            .selectOption({ label: option });
+    }
+
+    await page.locator('[id="form.name"]').fill(name);
+    await field(first, 'price').fill('20');
+    await more.locator('.fi-section-header').first().click();
+    await field(first, 'bin_location').fill('A3');
+    await field(first, 'reorder_level').fill('4');
+    await more.locator('.fi-section-header').first().click();
+    await expect(more.locator('.fi-section-header').first()).toContainText(
+        'Reorder 4',
+    );
+    await expect(field(first, 'bin_location')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page).toHaveURL(/\/edit$/);
+
+    await expect(page.getByText('More · Reorder 4 · Shelf A3')).toBeVisible();
+});
+
+test('the edit page lays out at every width', async ({ page, browserName }) => {
+    await page.goto('/admin/products');
+    await page.locator('tbody .fi-ta-row .fi-ta-cell a').first().click();
+    await expect(page).toHaveURL(/\/edit$/);
+
+    for (const viewport of viewports) {
+        await page.setViewportSize(viewport);
+        await expect(page.locator('[id="form.name"]')).toBeVisible();
+
+        if (browserName === 'chromium') {
+            mkdirSync(screenshots, { recursive: true });
+            await page.screenshot({
+                path: `${screenshots}/edit-${viewport.width}.png`,
+                fullPage: true,
+            });
+        }
+
+        const sideways = await page.evaluate(
+            () =>
+                document.documentElement.scrollWidth -
+                document.documentElement.clientWidth,
+        );
+        expect(sideways).toBeLessThanOrEqual(1);
+    }
+});
+
 test('help text is one icon away, with its wording unchanged', async ({
     page,
 }) => {
