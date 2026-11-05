@@ -175,6 +175,125 @@ test('what is set under More reaches the database with More collapsed', async ({
     await expect(page.getByText('More · Reorder 4 · Shelf A3')).toBeVisible();
 });
 
+test.describe('Enter in a barcode field', () => {
+    const scan = async (barcode: Locator, code: string): Promise<void> => {
+        await barcode.focus();
+        await barcode.page().keyboard.type(code);
+        await barcode.page().keyboard.press('Enter');
+    };
+
+    // Saving is a Livewire call. (Not every POST: the bell loads itself after the page.)
+    const saves = (page: Page): string[] => {
+        const seen: string[] = [];
+        page.on('request', (request) => {
+            const body = request.postData() ?? '';
+            if (/"method":"create(Another)?"/.test(body.replaceAll('\\', ''))) {
+                seen.push(request.url());
+            }
+        });
+        return seen;
+    };
+
+    test('a scan on a variant stays in the field and moves on', async ({
+        page,
+    }) => {
+        await page.goto('/admin/products/create');
+        const first = row(page, 0);
+        const seen = saves(page);
+
+        await scan(field(first, 'barcode'), '4790000000123');
+
+        await expect(field(first, 'price')).toBeFocused();
+        await expect(field(first, 'barcode')).toHaveValue('4790000000123');
+        await page.waitForTimeout(500);
+        expect(seen).toEqual([]);
+        await expect(page).toHaveURL(/\/admin\/products\/create$/);
+        await expect(page.locator('[data-validation-error]')).toHaveCount(0);
+    });
+
+    test('a scan on a pack stays in the field and moves on', async ({
+        page,
+    }) => {
+        await page.goto('/admin/products/create');
+        const first = row(page, 0);
+
+        await first
+            .locator('section.fi-section')
+            .first()
+            .locator('.fi-section-header')
+            .first()
+            .click();
+        await page.getByRole('button', { name: '+ Add pack' }).click();
+
+        const barcode = page.locator('[id*=".packs."][id$=".barcode"]').first();
+        const price = page.locator('[id*=".packs."][id$=".price"]').first();
+        await expect(barcode).toBeVisible();
+        const seen = saves(page);
+
+        await scan(barcode, '4790000000130');
+
+        await expect(price).toBeFocused();
+        await expect(barcode).toHaveValue('4790000000130');
+        await page.waitForTimeout(500);
+        expect(seen).toEqual([]);
+        await expect(page.locator('[data-validation-error]')).toHaveCount(0);
+    });
+
+    test('a hidden field is skipped', async ({ page }) => {
+        await page.goto('/admin/products/create');
+        const first = row(page, 0);
+
+        await field(first, 'price').evaluate((input) => {
+            const wrapper = input.closest<HTMLElement>('[data-field-wrapper]');
+            if (wrapper) {
+                wrapper.style.display = 'none';
+            }
+        });
+
+        await scan(field(first, 'barcode'), '4790000000147');
+
+        await expect(field(first, 'cost')).toBeFocused();
+    });
+
+    test('a scanned value is saved', async ({ page }) => {
+        await page.goto('/admin/products/create');
+        const first = row(page, 0);
+        const code = `479${String(Date.now()).slice(-10)}`;
+
+        await page
+            .locator('[id="form.drug.generic_names"]')
+            .fill('Paracetamol');
+        await page.locator('[id="form.drug.generic_names"]').press('Enter');
+        for (const [id, option] of [
+            ['form.drug.dosage_form', 'Tablet'],
+            ['form.drug.schedule', 'Over the counter'],
+        ] as const) {
+            await page
+                .locator(`select[id="${id}"]`)
+                .selectOption({ label: option });
+        }
+        await page.locator('[id="form.name"]').fill(`Scanned ${code}`);
+
+        await scan(field(first, 'barcode'), code);
+        await expect(field(first, 'price')).toBeFocused();
+        await page.keyboard.type('20');
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+        await expect(page).toHaveURL(/\/edit$/);
+        await expect(field(row(page, 0), 'barcode')).toHaveValue(code);
+    });
+
+    test('Enter in another field still saves the form', async ({ page }) => {
+        await page.goto('/admin/products/create');
+        await page.locator('[id="form.name"]').press('Enter');
+
+        // The form is submitted: its required fields answer.
+        await expect(
+            page.locator('[data-validation-error]').first(),
+        ).toBeVisible();
+    });
+});
+
 test('the edit page lays out at every width', async ({ page, browserName }) => {
     await page.goto('/admin/products');
     await page.locator('tbody .fi-ta-row .fi-ta-cell a').first().click();

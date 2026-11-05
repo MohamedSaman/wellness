@@ -43,6 +43,16 @@ use Illuminate\Support\Str;
 class ProductForm
 {
     /**
+     * A barcode scanner types the code and then presses Enter, which would
+     * save the form half filled in. Here Enter goes to the next field instead.
+     *
+     * @var array<string, string>
+     */
+    private const ENTER_MOVES_TO_NEXT_FIELD = [
+        'x-on:keydown.enter.prevent' => "const fields = [...\$el.form.querySelectorAll('input:not([type=hidden]), select, textarea, [role=switch]')].filter((field) => field === \$el || (! field.matches(':disabled') && field.tabIndex >= 0 && field.offsetParent !== null)); fields[fields.indexOf(\$el) + 1]?.focus()",
+    ];
+
+    /**
      * Opening batch, expiry and location only matter once there is opening
      * stock. Decided in the browser, not with live() and visible(): a field
      * hidden on the server is not saved, loses its default and only appears
@@ -135,7 +145,7 @@ class ProductForm
                                 ->schema(fn (Get $get): array => self::variantAxisFields($get('../../category_id')))
                                 ->visible(fn (Get $get): bool => self::attributesFor($get('../../category_id'), true)->isNotEmpty()),
                             TextInput::make('sku')->label('SKU')->maxLength(100),
-                            TextInput::make('barcode')->maxLength(100),
+                            TextInput::make('barcode')->maxLength(100)->extraInputAttributes(self::ENTER_MOVES_TO_NEXT_FIELD),
                             TextInput::make('price')
                                 ->label(fn (Get $get): string => (self::pharmacy() ? 'Price per '.($get('../../unit') ?: 'unit') : 'Selling price').' ('.self::currency().')')
                                 ->numeric()
@@ -592,7 +602,7 @@ class ProductForm
                     ->integer(fn (Get $get): bool => (bool) $get('../../../../whole_units_only'))
                     // A hint, not a suffix: in a pack row the suffix left no room to type.
                     ->hintIcon(self::INFO, tooltip: fn (Get $get): string => ($get('../../../../unit') ?: 'Base unit').' per pack'),
-                TextInput::make('barcode')->maxLength(100),
+                TextInput::make('barcode')->maxLength(100)->extraInputAttributes(self::ENTER_MOVES_TO_NEXT_FIELD),
                 TextInput::make('price')
                     ->label(fn (): string => 'Price ('.self::currency().')')
                     ->numeric()
