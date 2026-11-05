@@ -543,7 +543,10 @@ test('a product is duplicated from its row in the list, and saved as new', async
 
     const copy = `Copy ${Date.now()}`;
     await name.fill(copy);
-    await page.locator('[id="form.drug.strength_value"]').fill('987');
+    // Its own strength: the browsers share a database, and the same medicine twice is refused.
+    await page
+        .locator('[id="form.drug.strength_value"]')
+        .fill(String(Date.now() % 1_000_000));
     await page.locator('[id="form.drug.strength_unit"]').fill('mg');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
 
