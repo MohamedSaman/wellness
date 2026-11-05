@@ -1,0 +1,100 @@
+import { expect, test } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+
+/**
+ * The admin product form in the demo clinic. Feature tests can't see any of
+ * this: what the browser decides by itself, and how the form lays out.
+ *
+ * "E2E variants" is the one clinic category with a variant axis
+ * (E2eVariantAxisSeeder); without an axis a product has a single variant.
+ */
+
+const row = (page: Page, index: number): Locator =>
+    page.locator('.fi-fo-repeater-item').nth(index);
+
+const field = (scope: Locator, name: string): Locator =>
+    scope.locator(`[id$=".${name}"]`).first();
+
+async function chooseCategory(page: Page, name: string): Promise<void> {
+    const wrapper = page
+        .locator('[data-field-wrapper]')
+        .filter({ has: page.locator('label', { hasText: /^\s*Category/ }) })
+        .first();
+
+    await wrapper.locator('.fi-select-input-btn').click();
+    await wrapper.getByRole('option', { name }).click();
+    // The Add button appears once the server knows the category has an axis.
+    await expect(
+        page.getByRole('button', { name: 'Add variant' }),
+    ).toBeVisible();
+}
+
+test.describe('opening stock fields', () => {
+    test.beforeEach(async ({ page }) => {
+        await page.goto('/admin/products/create');
+        await chooseCategory(page, 'E2E variants');
+        await page.getByRole('button', { name: 'Add variant' }).click();
+        await expect(page.locator('.fi-fo-repeater-item')).toHaveCount(2);
+    });
+
+    test('follow each row\'s own opening stock, with no trip to the server', async ({
+        page,
+    }) => {
+        const first = row(page, 0);
+        const second = row(page, 1);
+
+        for (const scope of [first, second]) {
+            await expect(field(scope, 'opening_batch_no')).toBeHidden();
+            await expect(field(scope, 'opening_expiry')).toBeHidden();
+        }
+
+        let serverCalls = 0;
+        page.on('request', (request) => {
+            if (request.url().includes('/livewire')) {
+                serverCalls++;
+            }
+        });
+
+        await field(first, 'opening_stock').fill('10');
+
+        await expect(field(first, 'opening_batch_no')).toBeVisible();
+        await expect(field(first, 'opening_expiry')).toBeVisible();
+        await expect(field(second, 'opening_batch_no')).toBeHidden();
+        await expect(field(second, 'opening_expiry')).toBeHidden();
+
+        await field(second, 'opening_stock').fill('5');
+        await expect(field(second, 'opening_batch_no')).toBeVisible();
+
+        await field(first, 'opening_stock').fill('0');
+        await expect(field(first, 'opening_batch_no')).toBeHidden();
+        await expect(field(second, 'opening_batch_no')).toBeVisible();
+
+        expect(serverCalls).toBe(0);
+    });
+
+    test('Tab goes from opening stock straight to the batch', async ({
+        page,
+    }) => {
+        const first = row(page, 0);
+
+        await field(first, 'opening_stock').fill('10');
+        await field(first, 'opening_stock').press('Tab');
+
+        // Not lost to the page: the location comes next until it moves under "More".
+        await expect(field(first, 'opening_location_id')).toBeFocused();
+        await field(first, 'opening_location_id').press('Tab');
+        await expect(field(first, 'opening_batch_no')).toBeFocused();
+    });
+
+    test('keep what was typed while they are hidden', async ({ page }) => {
+        const first = row(page, 0);
+
+        await field(first, 'opening_stock').fill('10');
+        await field(first, 'opening_batch_no').fill('B12');
+        await field(first, 'opening_stock').fill('0');
+        await expect(field(first, 'opening_batch_no')).toBeHidden();
+
+        await field(first, 'opening_stock').fill('3');
+        await expect(field(first, 'opening_batch_no')).toHaveValue('B12');
+    });
+});

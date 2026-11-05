@@ -35,6 +35,15 @@ use Illuminate\Support\Str;
 
 class ProductForm
 {
+    /**
+     * Opening batch, expiry and location only matter once there is opening
+     * stock. Decided in the browser, not with live() and visible(): a field
+     * hidden on the server is not saved, loses its default and only appears
+     * after the round trip, by when Tab has already left the row. The fields'
+     * own visible() and required() rules stay as they were.
+     */
+    private const HAS_OPENING_STOCK_JS = "Number(\$get('opening_stock')) > 0";
+
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
@@ -207,24 +216,28 @@ class ProductForm
                                 ->options(fn (): array => Location::options())
                                 ->default(fn (): ?int => self::workLocationId())
                                 ->selectablePlaceholder(false)
-                                ->visible(fn (Get $get): bool => blank($get('id')) && app(CurrentShop::class)->getOrFail()->hasModule('multi_location')),
+                                ->visible(fn (Get $get): bool => blank($get('id')) && app(CurrentShop::class)->getOrFail()->hasModule('multi_location'))
+                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             // Batch-tracked items: the batch the opening stock is counted in.
                             TextInput::make('opening_batch_no')
                                 ->label('Opening batch no.')
                                 ->maxLength(50)
                                 ->required(fn (Get $get): bool => self::opensBatch($get) && (float) $get('opening_stock') > 0)
-                                ->visible(fn (Get $get): bool => self::opensBatch($get)),
+                                ->visible(fn (Get $get): bool => self::opensBatch($get))
+                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             TextInput::make('opening_expiry')
                                 ->label('Opening batch expiry')
                                 ->placeholder('03/2027')
                                 ->helperText('The month or date printed on the pack.')
                                 ->maxLength(10)
                                 ->required(fn (Get $get): bool => self::opensBatch($get) && (float) $get('opening_stock') > 0)
-                                ->visible(fn (Get $get): bool => self::opensBatch($get)),
+                                ->visible(fn (Get $get): bool => self::opensBatch($get))
+                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             Toggle::make('opening_accept_near_expiry')
                                 ->label('Accept short expiry')
                                 ->helperText('Owner only: receive it even though it expires soon.')
-                                ->visible(fn (Get $get): bool => self::opensBatch($get) && (auth()->user()?->can('batches.manage') ?? false)),
+                                ->visible(fn (Get $get): bool => self::opensBatch($get) && (auth()->user()?->can('batches.manage') ?? false))
+                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             Toggle::make('is_active')->default(true)->visible(fn (Get $get): bool => filled($get('id'))),
                             Toggle::make('allow_unit_sale')
                                 ->label('Sell loose')

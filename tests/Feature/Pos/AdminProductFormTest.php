@@ -1,0 +1,148 @@
+<?php
+
+namespace Tests\Feature\Pos;
+
+use App\Enums\AttributeType;
+use App\Enums\DosageForm;
+use App\Enums\DrugSchedule;
+use App\Filament\Resources\Products\Pages\CreateProduct;
+use App\Filament\Resources\Products\Pages\EditProduct;
+use App\Filament\Resources\Products\ProductFormData;
+use App\Models\AttributeOption;
+use App\Models\Category;
+use App\Models\Location;
+use App\Models\Product;
+use App\Models\ProductAttribute;
+use App\Models\StockBatch;
+use App\Models\StockLevel;
+use App\Models\StockMovement;
+use App\Services\Data\DrugData;
+use App\Services\ProductCatalogService;
+use Filament\Facades\Filament;
+use Livewire\Livewire;
+
+/**
+ * The product form's layout on a pharmacy: what it hides, collapses and
+ * summarises must never change what is saved. What only a browser can see is
+ * in tests/e2e/product-form.spec.ts.
+ */
+class AdminProductFormTest extends BatchTestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Filament::setCurrentPanel('admin');
+        $this->actingAs($this->owner);
+    }
+
+    /** @return array<string, mixed> */
+    private function medicineForm(array $variant = [], array $product = []): array
+    {
+        return [
+            'is_medicine' => true,
+            'drug' => ['generic_names' => ['Paracetamol'], 'dosage_form' => 'tablet', 'schedule' => 'otc'],
+            'name' => 'Panadol 500 mg Tablets',
+            'unit' => 'Tablet',
+            'track_stock' => true,
+            'track_batches' => true,
+            ...$product,
+            'variants' => [['price' => '20', 'cost' => '10', 'opening_stock' => 0, 'packs' => [], ...$variant]],
+        ];
+    }
+
+    private function saved(string $name = 'Panadol 500 mg Tablets'): Product
+    {
+        return Product::query()->where('name', $name)->firstOrFail();
+    }
+
+    /** A category whose products have variants, so a form can hold several rows. */
+    private function categoryWithAxis(): Category
+    {
+        $size = ProductAttribute::query()->create(['name' => 'Pack size', 'code' => 'pack_size', 'type' => AttributeType::Select]);
+        $size->options()->create(['value' => 'Small', 'code' => 'S', 'sort_order' => 0]);
+        $size->options()->create(['value' => 'Large', 'code' => 'L', 'sort_order' => 1]);
+
+        $category = Category::query()->create(['name' => 'Sized', 'slug' => 'sized']);
+        $category->productAttributes()->attach([$size->getKey() => ['is_variant_axis' => true, 'is_required' => true, 'sort_order' => 1]]);
+
+        return $category;
+    }
+
+    /** @return array<int, int> attribute id => option id */
+    private function option(Category $category, string $value): array
+    {
+        $option = AttributeOption::query()->where('value', $value)->sole();
+
+        return [(int) $option->product_attribute_id => (int) $option->getKey()];
+    }
+
+    public function test_a_new_row_starts_with_its_location_though_the_field_shows_only_with_stock(): void
+    {
+        $component = Livewire::test(CreateProduct::class);
+        $row = array_values($component->get('data.variants'))[0];
+
+        $this->assertSame((int) $this->owner->workLocation($this->shop)->getKey(), (int) $row['opening_location_id']);
+    }
+
+    public function test_a_batch_typed_at_no_opening_stock_is_saved_as_no_stock_at_all(): void
+    {
+        Livewire::test(CreateProduct::class)
+            ->fillForm($this->medicineForm(['opening_batch_no' => 'B1', 'opening_expiry' => '12/2030']))
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $variant = $this->saved()->variants()->sole();
+
+        $this->assertSame(0, StockMovement::query()->where('product_variant_id', $variant->getKey())->count());
+        $this->assertSame(0, StockBatch::query()->where('product_variant_id', $variant->getKey())->count());
+    }
+
+    public function test_opening_stock_goes_to_the_chosen_location_in_its_batch(): void
+    {
+        $doctors = Location::query()->where('code', 'DOC')->sole();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm($this->medicineForm([
+                'opening_stock' => 12,
+                'opening_location_id' => $doctors->getKey(),
+                'opening_batch_no' => 'B1',
+                'opening_expiry' => '12/2030',
+            ]))
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $variant = $this->saved()->variants()->sole();
+        $level = StockLevel::query()->where('product_variant_id', $variant->getKey())->sole();
+
+        $this->assertSame((int) $doctors->getKey(), (int) $level->location_id);
+        $this->assertEquals(12, $level->quantity);
+        $this->assertSame('B1', StockBatch::query()->where('product_variant_id', $variant->getKey())->sole()->batch_no);
+    }
+
+    public function test_a_variant_added_on_edit_asks_for_its_opening_batch_too(): void
+    {
+        $category = $this->categoryWithAxis();
+        $product = app(ProductCatalogService::class)->create(
+            ['name' => 'Syrup', 'unit' => 'Bottle', 'category_id' => $category->getKey()],
+            [['price' => 1_000, 'options' => [AttributeOption::query()->where('value', 'Small')->sole()]]],
+            user: $this->owner,
+            drug: new DrugData(['Paracetamol'], DosageForm::Syrup, DrugSchedule::Otc),
+        );
+        $variants = ProductFormData::fromProduct($product)['variants'];
+        $added = ['price' => '30', 'options' => $this->option($category, 'Large'), 'opening_stock' => 4, 'packs' => []];
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->fillForm(['variants' => [...$variants, $added]])
+            ->call('save')
+            ->assertHasFormErrors(['variants.1.opening_batch_no' => 'required', 'variants.1.opening_expiry' => 'required']);
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->fillForm(['variants' => [...$variants, [...$added, 'opening_batch_no' => 'L1', 'opening_expiry' => '12/2030']]])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(2, $product->variants()->count());
+        $this->assertSame('L1', StockBatch::query()->sole()->batch_no);
+    }
+}
