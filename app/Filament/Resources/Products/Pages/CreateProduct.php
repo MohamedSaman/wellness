@@ -9,6 +9,7 @@ use App\Filament\Resources\Products\ProductResource;
 use App\Models\User;
 use App\Services\Data\DrugData;
 use App\Services\ProductCatalogService;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Support\Exceptions\Halt;
@@ -19,6 +20,16 @@ class CreateProduct extends CreateRecord
     use ProductFormPage;
 
     protected static string $resource = ProductResource::class;
+
+    protected function getCreateFormAction(): Action
+    {
+        return parent::getCreateFormAction()->label('Save');
+    }
+
+    protected function getCreateAnotherFormAction(): Action
+    {
+        return parent::getCreateAnotherFormAction()->label('Save & add another');
+    }
 
     protected function handleRecordCreation(array $data): Model
     {

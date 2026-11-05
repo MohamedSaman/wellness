@@ -314,4 +314,46 @@ class AdminProductFormTest extends BatchTestCase
         $this->assertSame(3, $product->variants()->count());
         $this->assertSame(['BV1', 'BV2', 'BV3'], $product->variants()->orderBy('sku')->pluck('bin_location')->all());
     }
+
+    public function test_the_footer_counts_the_errors_of_a_failed_save(): void
+    {
+        Livewire::test(CreateProduct::class)
+            ->assertSeeHtml('novalidate')
+            ->assertDontSee('Jump to first error')
+            ->fillForm($this->medicineForm(['price' => null], ['name' => null]))
+            ->call('create')
+            ->assertHasFormErrors(['name' => 'required', 'variants.0.price' => 'required'])
+            ->assertSee('2 errors · Jump to first error');
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm($this->medicineForm(product: ['name' => null]))
+            ->call('create')
+            ->assertSee('1 error · Jump to first error');
+    }
+
+    public function test_save_and_add_another_leaves_a_blank_form_on_create_only(): void
+    {
+        $component = Livewire::test(CreateProduct::class)
+            ->assertSee('Save & add another')
+            ->fillForm($this->medicineForm(['opening_stock' => 5, 'opening_batch_no' => 'B1', 'opening_expiry' => '12/2030']))
+            ->call('createAnother')
+            ->assertHasNoFormErrors()
+            ->assertFormSet(['name' => null]);
+
+        $row = array_values($component->get('data.variants'))[0];
+
+        $this->assertEmpty($row['opening_batch_no'] ?? null);
+        $this->assertEquals(0, $row['opening_stock']);
+        $this->assertSame((int) $this->owner->workLocation($this->shop)->getKey(), (int) $row['opening_location_id']);
+
+        $variant = $this->saved()->variants()->sole();
+        $this->assertSame('B1', StockBatch::query()->where('product_variant_id', $variant->getKey())->sole()->batch_no);
+
+        $component->fillForm($this->medicineForm(product: ['name' => 'Second']))->call('create')->assertHasNoFormErrors();
+        $this->assertSame(1, Product::query()->where('name', 'Second')->count());
+
+        Livewire::test(EditProduct::class, ['record' => $this->saved()->getRouteKey()])
+            ->assertSee('Save')
+            ->assertDontSee('Save & add another');
+    }
 }

@@ -59,6 +59,11 @@ class EditProduct extends EditRecord
         ];
     }
 
+    protected function getSaveFormAction(): Action
+    {
+        return parent::getSaveFormAction()->label('Save');
+    }
+
     /**
      * Built from scratch so that cost prices only reach the browser when the
      * user is allowed to see them.

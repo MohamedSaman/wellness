@@ -189,3 +189,83 @@ test.describe('opening stock fields', () => {
         await expect(field(first, 'opening_batch_no')).toHaveValue('B12');
     });
 });
+
+test.describe('a failed save', () => {
+    const footer = (page: Page): Locator =>
+        page.getByRole('button', { name: /Jump to first error/ });
+
+    test('reports on the fields, with no bubble from the browser', async ({
+        page,
+    }) => {
+        await page.goto('/admin/products/create');
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+        // Generic name, dosage form, schedule, name and price.
+        await expect(footer(page)).toContainText('5 errors');
+        await expect(page.locator('[data-validation-error]')).toHaveCount(5);
+    });
+
+    test('opens every section and row with an error, and the footer finds them', async ({
+        page,
+    }) => {
+        await page.goto('/admin/products');
+        await page.locator('tbody .fi-ta-row a').first().click();
+        await expect(page).toHaveURL(/\/edit$/);
+
+        // Everything but the Product block starts collapsed on edit.
+        await expect(page.locator('[id="form.drug.brand_name"]')).toBeHidden();
+        const reorder = field(row(page, 0), 'reorder_level');
+        await expect(reorder).toBeHidden();
+
+        // Two errors in two collapsed places, set directly: their fields can't be reached.
+        await page.locator('[id="form.name"]').fill('');
+        await page.evaluate(() => {
+            const input = document.querySelector<HTMLInputElement>(
+                '[id$=".reorder_level"]',
+            );
+            input!.value = '-1';
+            input!.dispatchEvent(new Event('input', { bubbles: true }));
+            const brand = document.querySelector<HTMLInputElement>(
+                '[id="form.drug.storage_note"]',
+            );
+            brand!.value = 'x'.repeat(300);
+            brand!.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+
+        await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+        await expect(footer(page)).toContainText('3 errors');
+        await expect(reorder).toBeVisible();
+        await expect(page.locator('[id="form.drug.storage_note"]')).toBeVisible();
+
+        // Scroll away, then back to the first error, clear of the top bar.
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await footer(page).click();
+
+        const first = page.locator('[data-validation-error]').first();
+        await expect(first).toBeInViewport();
+        await page.waitForTimeout(800);
+
+        const covered = await first.evaluate((el) => {
+            const bar = document.querySelector('.fi-topbar-ctn, .fi-topbar');
+            const wrapper = el.closest('[data-field-wrapper]')!;
+
+            return (
+                (bar?.getBoundingClientRect().bottom ?? 0) >
+                wrapper.getBoundingClientRect().top
+            );
+        });
+        expect(covered).toBe(false);
+    });
+
+    test('keeps the footer in view on a long form', async ({ page }) => {
+        await page.setViewportSize({ width: 1366, height: 768 });
+        await page.goto('/admin/products/create');
+
+        const save = page.getByRole('button', { name: 'Save', exact: true });
+        await expect(save).toBeInViewport();
+        await expect(
+            page.getByRole('button', { name: 'Save & add another' }),
+        ).toBeInViewport();
+    });
+});
