@@ -145,4 +145,22 @@ class AdminProductFormTest extends BatchTestCase
         $this->assertSame(2, $product->variants()->count());
         $this->assertSame('L1', StockBatch::query()->sole()->batch_no);
     }
+
+    public function test_the_sections_are_open_on_create_and_summarised_on_edit(): void
+    {
+        $product = app(ProductCatalogService::class)->create(
+            ['name' => 'Panadol', 'unit' => 'Tablet'],
+            [['price' => 1_000]],
+            user: $this->owner,
+            drug: new DrugData(['Paracetamol'], DosageForm::Tablet, DrugSchedule::Otc, brandName: 'Panadol', strengthValue: 500, strengthUnit: 'mg'),
+        );
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->assertSee('Paracetamol · Panadol · 500 mg · '.DosageForm::Tablet->label().' · '.DrugSchedule::Otc->label())
+            ->assertSee('Tablet · Stock tracked · Batches and expiry · Whole units only')
+            ->assertSee('No description')
+            ->assertSeeHtml('isCollapsed: true');
+
+        Livewire::test(CreateProduct::class)->assertDontSeeHtml('isCollapsed: true');
+    }
 }

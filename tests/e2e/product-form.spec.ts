@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
@@ -28,6 +29,62 @@ async function chooseCategory(page: Page, name: string): Promise<void> {
         page.getByRole('button', { name: 'Add variant' }),
     ).toBeVisible();
 }
+
+const screenshots = 'storage/app/screenshots/product-form';
+
+const viewports = [
+    { width: 1920, height: 1080 },
+    { width: 1366, height: 768 },
+    { width: 820, height: 1180 },
+    { width: 390, height: 844 },
+];
+
+test.describe('layout', () => {
+    for (const viewport of viewports) {
+        test(`create page at ${viewport.width}px`, async ({
+            page,
+            browserName,
+        }) => {
+            await page.setViewportSize(viewport);
+            await page.goto('/admin/products/create');
+            await expect(
+                page.locator('.fi-page-header-main-ctn, .fi-header').first(),
+            ).toBeVisible();
+
+            if (browserName === 'chromium') {
+                mkdirSync(screenshots, { recursive: true });
+                await page.screenshot({
+                    path: `${screenshots}/create-${viewport.width}.png`,
+                    fullPage: true,
+                });
+            }
+
+            const sideways = await page.evaluate(
+                () =>
+                    document.documentElement.scrollWidth -
+                    document.documentElement.clientWidth,
+            );
+            expect(sideways).toBeLessThanOrEqual(1);
+        });
+    }
+});
+
+test('a collapsed section sums up what was just typed', async ({ page }) => {
+    await page.goto('/admin/products/create');
+
+    const medicine = page
+        .locator('section.fi-section')
+        .filter({ hasText: 'Generic and brand names' })
+        .first();
+
+    await page.getByLabel('Brand name').fill('Zzzbrand');
+    await medicine.locator('.fi-section-header').first().click();
+
+    await expect(medicine.locator('.fi-section-header')).toContainText(
+        'Zzzbrand',
+    );
+    await expect(page.getByLabel('Brand name')).toBeHidden();
+});
 
 test.describe('opening stock fields', () => {
     test.beforeEach(async ({ page }) => {

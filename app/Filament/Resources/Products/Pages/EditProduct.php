@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Products\Pages;
 
 use App\Exceptions\PosException;
+use App\Filament\Resources\Products\Pages\Concerns\ProductFormPage;
 use App\Filament\Resources\Products\ProductFormData;
 use App\Filament\Resources\Products\ProductResource;
 use App\Filament\Support\LabelActions;
@@ -19,6 +20,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class EditProduct extends EditRecord
 {
+    use ProductFormPage;
+
     protected static string $resource = ProductResource::class;
 
     /**

@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Models\VariantUnit;
 use App\Models\VehicleModel;
 use App\Support\CurrentShop;
+use Closure;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -31,6 +32,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Collection;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 class ProductForm
@@ -44,86 +46,21 @@ class ProductForm
      */
     private const HAS_OPENING_STOCK_JS = "Number(\$get('opening_stock')) > 0";
 
+    /** Product details fit the room the form has, whatever the sidebar leaves it. */
+    private const DETAIL_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 3, '@6xl' => 4];
+
+    /** Inside a section's heading or description: only there can Alpine see the section's isCollapsed. */
+    private const REFRESH_WHEN_COLLAPSED = '<span x-init="$watch(\'isCollapsed\', (collapsed) => collapsed && $wire.$refresh())"></span>';
+
     public static function configure(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             // Pharmacy shops: the product form is a medicine form, drug details first.
             self::medicineSection(),
 
-            Section::make('Product')
-                ->columns(2)
-                ->schema([
-                    TextInput::make('name')
-                        ->required()
-                        ->maxLength(255)
-                        ->columnSpanFull()
-                        ->helperText(fn (): ?string => self::pharmacy() ? 'As it should appear on the receipt: brand, strength and form ("Panadol 500 mg Tablets").' : null),
-                    Select::make('category_id')
-                        ->label('Category')
-                        ->relationship('category', 'name')
-                        ->searchable()
-                        ->preload()
-                        ->live()
-                        ->afterStateUpdated(fn (Set $set) => $set('product_attributes', []))
-                        ->helperText('The category decides which attributes (Size, Colour ...) this product uses.'),
-                    // A pharmacy's brands are its manufacturers (GSK, State Pharmaceuticals).
-                    Select::make('brand_id')
-                        ->label(fn (): string => self::pharmacy() ? 'Manufacturer' : 'Brand')
-                        ->relationship('brand', 'name')
-                        ->searchable()
-                        ->preload(),
-                    // Stock is counted in this unit, so it is fixed once stock has moved.
-                    TextInput::make('unit')
-                        ->label(fn (): string => self::pharmacy() ? 'Base unit' : 'Unit')
-                        ->default('pcs')
-                        ->required()
-                        ->maxLength(20)
-                        ->live(onBlur: true)
-                        ->disabled(fn (?Product $record): bool => self::baseUnitLocked($record))
-                        ->dehydrated()
-                        ->helperText(fn (?Product $record): ?string => self::baseUnitLocked($record)
-                            ? 'Locked: this product has stock movements, all counted in this unit.'
-                            : (self::pharmacy() ? 'Stock is counted in this unit (Tablet, Bottle, Vial). It is locked once stock moves.' : null)),
-                    Toggle::make('track_stock')->default(true)->live()->helperText(fn (): string => self::pharmacy()
-                        ? 'Turn off for services such as a consultation fee.'
-                        : 'Turn off for services such as fitting or labour.'),
-                    // Services only: a stock item is always sold at its list price (docs/PHARMACY.md §4.3).
-                    Toggle::make('allow_price_override')
-                        ->label('Price can be changed at the till')
-                        ->default(false)
-                        ->visible(fn (Get $get): bool => ! (bool) $get('track_stock'))
-                        ->helperText('The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
-                    // Pharmacy: stock in batches with expiry dates, sold first expiry first out.
-                    Toggle::make('track_batches')
-                        ->label('Batches and expiry')
-                        ->default(true)
-                        ->live()
-                        ->visible(fn (Get $get): bool => self::pharmacy() && (bool) $get('track_stock'))
-                        ->helperText(fn (?Product $record): string => $record?->exists === true
-                            ? 'Stock is received with a batch number and expiry, and sold first expiry first out. Can only be changed while the item has no stock.'
-                            : 'Stock is received with a batch number and expiry, and sold first expiry first out. On for every medicine.'),
-                    Toggle::make('whole_units_only')
-                        ->label('Whole units only')
-                        ->default(true)
-                        ->live()
-                        ->visible(fn (): bool => self::pharmacy())
-                        ->helperText('Sold, received, counted and returned in whole units of whatever unit is used: 1 strip or 3 tablets, never half a tablet or half a box.'),
-                    Select::make('tax_category')
-                        ->label('Tax')
-                        ->options(TaxCategory::options())
-                        ->default(TaxCategory::Exempt->value)
-                        ->selectablePlaceholder(false)
-                        ->required()
-                        ->visible(fn (): bool => self::pharmacy())
-                        ->helperText("Medicines are usually exempt. The shop's tax rate applies to standard items only."),
-                    Toggle::make('is_active')->default(true),
-                    Textarea::make('description')->columnSpanFull(),
-                    Group::make()
-                        ->columns(2)
-                        ->columnSpanFull()
-                        ->schema(fn (Get $get): array => self::productAttributeFields($get('category_id')))
-                        ->visible(fn (Get $get): bool => self::attributesFor($get('category_id'), false)->isNotEmpty()),
-                ]),
+            self::productSection(),
+            self::sellingSection(),
+            self::moreDetailsSection(),
 
             Section::make('Spare part details')
                 ->description('Only for spare parts.')
@@ -263,14 +200,130 @@ class ProductForm
         return $user instanceof User ? (int) $user->workLocation(app(CurrentShop::class)->getOrFail())->getKey() : null;
     }
 
+    /** Always open: what identifies the item. */
+    private static function productSection(): Section
+    {
+        return Section::make('Product')
+            ->columns(self::DETAIL_COLUMNS)
+            ->gridContainer()
+            ->schema([
+                TextInput::make('name')
+                    ->required()
+                    ->maxLength(255)
+                    ->columnSpan(['@md' => 2])
+                    ->helperText(fn (): ?string => self::pharmacy() ? 'As it should appear on the receipt: brand, strength and form ("Panadol 500 mg Tablets").' : null),
+                Select::make('category_id')
+                    ->label('Category')
+                    ->relationship('category', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->live()
+                    ->afterStateUpdated(fn (Set $set) => $set('product_attributes', []))
+                    ->helperText('The category decides which attributes (Size, Colour ...) this product uses.'),
+                // A pharmacy's brands are its manufacturers (GSK, State Pharmaceuticals).
+                Select::make('brand_id')
+                    ->label(fn (): string => self::pharmacy() ? 'Manufacturer' : 'Brand')
+                    ->relationship('brand', 'name')
+                    ->searchable()
+                    ->preload(),
+                Toggle::make('is_active')->default(true),
+            ]);
+    }
+
+    private static function sellingSection(): Section
+    {
+        return self::collapsibleSection('Selling & stock', null, fn (Get $get): string => ProductFormSummary::selling($get, self::pharmacy()))
+            ->schema([
+                // Stock is counted in this unit, so it is fixed once stock has moved.
+                TextInput::make('unit')
+                    ->label(fn (): string => self::pharmacy() ? 'Base unit' : 'Unit')
+                    ->default('pcs')
+                    ->required()
+                    ->maxLength(20)
+                    ->live(onBlur: true)
+                    ->disabled(fn (?Product $record): bool => self::baseUnitLocked($record))
+                    ->dehydrated()
+                    ->helperText(fn (?Product $record): ?string => self::baseUnitLocked($record)
+                        ? 'Locked: this product has stock movements, all counted in this unit.'
+                        : (self::pharmacy() ? 'Stock is counted in this unit (Tablet, Bottle, Vial). It is locked once stock moves.' : null)),
+                Select::make('tax_category')
+                    ->label('Tax')
+                    ->options(TaxCategory::options())
+                    ->default(TaxCategory::Exempt->value)
+                    ->selectablePlaceholder(false)
+                    ->required()
+                    ->visible(fn (): bool => self::pharmacy())
+                    ->helperText("Medicines are usually exempt. The shop's tax rate applies to standard items only."),
+                Toggle::make('track_stock')->default(true)->live()->helperText(fn (): string => self::pharmacy()
+                    ? 'Turn off for services such as a consultation fee.'
+                    : 'Turn off for services such as fitting or labour.'),
+                // Services only: a stock item is always sold at its list price (docs/PHARMACY.md §4.3).
+                Toggle::make('allow_price_override')
+                    ->label('Price can be changed at the till')
+                    ->default(false)
+                    ->visible(fn (Get $get): bool => ! (bool) $get('track_stock'))
+                    ->helperText('The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
+                // Pharmacy: stock in batches with expiry dates, sold first expiry first out.
+                Toggle::make('track_batches')
+                    ->label('Batches and expiry')
+                    ->default(true)
+                    ->live()
+                    ->visible(fn (Get $get): bool => self::pharmacy() && (bool) $get('track_stock'))
+                    ->helperText(fn (?Product $record): string => $record?->exists === true
+                        ? 'Stock is received with a batch number and expiry, and sold first expiry first out. Can only be changed while the item has no stock.'
+                        : 'Stock is received with a batch number and expiry, and sold first expiry first out. On for every medicine.'),
+                Toggle::make('whole_units_only')
+                    ->label('Whole units only')
+                    ->default(true)
+                    ->live()
+                    ->visible(fn (): bool => self::pharmacy())
+                    ->helperText('Sold, received, counted and returned in whole units of whatever unit is used: 1 strip or 3 tablets, never half a tablet or half a box.'),
+            ]);
+    }
+
+    private static function moreDetailsSection(): Section
+    {
+        return self::collapsibleSection('More details', null, ProductFormSummary::moreDetails(...))
+            ->schema([
+                Textarea::make('description')->columnSpanFull(),
+                Group::make()
+                    ->columns(self::DETAIL_COLUMNS)
+                    ->gridContainer()
+                    ->columnSpanFull()
+                    ->schema(fn (Get $get): array => self::productAttributeFields($get('category_id')))
+                    ->visible(fn (Get $get): bool => self::attributesFor($get('category_id'), false)->isNotEmpty()),
+            ]);
+    }
+
+    /**
+     * Open while creating, collapsed to one line of `$summary` while editing.
+     * A collapse asks the server for the line again: most of these fields
+     * aren't live, so it would otherwise describe what the section held the
+     * last time the form was rendered. `$whenOpen` is what the section says
+     * about itself while it is open.
+     *
+     * @param  Closure(Get): string  $summary
+     */
+    private static function collapsibleSection(string $heading, ?string $whenOpen, Closure $summary): Section
+    {
+        return Section::make($heading)
+            ->description(fn (Get $get): HtmlString => new HtmlString(
+                self::REFRESH_WHEN_COLLAPSED
+                .($whenOpen === null ? '' : '<span x-show="! isCollapsed" x-cloak>'.e($whenOpen).'</span>')
+                .'<span x-show="isCollapsed" x-cloak>'.e($summary($get)).'</span>'
+            ))
+            ->collapsible()
+            ->collapsed(fn (?Product $record): bool => $record?->exists === true)
+            ->columns(self::DETAIL_COLUMNS)
+            ->gridContainer();
+    }
+
     private static function medicineSection(): Section
     {
         $isMedicine = fn (Get $get): bool => (bool) $get('is_medicine');
 
-        return Section::make('Medicine')
-            ->description('Generic and brand names are both searchable at the till.')
+        return self::collapsibleSection('Medicine', 'Generic and brand names are both searchable at the till.', ProductFormSummary::medicine(...))
             ->visible(fn (): bool => self::pharmacy())
-            ->columns(3)
             ->schema([
                 Toggle::make('is_medicine')
                     ->label('This is a medicine')
@@ -293,7 +346,7 @@ class ProductForm
                     ->suggestions(fn (): array => Generic::query()->orderBy('name')->limit(500)->pluck('name')->all())
                     ->required()
                     ->visible($isMedicine)
-                    ->columnSpan(2),
+                    ->columnSpan(['@md' => 2]),
                 TextInput::make('drug.brand_name')
                     ->label('Brand name')
                     ->placeholder('Panadol')
@@ -350,7 +403,7 @@ class ProductForm
                     ->label('Storage note')
                     ->placeholder('Store below 25 °C, protect from light')
                     ->maxLength(255)
-                    ->columnSpan(2)
+                    ->columnSpan(['@md' => 2])
                     ->visible($isMedicine),
                 TextInput::make('drug.registration_no')
                     ->label('NMRA registration no.')

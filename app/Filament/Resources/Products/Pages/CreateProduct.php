@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Products\Pages;
 
 use App\Exceptions\PosException;
+use App\Filament\Resources\Products\Pages\Concerns\ProductFormPage;
 use App\Filament\Resources\Products\ProductFormData;
 use App\Filament\Resources\Products\ProductResource;
 use App\Models\User;
@@ -15,6 +16,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class CreateProduct extends CreateRecord
 {
+    use ProductFormPage;
+
     protected static string $resource = ProductResource::class;
 
     protected function handleRecordCreation(array $data): Model
