@@ -15,7 +15,7 @@
 | Ask GEN for stock               | **Stock requests** (online only): add items or **From low stock**, unit + quantity, **Send request to General Pharmacy**. **Back to the till**.                                     |
 | Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                |
 | Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                      |
-| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Sync now** when back online. Do not sign out or clear Chrome.                                                             |
+| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                          |
 | End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**. |
 
 ## Keys
@@ -24,18 +24,18 @@ F2 search · F3 OPD / itemised · F6 recent sales · F7 prescription · F8 Medic
 
 ## If something goes wrong
 
-| Problem                                        | Do this                                                                         |
-| ---------------------------------------------- | ------------------------------------------------------------------------------- |
-| **Enter the Medicines amount.**                | F8 and type the amount.                                                         |
-| **Add the medicines dispensed.**               | Add the medicines, or clear the Medicines amount.                               |
-| Bill is not an OPD bill                        | Press F3. No button: tell the Admin.                                            |
-| **Pay** greyed out                             | Read the red message above it.                                                  |
-| **Enter the bank transfer reference.**         | Type the reference on the bank transfer line.                                   |
-| Medicine out of stock here                     | Tell the Admin. Send a stock request to General Pharmacy.                       |
-| Receipt did not print                          | Paper? Power? Reprint from **Recent sales**. Print box on screen: call support. |
-| **Close shift** greyed out                     | Wait for **Online**, press **Sync now**.                                        |
-| **Offline sales are not set up on this till.** | Tell the Admin.                                                                 |
-| Anything else                                  | Do not ring the sale up twice. Call the Admin.                                  |
+| Problem                                | Do this                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------- |
+| **Enter the Medicines amount.**        | F8 and type the amount.                                                         |
+| **Add the medicines dispensed.**       | Add the medicines, or clear the Medicines amount.                               |
+| Bill is not an OPD bill                | Press F3. No button: tell the Admin.                                            |
+| **Pay** greyed out                     | Read the red message above it.                                                  |
+| **Enter the bank transfer reference.** | Type the reference on the bank transfer line.                                   |
+| Medicine out of stock here             | Tell the Admin. Send a stock request to General Pharmacy.                       |
+| Receipt did not print                  | Paper? Power? Reprint from **Recent sales**. Print box on screen: call support. |
+| **Close shift** greyed out             | Wait for **Online**, press **Refresh now**.                                     |
+| **Offline not available on this till** | Tell the Admin.                                                                 |
+| Anything else                          | Do not ring the sale up twice. Call the Admin.                                  |
 
 Admin (owner): \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ phone \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
 

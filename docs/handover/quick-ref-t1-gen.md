@@ -15,7 +15,7 @@
 | Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                |
 | Discount                        | None at the clinic (no button). Ask the Admin.                                                                                                                                      |
 | Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                      |
-| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Sync now** when back online. Do not sign out or clear Chrome.                                                             |
+| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                          |
 | End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**. |
 
 ## Keys
@@ -24,18 +24,18 @@ F2 search · F6 recent sales · F7 prescription · F9 pay · Ctrl + Enter comple
 
 ## If something goes wrong
 
-| Problem                                        | Do this                                                                         |
-| ---------------------------------------------- | ------------------------------------------------------------------------------- |
-| Scanner does nothing                           | Press F2, scan again. Check the cable.                                          |
-| **Not sold here** / **No price**               | Do not sell. Tell the Admin.                                                    |
-| **Only 3 in stock.**                           | Sell only what the system shows. Tell the Admin.                                |
-| **Pay** greyed out                             | Read the red message. Wait for the total to update.                             |
-| **Enter the bank transfer reference.**         | Type the reference on the bank transfer line.                                   |
-| Receipt did not print                          | Paper? Power? Reprint from **Recent sales**. Print box on screen: call support. |
-| **Close shift** greyed out                     | Wait for **Online**, press **Sync now**.                                        |
-| **Offline sales are not set up on this till.** | Tell the Admin.                                                                 |
-| **... refused by the server**                  | Press **Sync now**. If it stays, tell the Admin.                                |
-| Anything else                                  | Do not ring the sale up twice. Call the Admin.                                  |
+| Problem                                | Do this                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------- |
+| Scanner does nothing                   | Press F2, scan again. Check the cable.                                          |
+| **Not sold here** / **No price**       | Do not sell. Tell the Admin.                                                    |
+| **Only 3 in stock.**                   | Sell only what the system shows. Tell the Admin.                                |
+| **Pay** greyed out                     | Read the red message. Wait for the total to update.                             |
+| **Enter the bank transfer reference.** | Type the reference on the bank transfer line.                                   |
+| Receipt did not print                  | Paper? Power? Reprint from **Recent sales**. Print box on screen: call support. |
+| **Close shift** greyed out             | Wait for **Online**, press **Refresh now**.                                     |
+| **Offline not available on this till** | Tell the Admin.                                                                 |
+| **... refused by the server**          | Press **Refresh now**. If it stays, tell the Admin.                             |
+| Anything else                          | Do not ring the sale up twice. Call the Admin.                                  |
 
 Admin (owner): \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ phone \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
 

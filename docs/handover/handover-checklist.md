@@ -30,13 +30,14 @@ Clinic: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ Web address: https://\_\_\_\_\_\_\_\_\_
 
 - [ ] T1 set up: location General Pharmacy, **OPD bills** off.
 - [ ] T2 set up: location Doctor's Medicines, **OPD bills** on.
-- [ ] T1 registered for offline sales (**Set up offline sales** pressed on the T1 PC; **Sync now** shows).
-- [ ] T2 registered for offline sales.
+- [ ] T1 approved for offline sales (**Offline sales allowed** on Administration → Tills); its top bar says **Ready for offline**.
+- [ ] T2 approved for offline sales; its top bar says **Ready for offline**.
 - [ ] Offline test on each till: internet unplugged, a sale made and printed, internet back, the sale synced and seen in **Sales**.
 - [ ] Chrome on each till starts on the till page, in kiosk printing mode (no print box appears).
 
 ## 4. Printers and scanners
 
+- [ ] [First print test on the real printer](../deploy/TILLS.md#first-print-test-on-the-real-printer) done on T1 and T2: online receipt, offline receipt, refund slip.
 - [ ] T1 receipt printer: 80 mm receipt prints in full, clear, and cuts.
 - [ ] T2 receipt printer: 80 mm receipt prints in full, clear, and cuts.
 - [ ] T1 cash drawer opens when a receipt prints.

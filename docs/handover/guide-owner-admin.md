@@ -285,7 +285,7 @@ To reset a cashier's password, open the user and type a new **Password**.
 
 ## 17. Tills and offline sales
 
-**What for:** each counter PC is a till. A till must be registered before it can sell offline.
+**What for:** each counter PC is a till. You decide which tills may sell offline; an approved till then gets itself ready, with nobody pressing anything.
 
 **Set up a till:**
 
@@ -293,16 +293,33 @@ To reset a cashier's password, open the user and type a new **Password**.
 2. **Code** (for example `T1`; printed before every bill number, cannot be changed later), **Name**, **Location** (General Pharmacy or Doctor's Medicines), **Active**.
 3. **OPD bills**: on for T2 only.
 
-**Register a till for offline sales (on each till PC, once):**
+**Allow a till to sell offline (once for each till):**
 
-1. On the till PC, sign in with **your owner account** and press **Open POS**.
-2. Choose the till (for example **T1**).
-3. In the top bar, press **Set up offline sales**. The button changes to **Sync now**.
-4. **Sign out**. The cashier can now sign in; the till stays registered in this browser.
+1. **Administration → Tills**, edit the till, turn on **Offline sales allowed**, save.
+2. Open the till on its PC (any cashier signed in will do). The top bar says **Preparing offline...**, then **Ready for offline**.
 
-Do this again if Chrome's data is cleared on that PC, or Chrome is reinstalled.
+Or sign in with your owner account on the till PC and press **Set up offline sales** in the top bar.
 
-**Administration → Tills** shows **Offline devices** and **Last synced** for each till. **Revoke offline access** stops a browser syncing (for example a stolen or replaced PC). Its unsent sales stay on that PC until it is registered again.
+The top bar tells you where a till stands:
+
+| It says                                                | What it means                                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| **Ready for offline**                                  | The till can sell if the internet drops.                                        |
+| **Preparing offline...**                               | It is downloading. Nothing to do.                                               |
+| **Not ready for offline - reconnect**                  | The internet dropped before it finished. It finishes when the internet is back. |
+| **Offline not available on this till - ask the owner** | Not allowed, revoked, or Chrome was reset on it. Allow it or reset it.          |
+
+**Chrome was reset, reinstalled or its data cleared, or the PC was replaced:** **Administration → Tills**, **Reset offline on this till**. That is the only step: the next time the till is opened it sets itself up again. A till gets ready on one browser only, so it needs this before another browser can take over.
+
+**Administration → Tills** shows **Offline sales allowed**, **Offline devices** and **Last synced** for each till. **Revoke offline access** stops a browser syncing (for example a stolen PC) and takes the till's permission away, so it cannot set itself up again until you allow it. Its unsent sales stay on that PC until it is registered again. Resets and revokes are kept in the audit log.
+
+**First print test on the real printer** (each till, after setting up the printer):
+
+1. Print an **online receipt**, an **offline receipt** (unplug the network first, plug it back after) and a **refund slip**.
+2. Check each one: nothing cut off at the sides; text and logo solid black, the total bold and large; no page title or address printed; one slip with no long blank tail, cut just below the last line.
+3. Void the test sales.
+
+If Chrome ignores the page length (shrunk text, a long blank tail, or a cut mid-slip) on the Xprinter XP-80C: in the driver's printing preferences set the paper to **80(72.1) x 297 mm**, close Chrome and print again. The technician's full list is in [Till PCs](../deploy/TILLS.md#first-print-test-on-the-real-printer).
 
 ## 18. Shop and receipt settings
 

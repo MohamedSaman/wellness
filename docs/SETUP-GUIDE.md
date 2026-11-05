@@ -71,6 +71,14 @@ sudo mysql_secure_installation      # answer Yes to the security questions
 
 For a database GUI, install **DBeaver** (`sudo snap install dbeaver-ce`) or **MySQL Workbench**.
 
+### A5a. poppler-utils (end-to-end print tests)
+
+`tests/e2e/offline-print.spec.ts` reads the receipts it prints to PDF with `pdfinfo`, `pdftotext`, `pdffonts` and `pdfimages`:
+
+```bash
+sudo apt install -y poppler-utils
+```
+
 ### A5b. age (backup encryption)
 
 The backup tests encrypt and decrypt real backups with [age](https://age-encryption.org); without it they are skipped (CI requires them):
