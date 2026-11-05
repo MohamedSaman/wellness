@@ -52,10 +52,10 @@ test.describe('layout', () => {
             ).toBeVisible();
             await field(row(page, 0), 'opening_stock').fill('10');
 
-            // The More section open, with a pack on show.
+            // The More section open, with a pack and the location rules on show.
             const more = row(page, 0).locator('section.fi-section').first();
             await more.locator('.fi-section-header').first().click();
-            await page.getByRole('button', { name: 'Add pack' }).click();
+            await page.getByRole('button', { name: '+ Add pack' }).click();
             await expect(
                 page.locator('[id$=".factor"]').first(),
             ).toBeVisible();

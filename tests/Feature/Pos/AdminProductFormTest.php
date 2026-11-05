@@ -19,6 +19,7 @@ use App\Models\StockMovement;
 use App\Services\Data\BatchInput;
 use App\Services\Data\DrugData;
 use App\Services\ProductCatalogService;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 
@@ -240,6 +241,34 @@ class AdminProductFormTest extends BatchTestCase
         Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
             ->assertSee('Sell loose: Yes at all locations')
             ->assertSee('Sell loose Yes · 0 packs');
+    }
+
+    public function test_a_saved_variant_or_pack_has_no_delete_button_and_a_new_one_keeps_it(): void
+    {
+        $category = $this->categoryWithAxis();
+        $product = $this->syrup([[
+            'price' => 400,
+            'options' => [AttributeOption::query()->where('value', 'Small')->sole()],
+            'packs' => [['name' => 'Bottle', 'factor' => 100, 'price' => 38_000]],
+        ]], $category);
+
+        $component = Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()]);
+        $saved = array_key_first($component->get('data.variants'));
+
+        $delete = fn (string $item, string $component = 'variants') => TestAction::make('delete')
+            ->schemaComponent($component, 'form')
+            ->arguments(['item' => $item]);
+
+        $component->assertActionHidden($delete($saved));
+
+        $pack = array_key_first($component->get("data.variants.{$saved}.packs"));
+        $component->assertActionHidden($delete($pack, "variants.{$saved}.more.packs"));
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm(['category_id' => $category->getKey()])
+            ->tap(function ($create) use ($delete): void {
+                $create->assertActionVisible($delete(array_key_first($create->get('data.variants'))));
+            });
     }
 
     public function test_a_product_with_three_variants_saves_and_edits_with_the_fields_under_more(): void

@@ -62,6 +62,9 @@ class ProductForm
      */
     private const VARIANT_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 4, '@7xl' => 7];
 
+    /** A pack's labels are short, so its fields fit one line sooner (a saved pack's Active toggle may wrap on a laptop). */
+    private const PACK_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 6, '@5xl' => 7];
+
     /** Inside a section's heading or description: only there can Alpine see the section's isCollapsed. */
     private const REFRESH_WHEN_COLLAPSED = '<span x-init="$watch(\'isCollapsed\', (collapsed) => collapsed && $wire.$refresh())"></span>';
 
@@ -521,8 +524,10 @@ class ProductForm
             ->visible(fn (): bool => self::pharmacy())
             ->default([])
             ->columnSpanFull()
-            ->columns(4)
-            ->addActionLabel('Add pack')
+            ->columns(self::PACK_COLUMNS)
+            ->gridContainer()
+            ->deleteAction(self::deleteUnsavedRowsOnly(...))
+            ->addActionLabel('+ Add pack')
             ->itemLabel(fn (array $state): ?string => filled($state['name'] ?? null)
                 ? (filled($state['factor'] ?? null) ? VariantUnit::describe((string) $state['name'], (string) $state['factor']) : (string) $state['name'])
                 : null)
