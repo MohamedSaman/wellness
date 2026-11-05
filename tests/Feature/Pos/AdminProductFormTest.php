@@ -156,13 +156,16 @@ class AdminProductFormTest extends BatchTestCase
             drug: new DrugData(['Paracetamol'], DosageForm::Tablet, DrugSchedule::Otc, brandName: 'Panadol', strengthValue: 500, strengthUnit: 'mg'),
         );
 
-        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+        $edit = Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
             ->assertSee('Paracetamol · Panadol · 500 mg · '.DosageForm::Tablet->label().' · '.DrugSchedule::Otc->label())
             ->assertSee('Tablet · Stock tracked · Batches and expiry · Whole units only')
-            ->assertSee('No description')
-            ->assertSeeHtml('isCollapsed: true');
+            ->assertSee('No description');
 
-        Livewire::test(CreateProduct::class)->assertDontSeeHtml('isCollapsed: true');
+        // Medicine, Selling & stock, More details and the variant's More.
+        $this->assertSame(4, substr_count($edit->html(), 'isCollapsed: true'));
+
+        // Only the variant's More.
+        $this->assertSame(1, substr_count(Livewire::test(CreateProduct::class)->html(), 'isCollapsed: true'));
     }
 
     public function test_the_locked_base_unit_says_why_on_the_page_and_other_help_is_behind_an_icon(): void
@@ -182,5 +185,76 @@ class AdminProductFormTest extends BatchTestCase
         Livewire::test(CreateProduct::class)
             ->assertDontSeeHtml('id="form.unit-helper-text"')
             ->assertSee('Stock is counted in this unit (Tablet, Bottle, Vial).');
+    }
+
+    /** @param  array<int, mixed>  $variants */
+    private function syrup(array $variants, ?Category $category = null): Product
+    {
+        return app(ProductCatalogService::class)->create(
+            ['name' => 'Syrup', 'unit' => 'ml', 'category_id' => $category?->getKey()],
+            $variants,
+            user: $this->owner,
+            drug: new DrugData(['Chlorphenamine'], DosageForm::Syrup, DrugSchedule::Otc),
+        );
+    }
+
+    public function test_a_variants_rarely_used_fields_are_one_line_until_opened(): void
+    {
+        Livewire::test(CreateProduct::class)->assertSee('More · Reorder 0 · Shelf - · Sell loose Yes · 0 packs');
+
+        $product = $this->syrup([[
+            'price' => 400,
+            'reorder_level' => 5,
+            'bin_location' => 'A3',
+            'allow_unit_sale' => false,
+            'packs' => [['name' => 'Bottle', 'factor' => 100, 'price' => 38_000], ['name' => 'Box', 'factor' => 1_200, 'price' => 400_000]],
+        ]]);
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->assertSee('More · Reorder 5 · Shelf A3 · Sell loose No · 2 packs');
+    }
+
+    public function test_a_product_with_three_variants_saves_and_edits_with_the_fields_under_more(): void
+    {
+        $category = $this->categoryWithAxis();
+        $large = AttributeOption::query()->where('value', 'Large')->sole();
+        $small = AttributeOption::query()->where('value', 'Small')->sole();
+        $row = fn (AttributeOption $option, string $sku, array $more = []): array => [
+            'options' => [$option->product_attribute_id => $option->getKey()],
+            'sku' => $sku,
+            'price' => '10',
+            'packs' => [],
+            ...$more,
+        ];
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm($this->medicineForm(product: ['category_id' => $category->getKey()]))
+            ->fillForm(['variants' => [
+                $row($small, 'V1', ['reorder_level' => 4, 'bin_location' => 'A1']),
+                $row($large, 'V2', ['opening_stock' => 6, 'opening_batch_no' => 'B2', 'opening_expiry' => '12/2030']),
+                $row($small, 'V3', ['allow_unit_sale' => false, 'packs' => [['name' => 'Box', 'factor' => 10, 'price' => '90', 'is_sellable' => true, 'is_purchasable' => true]]]),
+            ]])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $product = $this->saved();
+        $variants = $product->variants()->orderBy('sku')->get()->keyBy('sku');
+
+        $this->assertSame(['V1', 'V2', 'V3'], $variants->keys()->all());
+        $this->assertEquals(4, $variants['V1']->reorder_level);
+        $this->assertSame('A1', $variants['V1']->bin_location);
+        $this->assertSame('B2', StockBatch::query()->sole()->batch_no);
+        $this->assertSame('Box', $variants['V3']->units()->where('is_base', false)->sole()->name);
+
+        $form = ProductFormData::fromProduct($product);
+        $form['variants'] = array_map(fn (array $variant): array => ['reorder_level' => 9, ...$variant, 'bin_location' => 'B'.$variant['sku']], $form['variants']);
+
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->fillForm(['variants' => $form['variants']])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(3, $product->variants()->count());
+        $this->assertSame(['BV1', 'BV2', 'BV3'], $product->variants()->orderBy('sku')->pluck('bin_location')->all());
     }
 }

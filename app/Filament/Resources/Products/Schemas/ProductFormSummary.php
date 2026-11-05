@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Products\Schemas;
 use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Enums\TaxCategory;
+use App\Support\Quantity;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Str;
 
@@ -54,6 +55,19 @@ class ProductFormSummary
             Str::limit((string) $get('description'), 80),
             $attributes > 0 ? $attributes.' '.Str::plural('attribute', $attributes) : null,
         ]) ?: 'No description';
+    }
+
+    public static function variant(Get $get, bool $pharmacy): string
+    {
+        $packs = count((array) ($get('packs') ?? []));
+
+        return self::line([
+            'More',
+            'Reorder '.Quantity::format((float) $get('reorder_level')),
+            'Shelf '.($get('bin_location') ?: '-'),
+            $pharmacy ? 'Sell loose '.((bool) $get('allow_unit_sale') ? 'Yes' : 'No') : null,
+            $pharmacy ? $packs.' '.Str::plural('pack', $packs) : null,
+        ]);
     }
 
     /** @param  array<int, mixed>  $parts */

@@ -19,6 +19,7 @@ use App\Models\VariantUnit;
 use App\Models\VehicleModel;
 use App\Support\CurrentShop;
 use Closure;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -52,6 +53,14 @@ class ProductForm
 
     /** Product details fit the room the form has, whatever the sidebar leaves it. */
     private const DETAIL_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 3, '@6xl' => 4];
+
+    /**
+     * A variant's main fields sit on one line once their labels fit it (seven
+     * columns any sooner wraps "Opening batch expiry" over three lines and
+     * knocks the inputs out of line). On a laptop that is two lines, the
+     * opening stock fields on the second.
+     */
+    private const VARIANT_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 4, '@7xl' => 7];
 
     /** Inside a section's heading or description: only there can Alpine see the section's isCollapsed. */
     private const REFRESH_WHEN_COLLAPSED = '<span x-init="$watch(\'isCollapsed\', (collapsed) => collapsed && $wire.$refresh())"></span>';
@@ -104,14 +113,18 @@ class ProductForm
                         ->minItems(1)
                         ->maxItems(fn (Get $get): ?int => self::attributesFor($get('category_id'), true)->isEmpty() ? 1 : null)
                         ->deletable(fn (Get $get): bool => true)
+                        ->deleteAction(self::deleteUnsavedRowsOnly(...))
+                        // Nothing stores the order of a product's variants.
+                        ->reorderable(false)
                         ->addActionLabel('Add variant')
                         ->itemLabel(fn (array $state): ?string => $state['sku'] ?? null)
-                        ->columns(4)
+                        ->columns(self::VARIANT_COLUMNS)
+                        ->gridContainer()
                         ->default([[]])
                         ->schema([
                             Hidden::make('id'),
                             Group::make()
-                                ->columns(4)
+                                ->columns(self::VARIANT_COLUMNS)
                                 ->columnSpanFull()
                                 ->schema(fn (Get $get): array => self::variantAxisFields($get('../../category_id')))
                                 ->visible(fn (Get $get): bool => self::attributesFor($get('../../category_id'), true)->isNotEmpty()),
@@ -136,29 +149,12 @@ class ProductForm
                                 ->disabled()
                                 ->dehydrated(false)
                                 ->visible(fn (Get $get): bool => filled($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
-                            TextInput::make('last_cost')
-                                ->label('Last cost')
-                                ->hintIcon(self::INFO, tooltip: 'Unit cost of the latest delivery.')
-                                ->disabled()
-                                ->dehydrated(false)
-                                ->placeholder('-')
-                                ->visible(fn (Get $get): bool => filled($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
-                            TextInput::make('reorder_level')->numeric()->minValue(0)->default(0),
-                            TextInput::make('bin_location')->label('Shelf / bin')->maxLength(100),
                             TextInput::make('opening_stock')
                                 ->numeric()
                                 ->minValue(0)
                                 ->default(0)
                                 ->hintIcon(self::INFO, tooltip: 'Recorded as the first stock movement.')
                                 ->visible(fn (Get $get): bool => blank($get('id'))),
-                            // multi_location: which location the opening stock is counted at.
-                            Select::make('opening_location_id')
-                                ->label('Opening stock at')
-                                ->options(fn (): array => Location::options())
-                                ->default(fn (): ?int => self::workLocationId())
-                                ->selectablePlaceholder(false)
-                                ->visible(fn (Get $get): bool => blank($get('id')) && app(CurrentShop::class)->getOrFail()->hasModule('multi_location'))
-                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             // Batch-tracked items: the batch the opening stock is counted in.
                             TextInput::make('opening_batch_no')
                                 ->label('Opening batch no.')
@@ -174,19 +170,7 @@ class ProductForm
                                 ->required(fn (Get $get): bool => self::opensBatch($get) && (float) $get('opening_stock') > 0)
                                 ->visible(fn (Get $get): bool => self::opensBatch($get))
                                 ->visibleJs(self::HAS_OPENING_STOCK_JS),
-                            Toggle::make('opening_accept_near_expiry')
-                                ->label('Accept short expiry')
-                                ->hintIcon(self::INFO, tooltip: 'Owner only: receive it even though it expires soon.')
-                                ->visible(fn (Get $get): bool => self::opensBatch($get) && (auth()->user()?->can('batches.manage') ?? false))
-                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
-                            Toggle::make('is_active')->default(true)->visible(fn (Get $get): bool => filled($get('id'))),
-                            Toggle::make('allow_unit_sale')
-                                ->label('Sell loose')
-                                ->default(true)
-                                ->visible(fn (): bool => self::pharmacy())
-                                ->hintIcon(self::INFO, tooltip: fn (Get $get): string => 'Sell a single '.($get('../../unit') ?: 'unit').' as well as the packs. An item with no packs always sells this way.'),
-                            ...self::looseSaleByLocation(),
-                            self::packsRepeater(),
+                            self::variantMoreSection(),
                         ]),
                 ]),
         ]);
@@ -202,6 +186,67 @@ class ProductForm
         $user = auth()->user();
 
         return $user instanceof User ? (int) $user->workLocation(app(CurrentShop::class)->getOrFail())->getKey() : null;
+    }
+
+    /**
+     * The fields a variant rarely needs, collapsed to one line. A collapsed
+     * section keeps them on the page, so they still save and validate.
+     */
+    private static function variantMoreSection(): Section
+    {
+        return Section::make(fn (Get $get): HtmlString => new HtmlString(self::REFRESH_WHEN_COLLAPSED.e(ProductFormSummary::variant($get, self::pharmacy()))))
+            // Its own key: by default it comes from the heading, which changes with
+            // what is typed, and a new key would close the section under the user.
+            ->key('more')
+            ->compact()
+            ->collapsible()
+            ->collapsed()
+            ->columnSpanFull()
+            ->columns(self::DETAIL_COLUMNS)
+            ->gridContainer()
+            ->schema([
+                TextInput::make('reorder_level')->numeric()->minValue(0)->default(0),
+                TextInput::make('bin_location')->label('Shelf / bin')->maxLength(100),
+                TextInput::make('last_cost')
+                    ->label('Last cost')
+                    ->hintIcon(self::INFO, tooltip: 'Unit cost of the latest delivery.')
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->placeholder('-')
+                    ->visible(fn (Get $get): bool => filled($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
+                // multi_location: which location the opening stock is counted at.
+                Select::make('opening_location_id')
+                    ->label('Opening stock at')
+                    ->options(fn (): array => Location::options())
+                    ->default(fn (): ?int => self::workLocationId())
+                    ->selectablePlaceholder(false)
+                    ->visible(fn (Get $get): bool => blank($get('id')) && app(CurrentShop::class)->getOrFail()->hasModule('multi_location'))
+                    ->visibleJs(self::HAS_OPENING_STOCK_JS),
+                Toggle::make('opening_accept_near_expiry')
+                    ->label('Accept short expiry')
+                    ->hintIcon(self::INFO, tooltip: 'Owner only: receive it even though it expires soon.')
+                    ->visible(fn (Get $get): bool => self::opensBatch($get) && (auth()->user()?->can('batches.manage') ?? false))
+                    ->visibleJs(self::HAS_OPENING_STOCK_JS),
+                Toggle::make('is_active')->default(true)->visible(fn (Get $get): bool => filled($get('id'))),
+                Toggle::make('allow_unit_sale')
+                    ->label('Sell loose')
+                    ->default(true)
+                    ->visible(fn (): bool => self::pharmacy())
+                    ->hintIcon(self::INFO, tooltip: fn (Get $get): string => 'Sell a single '.($get('../../unit') ?: 'unit').' as well as the packs. An item with no packs always sells this way.'),
+                ...self::looseSaleByLocation(),
+                self::packsRepeater(),
+            ]);
+    }
+
+    /**
+     * A saved row can't be removed here: ProductCatalogService::update() only
+     * creates and changes variants and packs, so a deleted row would come
+     * straight back. (Packs are deactivated instead; see packsRepeater().)
+     */
+    private static function deleteUnsavedRowsOnly(Action $action): Action
+    {
+        return $action->visible(fn (array $arguments, Repeater $component): bool => $component->isDeletable()
+            && blank(($component->getRawState()[$arguments['item']] ?? [])['id'] ?? null));
     }
 
     /** Always open: what identifies the item. */

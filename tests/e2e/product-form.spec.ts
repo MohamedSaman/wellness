@@ -50,6 +50,15 @@ test.describe('layout', () => {
             await expect(
                 page.locator('.fi-page-header-main-ctn, .fi-header').first(),
             ).toBeVisible();
+            await field(row(page, 0), 'opening_stock').fill('10');
+
+            // The More section open, with a pack on show.
+            const more = row(page, 0).locator('section.fi-section').first();
+            await more.locator('.fi-section-header').first().click();
+            await page.getByRole('button', { name: 'Add pack' }).click();
+            await expect(
+                page.locator('[id$=".factor"]').first(),
+            ).toBeVisible();
 
             if (browserName === 'chromium') {
                 mkdirSync(screenshots, { recursive: true });
@@ -165,9 +174,6 @@ test.describe('opening stock fields', () => {
         await field(first, 'opening_stock').fill('10');
         await field(first, 'opening_stock').press('Tab');
 
-        // Not lost to the page: the location comes next until it moves under "More".
-        await expect(field(first, 'opening_location_id')).toBeFocused();
-        await field(first, 'opening_location_id').press('Tab');
         await expect(field(first, 'opening_batch_no')).toBeFocused();
     });
 
