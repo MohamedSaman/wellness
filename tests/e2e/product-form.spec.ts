@@ -411,16 +411,21 @@ test('a product is duplicated from its row in the list, and saved as new', async
     await expect(page).toHaveURL(/\/admin\/products\/create\?duplicate=/);
 
     const name = page.locator('[id="form.name"]');
-    await expect(name).toHaveValue(/.+/);
+    await expect(name).toHaveValue('');
     await expect(page.locator('[id$=".sku"]').first()).toHaveValue('');
     await expect(page.locator('[id$=".barcode"]').first()).toHaveValue('');
     await expect(page.locator('[id$=".opening_stock"]').first()).toHaveValue(
         '0',
     );
     await expect(page.getByText('Copied from')).toBeVisible();
+    await expect(
+        page.getByText('Check name and strength. Name prints on the receipt.'),
+    ).toBeVisible();
 
     const copy = `Copy ${Date.now()}`;
     await name.fill(copy);
+    await page.locator('[id="form.drug.strength_value"]').fill('987');
+    await page.locator('[id="form.drug.strength_unit"]').fill('mg');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     await expect(page).toHaveURL(/\/edit$/);

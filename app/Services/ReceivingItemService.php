@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\DosageForm;
 use App\Enums\TaxCategory;
 use App\Exceptions\PosException;
 use App\Exceptions\PossibleDuplicateItem;
@@ -148,21 +149,7 @@ class ReceivingItemService
         $drug = $data->drug;
 
         if ($drug !== null && $drug->strengthValue !== null) {
-            $generics = $this->genericKey($drug->genericNames);
-            $unit = Str::lower(trim((string) $drug->strengthUnit));
-
-            $sameDrug = DrugDetail::query()
-                ->with('product.generics')
-                ->where('dosage_form', $drug->dosageForm)
-                ->where('strength_value', $drug->strengthValue)
-                ->get()
-                ->filter(fn (DrugDetail $detail): bool => Str::lower(trim((string) $detail->strength_unit)) === $unit
-                    && $detail->product !== null
-                    && $this->genericKey($detail->product->generics->map(fn (Generic $generic): string => $generic->name)->values()->all()) === $generics)
-                ->pluck('product_id')
-                ->all();
-
-            $productIds = [...$productIds, ...$sameDrug];
+            $productIds = [...$productIds, ...$this->sameMedicine($drug->genericNames, $drug->strengthValue, $drug->strengthUnit, $drug->dosageForm)];
         }
 
         return ProductVariant::query()
@@ -173,6 +160,30 @@ class ReceivingItemService
             ->unique('product_id')
             ->take(5)
             ->values();
+    }
+
+    /**
+     * Products with these generic names (in any order or case), this strength
+     * and unit (in any case) and this dosage form. Deleted products included.
+     *
+     * @param  list<string>  $genericNames
+     * @return list<int>
+     */
+    public function sameMedicine(array $genericNames, float $strength, ?string $strengthUnit, DosageForm $dosageForm): array
+    {
+        $generics = $this->genericKey($genericNames);
+        $unit = Str::lower(trim((string) $strengthUnit));
+
+        return array_values(DrugDetail::query()
+            ->with('product.generics')
+            ->where('dosage_form', $dosageForm)
+            ->where('strength_value', $strength)
+            ->get()
+            ->filter(fn (DrugDetail $detail): bool => Str::lower(trim((string) $detail->strength_unit)) === $unit
+                && $detail->product !== null
+                && $this->genericKey($detail->product->generics->map(fn (Generic $generic): string => $generic->name)->values()->all()) === $generics)
+            ->pluck('product_id')
+            ->all());
     }
 
     /**

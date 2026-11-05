@@ -8,6 +8,7 @@ use App\Enums\DrugRoute;
 use App\Enums\DrugSchedule;
 use App\Enums\StorageCondition;
 use App\Enums\TaxCategory;
+use App\Filament\Resources\Products\ProductResource;
 use App\Models\Category;
 use App\Models\Generic;
 use App\Models\Location;
@@ -17,7 +18,9 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\VariantUnit;
 use App\Models\VehicleModel;
+use App\Services\ReceivingItemService;
 use App\Support\CurrentShop;
+use App\Support\Quantity;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -410,6 +413,8 @@ class ProductForm
                     ->numeric()
                     ->minValue(0)
                     ->rule('gt:0')
+                    ->rules([self::isNotAnExistingMedicine(...)])
+                    ->allowHtmlValidationMessages()
                     ->placeholder('500')
                     ->visible($isMedicine),
                 TextInput::make('drug.strength_unit')
@@ -463,6 +468,50 @@ class ProductForm
                     ->maxLength(50)
                     ->visible($isMedicine),
             ]);
+    }
+
+    /**
+     * A new medicine may not repeat one in the catalog. A blank strength is
+     * not compared (Laravel skips this rule for it), as when receiving and
+     * importing. Unlike those two this refuses, so the manufacturer counts as
+     * well: two makers' unbranded tablets are different products. A second
+     * size of the same medicine is a pack of it (a medicine has one variant).
+     */
+    private static function isNotAnExistingMedicine(Get $get, ?Product $record): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail) use ($get, $record): void {
+            $existing = $record?->exists === true || ! is_numeric($value) ? null : self::sameMedicine($get, Quantity::normalize((string) $value));
+
+            if ($existing !== null) {
+                // Allowed HTML in this field's messages: the product's name is the only thing in it that was typed.
+                $fail(sprintf(
+                    'A product with this name, strength and form already exists: <a href="%s" target="_blank" rel="noopener" style="text-decoration: underline">%s</a>',
+                    e(ProductResource::getUrl('edit', ['record' => $existing])),
+                    e($existing->name),
+                ));
+            }
+        };
+    }
+
+    private static function sameMedicine(Get $get, float $strength): ?Product
+    {
+        $dosageForm = DosageForm::tryFrom((string) $get('drug.dosage_form'));
+        $generics = array_values(array_map('strval', (array) $get('drug.generic_names')));
+
+        if ($dosageForm === null || $generics === []) {
+            return null;
+        }
+
+        $brand = fn (?string $name): string => Str::lower(Str::squish((string) $name));
+        $ids = app(ReceivingItemService::class)->sameMedicine($generics, $strength, $get('drug.strength_unit'), $dosageForm);
+
+        return Product::query()
+            ->with('drugDetail')
+            ->whereKey($ids)
+            ->where('brand_id', filled($get('brand_id')) ? (int) $get('brand_id') : null)
+            ->orderBy('id')
+            ->get()
+            ->first(fn (Product $product): bool => $brand($product->drugDetail?->brand_name) === $brand($get('drug.brand_name')));
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Filament\Resources\Products\Pages\ListProducts;
 use App\Filament\Resources\Products\ProductFormData;
 use App\Filament\Resources\Products\ProductResource;
 use App\Models\AttributeOption;
+use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\Product;
@@ -28,6 +29,7 @@ use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * The product form's layout on a pharmacy: what it hides, collapses and
@@ -549,10 +551,150 @@ class AdminProductFormTest extends BatchTestCase
     public function test_save_and_add_another_after_a_duplicate_leaves_a_blank_form(): void
     {
         $this->duplicating($this->panadol())
-            ->fillForm(['name' => 'Copy'])
+            ->fillForm(['name' => 'Copy', 'drug.strength_value' => '1000'])
             ->call('createAnother')
             ->assertHasNoFormErrors()
             ->assertFormSet(['name' => null]);
+    }
+
+    /** @param  array<string, mixed>  $drug */
+    private function panadolForm(array $drug = [], array $product = []): array
+    {
+        return $this->medicineForm(product: [
+            'name' => 'Another name',
+            'drug' => ['generic_names' => ['Paracetamol'], 'brand_name' => 'Panadol', 'strength_value' => '500', 'strength_unit' => 'mg', 'dosage_form' => 'tablet', 'schedule' => 'otc', ...$drug],
+            ...$product,
+        ]);
+    }
+
+    private function creating(array $form): Testable
+    {
+        return Livewire::test(CreateProduct::class)->fillForm($form)->call('create');
+    }
+
+    public function test_a_medicine_already_in_the_catalog_is_refused_with_a_link_to_it(): void
+    {
+        $original = $this->panadol();
+        $products = Product::query()->count();
+
+        $this->creating($this->panadolForm())
+            ->assertHasFormErrors(['drug.strength_value'])
+            ->assertSee('A product with this name, strength and form already exists')
+            ->assertSeeHtml('href="'.ProductResource::getUrl('edit', ['record' => $original]).'"');
+
+        $this->assertSame($products, Product::query()->count());
+    }
+
+    public function test_the_same_medicine_is_found_however_it_was_typed(): void
+    {
+        $this->panadol();
+
+        $this->creating($this->panadolForm(['brand_name' => '  PANADOL ', 'strength_value' => '500.000', 'strength_unit' => 'MG']))
+            ->assertHasFormErrors(['drug.strength_value']);
+    }
+
+    public function test_a_fractional_strength_is_compared_as_stored(): void
+    {
+        $this->creating($this->panadolForm(['strength_value' => '0.1']))->assertHasNoFormErrors();
+
+        $this->creating($this->panadolForm(['strength_value' => '0.1004']))->assertHasFormErrors(['drug.strength_value']);
+    }
+
+    public function test_generics_of_a_combination_match_in_any_order(): void
+    {
+        $this->creating($this->panadolForm(['generic_names' => ['Amoxicillin', 'Clavulanic acid'], 'strength_value' => '625']))->assertHasNoFormErrors();
+
+        $this->creating($this->panadolForm(['generic_names' => ['clavulanic ACID', 'amoxicillin'], 'strength_value' => '625']))
+            ->assertHasFormErrors(['drug.strength_value']);
+    }
+
+    /** @return array<string, array{array<string, mixed>}> */
+    public static function differences(): array
+    {
+        return [
+            'generic' => [['generic_names' => ['Ibuprofen']]],
+            'combination' => [['generic_names' => ['Paracetamol', 'Caffeine']]],
+            'brand' => [['brand_name' => 'Calpol']],
+            'no brand' => [['brand_name' => null]],
+            'strength' => [['strength_value' => '1000']],
+            'unit' => [['strength_unit' => 'mcg']],
+            'dosage form' => [['dosage_form' => 'capsule']],
+            'no strength' => [['strength_value' => null, 'strength_unit' => null]],
+        ];
+    }
+
+    #[DataProvider('differences')]
+    public function test_a_medicine_that_differs_in_one_way_is_saved(array $difference): void
+    {
+        $this->panadol();
+
+        $this->creating($this->panadolForm($difference))->assertHasNoFormErrors();
+
+        $this->assertNotNull(Product::query()->where('name', 'Another name')->first());
+    }
+
+    public function test_another_manufacturers_medicine_is_saved(): void
+    {
+        $gsk = Brand::query()->create(['name' => 'GSK', 'slug' => 'gsk']);
+        $spc = Brand::query()->create(['name' => 'SPC', 'slug' => 'spc']);
+        $this->panadol()->update(['brand_id' => $gsk->getKey()]);
+
+        $this->creating($this->panadolForm())->assertHasNoFormErrors();
+        $this->creating($this->panadolForm(product: ['name' => 'Third', 'brand_id' => $spc->getKey()]))->assertHasNoFormErrors();
+        $this->creating($this->panadolForm(product: ['name' => 'Fourth', 'brand_id' => $gsk->getKey()]))->assertHasFormErrors(['drug.strength_value']);
+    }
+
+    public function test_an_inactive_medicine_still_counts_and_a_deleted_one_does_not(): void
+    {
+        $original = $this->panadol();
+        $original->update(['is_active' => false]);
+
+        $this->creating($this->panadolForm())->assertHasFormErrors(['drug.strength_value']);
+
+        $original->delete();
+
+        $this->creating($this->panadolForm())->assertHasNoFormErrors();
+    }
+
+    public function test_save_and_add_another_is_refused_too(): void
+    {
+        $this->panadol();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm($this->panadolForm())
+            ->call('createAnother')
+            ->assertHasFormErrors(['drug.strength_value']);
+    }
+
+    public function test_a_duplicate_with_its_strength_unchanged_is_refused(): void
+    {
+        $this->duplicating($this->panadol())
+            ->fillForm(['name' => 'Panadol again'])
+            ->call('create')
+            ->assertHasFormErrors(['drug.strength_value']);
+    }
+
+    public function test_editing_is_not_checked(): void
+    {
+        $original = $this->panadol();
+        $this->creating($this->panadolForm(['brand_name' => 'Calpol']))->assertHasNoFormErrors();
+        $other = Product::query()->where('name', 'Another name')->sole();
+
+        // It may keep what it has, and may be made the same as another: only a new product is checked.
+        Livewire::test(EditProduct::class, ['record' => $original->getRouteKey()])->call('save')->assertHasNoFormErrors();
+        Livewire::test(EditProduct::class, ['record' => $other->getRouteKey()])
+            ->fillForm(['drug.brand_name' => 'Panadol'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+    }
+
+    public function test_a_name_in_the_link_is_escaped(): void
+    {
+        $this->panadol()->update(['name' => '<b>Bold</b> & co']);
+
+        $this->creating($this->panadolForm())
+            ->assertSeeHtml('&lt;b&gt;Bold&lt;/b&gt; &amp; co')
+            ->assertDontSeeHtml('<b>Bold</b>');
     }
 
     public function test_a_duplicate_of_another_shops_product_is_not_found(): void
