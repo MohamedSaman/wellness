@@ -14,11 +14,14 @@ import {
     TillAccessError,
     cacheReceiptLogo,
     invoiceNumbersLeft,
+    isDenied,
     outboxCounts,
+    prepareTill,
     pruneSynced,
     receiptLogo,
     registerTill,
     retryRejected,
+    setDenied,
     syncCatalog,
     takeInvoiceNumber,
     tokenFor,
@@ -34,12 +37,28 @@ import {
  * the server just failed to connect. Offline, search and pricing use the
  * local catalog and sales go to the outbox. Every 5 minutes, and as soon as
  * the connection returns, the outbox is uploaded and the catalog refreshed.
+ *
+ * A till the owner approved prepares itself: open and online, with no button,
+ * it takes its token, downloads the catalog and reserves invoice numbers. The
+ * server decides (TillOfflineService): a till it refuses stays refused until
+ * the page loads again, and one whose token it turned down stops selling
+ * offline, its waiting sales kept.
  */
 const CATALOG_EVERY_MS = 5 * 60 * 1000;
 const OUTBOX_EVERY_MS = 20 * 1000;
+/** The server's answer to a till preparing itself, as opposed to a failure worth retrying. */
+const REFUSALS = [401, 403, 404, 409, 419, 422];
 
 const state = reactive({
     enabled: false,
+    /** The owner approved this till, as the page says. The server decides again when asked. */
+    allowed: false,
+    /** The server refused to prepare this till; not asked again until the page loads. */
+    refused: false,
+    /** The server turned this till's token down. Kept in this browser (metaKeys.denied). */
+    denied: false,
+    /** Taking the till's token. */
+    preparing: false,
     tillUuid: null as string | null,
     browserOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
     serverReachable: true,
@@ -80,6 +99,7 @@ export type OfflineCashier = {
 let catalogTimer: ReturnType<typeof setInterval> | undefined;
 let outboxTimer: ReturnType<typeof setInterval> | undefined;
 let syncRun: Promise<void> | null = null;
+let prepareRun: Promise<void> | null = null;
 
 const isOffline = computed(
     () => !state.browserOnline || !state.serverReachable,
@@ -89,9 +109,35 @@ const canSellOffline = computed(
     () =>
         state.enabled &&
         state.registered &&
+        !state.denied &&
         state.catalogReady &&
         state.invoiceNumbersLeft > 0,
 );
+
+/**
+ * What the till shows. `waiting`: approved but not ready when the connection
+ * dropped, so only the connection coming back helps.
+ */
+export type OfflineReadiness =
+    | 'ready'
+    | 'preparing'
+    | 'waiting'
+    | 'unavailable';
+
+const readiness = computed<OfflineReadiness>(() => {
+    if (canSellOffline.value) {
+        return 'ready';
+    }
+
+    if (
+        state.refused ||
+        !(state.allowed || (state.registered && !state.denied))
+    ) {
+        return 'unavailable';
+    }
+
+    return isOffline.value ? 'waiting' : 'preparing';
+});
 
 async function refreshCounts(): Promise<void> {
     if (state.tillUuid === null) {
@@ -134,12 +180,63 @@ async function refreshCounts(): Promise<void> {
 function noteFailure(error: unknown): void {
     if (error instanceof TillAccessError) {
         state.accessError = error.message;
+        state.denied = true;
+
+        if (state.tillUuid !== null) {
+            void setDenied(state.tillUuid, true);
+        }
     } else if (error instanceof ApiError && error.status === 0) {
         state.serverReachable = false;
     }
 
     state.lastSyncError =
         error instanceof Error ? error.message : 'Sync failed.';
+}
+
+/**
+ * An approved till with no working token takes one. A refusal (not approved
+ * any more, the till has another browser) stands until the page loads again;
+ * a failed connection is tried again by the timers.
+ */
+function prepare(): Promise<void> {
+    const tillUuid = state.tillUuid;
+
+    if (
+        !state.enabled ||
+        !state.allowed ||
+        state.refused ||
+        tillUuid === null ||
+        isOffline.value ||
+        (state.registered && !state.denied)
+    ) {
+        return Promise.resolve();
+    }
+
+    prepareRun ??= (async () => {
+        state.preparing = true;
+
+        try {
+            await prepareTill(tillUuid);
+
+            if (state.tillUuid === tillUuid) {
+                state.registered = true;
+                state.denied = false;
+                state.accessError = null;
+            }
+        } catch (error) {
+            if (error instanceof ApiError && REFUSALS.includes(error.status)) {
+                state.refused = true;
+                state.lastSyncError = error.message;
+            } else {
+                noteFailure(error);
+            }
+        } finally {
+            state.preparing = false;
+            prepareRun = null;
+        }
+    })();
+
+    return prepareRun;
 }
 
 /** Upload the outbox, then refresh the catalog and invoice numbers. */
@@ -183,6 +280,11 @@ async function runSync(options: { force?: boolean; catalog?: boolean } = {}) {
             state.serverReachable = true;
             state.accessError = null;
             state.lastSyncError = null;
+
+            if (state.denied) {
+                state.denied = false;
+                await setDenied(tillUuid, false);
+            }
         } catch (error) {
             noteFailure(error);
         } finally {
@@ -195,10 +297,21 @@ async function runSync(options: { force?: boolean; catalog?: boolean } = {}) {
     return syncRun;
 }
 
+/** Takes the till's token if it needs one, then syncs. A token turned down during the sync is replaced at once. */
+async function refresh(options: { catalog?: boolean } = {}): Promise<void> {
+    await prepare();
+    await runSync(options);
+
+    if (state.denied && !state.refused) {
+        await prepare();
+        await runSync(options);
+    }
+}
+
 function onBrowserOnline(): void {
     state.browserOnline = true;
     state.serverReachable = true;
-    void runSync();
+    void refresh();
 }
 
 function onBrowserOffline(): void {
@@ -216,9 +329,12 @@ export function useOfflinePos() {
         enabled: boolean,
         cashier: OfflineCashier,
         locationId: number | null = null,
+        allowed = false,
     ): Promise<void> {
         stop();
         state.enabled = enabled;
+        state.allowed = allowed;
+        state.refused = false;
         state.cashier = {
             canOverridePrice: false,
             canBatchOverride: false,
@@ -228,6 +344,7 @@ export function useOfflinePos() {
         state.expectedLocationId = locationId;
         state.tillUuid = tillUuid;
         state.registered = (await tokenFor(tillUuid)) !== null;
+        state.denied = await isDenied(tillUuid);
         state.accessError = null;
         await refreshCounts();
 
@@ -237,18 +354,19 @@ export function useOfflinePos() {
 
         window.addEventListener('online', onBrowserOnline);
         window.addEventListener('offline', onBrowserOffline);
-        catalogTimer = setInterval(() => void runSync(), CATALOG_EVERY_MS);
+        catalogTimer = setInterval(() => void refresh(), CATALOG_EVERY_MS);
         // Upload waiting sales soon after they are made; while the server is
-        // unreachable this also checks whether the connection is back.
+        // unreachable this also checks whether the connection is back, and
+        // while the till is getting ready it keeps at it.
         outboxTimer = setInterval(() => {
-            if (!state.serverReachable) {
-                void runSync();
+            if (!state.serverReachable || readiness.value === 'preparing') {
+                void refresh();
             } else if (state.pending > 0) {
                 void runSync({ catalog: false });
             }
         }, OUTBOX_EVERY_MS);
 
-        void runSync();
+        void refresh();
     }
 
     function stop(): void {
@@ -258,11 +376,16 @@ export function useOfflinePos() {
         window.removeEventListener('offline', onBrowserOffline);
     }
 
-    /** The "Sync now" button: also retries sales the server refused before. */
-    function syncNow(): Promise<void> {
+    /** The "Refresh now" button: also retries sales the server refused before. */
+    async function syncNow(): Promise<void> {
         state.serverReachable = true;
+        await prepare();
+        await runSync({ force: true });
 
-        return runSync({ force: true }) ?? Promise.resolve();
+        if (state.denied && !state.refused) {
+            await prepare();
+            await runSync({ force: true });
+        }
     }
 
     async function register(): Promise<void> {
@@ -272,6 +395,9 @@ export function useOfflinePos() {
 
         await registerTill(state.tillUuid);
         state.registered = true;
+        state.allowed = true;
+        state.refused = false;
+        state.denied = false;
         state.accessError = null;
         await runSync();
     }
@@ -282,7 +408,7 @@ export function useOfflinePos() {
         state.serverReachable = reachable;
 
         if (reachable && wasOffline) {
-            void runSync();
+            void refresh();
         }
     }
 
@@ -405,6 +531,7 @@ export function useOfflinePos() {
         state,
         isOffline,
         canSellOffline,
+        readiness,
         start,
         stop,
         syncNow,

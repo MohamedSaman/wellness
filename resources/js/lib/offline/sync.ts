@@ -114,19 +114,20 @@ async function tillRequest<T>(
 }
 
 /**
- * Owner only: give this browser a device token for the till. A fresh start
+ * The device token for this browser: the owner registering the till
+ * (Set up offline sales) or an approved till preparing itself. A fresh start
  * for its offline invoice numbers too: the ones reserved before are dropped
  * (only a gap in the numbering), so a till registered again after a go-live
  * reset, which deletes its blocks on the server, never reuses one.
  */
-export async function registerTill(tillUuid: string): Promise<void> {
-    const { token } = await postJson<{ token: string }>(
-        TillController.register.url(),
-        { device: tillUuid },
-    );
+async function requestToken(url: string, tillUuid: string): Promise<void> {
+    const { token } = await postJson<{ token: string }>(url, {
+        device: tillUuid,
+    });
 
     await db.transaction('rw', db.meta, async () => {
         await setMeta(metaKeys.token(tillUuid), token);
+        await db.meta.delete(metaKeys.denied(tillUuid));
 
         const numbers = await getMeta<InvoiceNumbers>(metaKeys.invoiceNumbers);
 
@@ -134,6 +135,49 @@ export async function registerTill(tillUuid: string): Promise<void> {
             await db.meta.delete(metaKeys.invoiceNumbers);
         }
     });
+}
+
+/** Owner only: approves the till and makes this browser the till. */
+export function registerTill(tillUuid: string): Promise<void> {
+    return requestToken(TillController.register.url(), tillUuid);
+}
+
+/**
+ * An approved till taking its token, with whoever is signed in. One tab at a
+ * time, and not when another tab just did: the till has one token.
+ */
+export async function prepareTill(tillUuid: string): Promise<void> {
+    const run = async () => {
+        if (
+            (await tokenFor(tillUuid)) !== null &&
+            !(await isDenied(tillUuid))
+        ) {
+            return;
+        }
+
+        await requestToken(TillController.prepare.url(), tillUuid);
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+        await navigator.locks.request('pos-till-prepare', run);
+    } else {
+        await run();
+    }
+}
+
+export async function isDenied(tillUuid: string): Promise<boolean> {
+    return (await getMeta<boolean>(metaKeys.denied(tillUuid))) === true;
+}
+
+export async function setDenied(
+    tillUuid: string,
+    denied: boolean,
+): Promise<void> {
+    if (denied) {
+        await setMeta(metaKeys.denied(tillUuid), true);
+    } else {
+        await db.meta.delete(metaKeys.denied(tillUuid));
+    }
 }
 
 export async function forgetTill(tillUuid: string): Promise<void> {
@@ -266,9 +310,7 @@ export async function cacheReceiptLogo(): Promise<void> {
 }
 
 export async function receiptLogo(): Promise<string | null> {
-    return (
-        (await getMeta<ReceiptLogo>(metaKeys.receiptLogo))?.dataUrl ?? null
-    );
+    return (await getMeta<ReceiptLogo>(metaKeys.receiptLogo))?.dataUrl ?? null;
 }
 
 function numbersLeft(numbers: InvoiceNumbers | null): number {

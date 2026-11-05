@@ -64,7 +64,7 @@ const props = withDefaults(
         shop: PosShop;
         cashier: PosCashier;
         features: PosFeatures;
-        offline: { enabled: boolean; canRegister: boolean };
+        offline: { enabled: boolean; canRegister: boolean; allowed: boolean };
         tills: PosTillOption[];
         till: PosTill | null;
         shift: PosShift | null;
@@ -532,8 +532,13 @@ watch(
 );
 
 watch(
-    () => [props.till?.uuid, props.till?.location?.id] as const,
-    ([tillUuid, locationId]) => {
+    () =>
+        [
+            props.till?.uuid,
+            props.till?.location?.id,
+            props.offline.allowed,
+        ] as const,
+    ([tillUuid, locationId, allowed]) => {
         if (tillUuid) {
             void offlinePos.start(
                 tillUuid,
@@ -547,6 +552,7 @@ watch(
                     canOpdBill: props.cashier.canOpdBill ?? false,
                 },
                 locationId ?? null,
+                allowed,
             );
         } else {
             offlinePos.stop();
