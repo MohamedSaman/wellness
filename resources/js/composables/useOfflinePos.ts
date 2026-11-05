@@ -12,9 +12,11 @@ import { unitsOf } from '@/lib/offline/pricing';
 import { forgetSearchCache } from '@/lib/offline/search';
 import {
     TillAccessError,
+    cacheReceiptLogo,
     invoiceNumbersLeft,
     outboxCounts,
     pruneSynced,
+    receiptLogo,
     registerTill,
     retryRejected,
     syncCatalog,
@@ -175,6 +177,7 @@ async function runSync(options: { force?: boolean; catalog?: boolean } = {}) {
 
                 await topUpInvoiceNumbers(tillUuid);
                 await pruneSynced();
+                await cacheReceiptLogo().catch(() => undefined);
             }
 
             state.serverReachable = true;
@@ -411,6 +414,7 @@ export function useOfflinePos() {
         till,
         recordSale,
         findSale,
+        receiptLogo,
         unsyncedSaleCount,
     };
 }

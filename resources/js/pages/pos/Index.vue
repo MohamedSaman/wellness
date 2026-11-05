@@ -43,7 +43,8 @@ import { usePosCart } from '@/composables/usePosCart';
 import { ApiError, postJson } from '@/lib/http';
 import type { OfflineReceipt, OfflineShop } from '@/lib/offline/db';
 import { encodeEscPos } from '@/lib/receipt/escpos';
-import { columns, saleLayout } from '@/lib/receipt/layout';
+import { columns, forPrinter, saleLayout } from '@/lib/receipt/layout';
+import { loadReceiptFont, printReceiptPage } from '@/lib/receipt/printPage';
 import { receiptPrinter } from '@/lib/receiptPrinter';
 import { logout } from '@/routes';
 import type {
@@ -81,6 +82,8 @@ const offlinePos = useOfflinePos();
 const offlineReceipt = ref<{
     shop: OfflineShop;
     sale: OfflineReceipt;
+    /** The logo as this till keeps it for printing without the server. */
+    logoUrl: string | null;
 } | null>(null);
 
 /**
@@ -96,13 +99,19 @@ const offlineThermal = computed(() => {
     }
 
     const paperWidth = receipt.shop.receipt?.paperWidth === 58 ? 58 : 80;
+    const largePrint = receipt.shop.receipt?.largePrint ?? false;
 
     return {
         paperWidth,
-        columns: columns(paperWidth),
+        largePrint,
+        columns: columns(paperWidth, largePrint),
         lines: saleLayout(receipt.shop, receipt.sale),
+        // ESC/POS is laid out for the printer's own font.
+        escposLines: saleLayout(forPrinter(receipt.shop), receipt.sale),
     };
 });
+
+const offlinePrint = ref<HTMLElement | null>(null);
 
 const search = ref<InstanceType<typeof ItemSearch> | null>(null);
 const totals = ref<InstanceType<typeof TotalsPanel> | null>(null);
@@ -351,6 +360,7 @@ async function completeOffline(): Promise<void> {
     // The till and its location for the receipt's header (not kept in the outbox).
     offlineReceipt.value = {
         shop,
+        logoUrl: await offlinePos.receiptLogo(),
         sale: {
             ...sale.receipt,
             till: props.till
@@ -372,8 +382,29 @@ async function completeOffline(): Promise<void> {
     paymentOpen.value = false;
 }
 
+/** A pharmacy's offline receipt prints as the online one does (lib/receipt/printPage.ts). */
+async function printOfflineThermal(): Promise<void> {
+    await nextTick();
+
+    const element = offlinePrint.value?.querySelector<HTMLElement>('.receipt');
+
+    if (element && offlineThermal.value && offlineReceipt.value) {
+        await printReceiptPage({
+            receipt: element,
+            paperWidth: offlineThermal.value.paperWidth,
+            title: `Receipt ${offlineReceipt.value.sale.invoiceNo}`,
+        });
+    }
+}
+
 function printOfflineReceipt(): void {
     const browserPrint = () => {
+        if (offlineThermal.value) {
+            void printOfflineThermal();
+
+            return;
+        }
+
         document.body.classList.add('printing-receipt');
         window.addEventListener(
             'afterprint',
@@ -385,7 +416,7 @@ function printOfflineReceipt(): void {
 
     void receiptPrinter().print({
         escpos: offlineThermal.value
-            ? encodeEscPos(offlineThermal.value.lines)
+            ? encodeEscPos(offlineThermal.value.escposLines)
             : null,
         browserPrint,
     });
@@ -528,6 +559,11 @@ onMounted(() => {
     window.addEventListener('keydown', onKeydown);
     document.addEventListener('focusout', refocusIfIdle);
 
+    // At hand when the connection drops, before any receipt has printed.
+    if (pharmacyOn.value) {
+        void loadReceiptFont();
+    }
+
     // The app shell (this page, scripts, styles, fonts) is cached so /pos opens without internet.
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
         void navigator.serviceWorker
@@ -546,20 +582,31 @@ onBeforeUnmount(() => {
 <template>
     <Head title="Checkout" />
 
-    <div class="flex h-dvh flex-col bg-background text-foreground">
+    <!-- Directly under body, so printing can hide everything else (dialogs included). -->
+    <Teleport to="body">
         <div
-            v-if="offlineReceipt"
-            class="pos-print-receipt hidden print:block"
+            v-if="offlineReceipt && offlineThermal"
+            ref="offlinePrint"
+            class="pos-print-thermal"
             aria-hidden="true"
         >
             <ThermalReceipt
-                v-if="offlineThermal"
                 :lines="offlineThermal.lines"
                 :columns="offlineThermal.columns"
                 :paper-width="offlineThermal.paperWidth"
+                :logo-url="offlineReceipt.logoUrl"
+                :large-print="offlineThermal.largePrint"
             />
+        </div>
+    </Teleport>
+
+    <div class="flex h-dvh flex-col bg-background text-foreground">
+        <div
+            v-if="offlineReceipt && !offlineThermal"
+            class="pos-print-receipt hidden print:block"
+            aria-hidden="true"
+        >
             <ReceiptView
-                v-else
                 :shop="offlineReceipt.shop"
                 :sale="offlineReceipt.sale"
             />
@@ -834,7 +881,35 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+/* Laid out off-screen, so printing can measure it. */
+.pos-print-thermal {
+    position: fixed;
+    top: 0;
+    left: -200mm;
+}
+
 @media print {
+    html:has(body.printing-thermal),
+    body.printing-thermal {
+        height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        background: #fff !important;
+    }
+
+    body.printing-thermal > :not(.pos-print-thermal) {
+        display: none !important;
+    }
+
+    body.printing-thermal .pos-print-thermal {
+        position: static;
+    }
+
+    body.printing-thermal .receipt {
+        margin: 0 !important;
+    }
+
     body.printing-receipt * {
         visibility: hidden;
     }

@@ -278,5 +278,7 @@ export const metaKeys = {
     lastFullSync: 'lastFullSync',
     lastCatalogSync: 'lastCatalogSync',
     invoiceNumbers: 'invoiceNumbers',
+    /** The shop's logo in black and white: {source, dataUrl}, for receipts printed offline. */
+    receiptLogo: 'receiptLogo',
     token: (tillUuid: string) => `token:${tillUuid}`,
 } as const;

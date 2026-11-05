@@ -3,6 +3,7 @@ import InvoiceBlockController from '@/actions/App/Http/Controllers/Pos/Sync/Invo
 import SaleSyncController from '@/actions/App/Http/Controllers/Pos/Sync/SaleSyncController';
 import TillController from '@/actions/App/Http/Controllers/Pos/TillController';
 import { ApiError, postJson, queryString } from '@/lib/http';
+import { blackLogo } from '@/lib/receipt/logo';
 import type { VehicleMake } from '@/types/pos';
 import { db, getMeta, metaKeys, setMeta, withBarcodes } from './db';
 import type {
@@ -46,6 +47,8 @@ type SyncResult = {
     needs_review: boolean;
     message: string | null;
 };
+
+type ReceiptLogo = { source: string; dataUrl: string };
 
 export async function tokenFor(tillUuid: string): Promise<string | null> {
     return getMeta<string>(metaKeys.token(tillUuid));
@@ -231,6 +234,41 @@ export async function syncCatalog(
     forgetSearchCache();
 
     return first.till.location_id ?? null;
+}
+
+/**
+ * Keeps the shop's logo on this till, in black and white, for offline
+ * receipts (a pharmacy's): the page that prints it has no server to ask, and
+ * the service worker only holds a logo some receipt already loaded. Read
+ * again only when the logo changes. Failing keeps what is there.
+ */
+export async function cacheReceiptLogo(): Promise<void> {
+    const shop = await getMeta<OfflineShop>(metaKeys.shop);
+    const source = shop?.pharmacy ? shop.logoUrl : null;
+
+    if (source === null || source === undefined) {
+        await db.meta.delete(metaKeys.receiptLogo);
+
+        return;
+    }
+
+    const saved = await getMeta<ReceiptLogo>(metaKeys.receiptLogo);
+
+    if (saved?.source === source) {
+        return;
+    }
+
+    const dataUrl = await blackLogo(source);
+
+    if (dataUrl !== null) {
+        await setMeta(metaKeys.receiptLogo, { source, dataUrl });
+    }
+}
+
+export async function receiptLogo(): Promise<string | null> {
+    return (
+        (await getMeta<ReceiptLogo>(metaKeys.receiptLogo))?.dataUrl ?? null
+    );
 }
 
 function numbersLeft(numbers: InvoiceNumbers | null): number {
