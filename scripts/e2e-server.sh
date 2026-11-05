@@ -34,17 +34,8 @@ rm -f "$database"
 touch "$database"
 php artisan migrate:fresh --seed --force --no-interaction > /dev/null
 
-# A pale logo on the demo clinic, so offline-print.spec.ts sees it turn solid black.
+# offline-print.spec.ts gives the clinic a logo for its test: it must be reachable.
 php artisan storage:link > /dev/null 2>&1 || true
-php artisan tinker --execute='
-    $image = imagecreatetruecolor(240, 120);
-    imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
-    imagefilledellipse($image, 120, 60, 200, 100, imagecolorallocate($image, 150, 210, 200));
-    ob_start();
-    imagepng($image);
-    Illuminate\Support\Facades\Storage::disk("public")->put("logos/e2e-logo.png", ob_get_clean());
-    App\Models\Shop::query()->update(["logo_path" => "logos/e2e-logo.png"]);
-' > /dev/null
 
 # --no-reload passes the variables above through to the PHP server.
 exec php artisan serve --no-reload --host=127.0.0.1 --port="$port"

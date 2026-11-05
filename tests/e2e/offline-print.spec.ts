@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import {
@@ -15,13 +16,57 @@ import {
  * sale printed offline by the till and online by the server is the same
  * paper. Printed to PDF with Chrome's header and footer switched on, as a
  * till with the wrong print settings would, and read back with poppler-utils.
- * Chromium only: Playwright has no PDF in Firefox.
+ * Chromium only: Playwright has no PDF in Firefox. The clinic has a pale
+ * logo for this test, which must come out solid black.
  */
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
+test.beforeEach(({ browserName }) => {
+    test.skip(browserName !== 'chromium', 'Playwright prints PDF in Chromium');
+    shopLogo(true);
+});
+
+test.afterEach(() => shopLogo(false));
+
 const MM_PER_POINT = 25.4 / 72;
 const PRINTABLE_PX = (72 / 25.4) * 96;
+
+/**
+ * Gives the demo clinic a pale logo, or takes it away, in the tests' own
+ * database (scripts/e2e-server.sh). Only for this spec: login-page.spec.ts
+ * expects a clinic with no logo.
+ */
+function shopLogo(on: boolean): void {
+    const code = on
+        ? `
+            $image = imagecreatetruecolor(240, 120);
+            imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
+            imagefilledellipse($image, 120, 60, 200, 100, imagecolorallocate($image, 150, 210, 200));
+            ob_start();
+            imagepng($image);
+            Illuminate\\Support\\Facades\\Storage::disk("public")->put("logos/e2e-logo.png", ob_get_clean());
+            App\\Models\\Shop::query()->update(["logo_path" => "logos/e2e-logo.png"]);
+        `
+        : `
+            Illuminate\\Support\\Facades\\Storage::disk("public")->delete("logos/e2e-logo.png");
+            App\\Models\\Shop::query()->update(["logo_path" => null]);
+        `;
+
+    execFileSync('php', ['artisan', 'tinker', '--execute', code], {
+        stdio: 'ignore',
+        env: {
+            ...process.env,
+            APP_ENV: 'local',
+            POS_PROFILE: 'pharmacy',
+            DB_CONNECTION: 'sqlite',
+            DB_DATABASE: resolve('database/e2e.sqlite'),
+            DB_URL: '',
+            CACHE_STORE: 'database',
+            SESSION_DRIVER: 'database',
+        },
+    });
+}
 
 type PrintLog = { printCalls: number; printTitle: string };
 
@@ -131,10 +176,7 @@ async function look(page: Page) {
 test('a receipt printed offline is the same paper as the one printed online', async ({
     page,
     context,
-    browserName,
 }, info) => {
-    test.skip(browserName !== 'chromium', 'Playwright prints PDF in Chromium');
-
     await stubPrint(page);
     await resetTill(context, 'T1');
     await page.goto('/pos');
