@@ -66,7 +66,7 @@ class AdminSaleReceiptsTest extends BatchTestCase
         $this->get(route('pos.receipt.void', $sale))->assertInertia(fn (Assert $page) => $page
             ->where('title', 'Void T1-000001')
             ->where('sale', null)
-            ->where('thermal.lines.4.text', '                  *** VOID ***'));
+            ->where('thermal.lines.4.text', '            *** VOID ***'));
 
         Livewire::test(ViewSale::class, ['record' => $sale->getRouteKey()])
             ->assertActionHidden('reprintRefund')
@@ -78,8 +78,8 @@ class AdminSaleReceiptsTest extends BatchTestCase
 
         $this->get(route('pos.receipt.reprinted', ['sale' => $sale, 'reprint' => $entry->getKey()]))->assertInertia(fn (Assert $page) => $page
             ->where('title', 'Reprint void T1-000001')
-            ->where('thermal.lines.0.text', '                *** REPRINT ***')
-            ->where('thermal.lines.5.text', '                  *** VOID ***'));
+            ->where('thermal.lines.0.text', '          *** REPRINT ***')
+            ->where('thermal.lines.5.text', '            *** VOID ***'));
     }
 
     public function test_a_sale_that_was_not_voided_has_no_void_slip(): void
@@ -108,8 +108,8 @@ class AdminSaleReceiptsTest extends BatchTestCase
 
         $this->get(route('pos.receipt.reprinted', ['sale' => $sale, 'reprint' => $entry->getKey()]))->assertInertia(fn (Assert $page) => $page
             ->where('title', 'Reprint refund T1-000001-R1')
-            ->where('thermal.lines.0.text', '                *** REPRINT ***')
-            ->where('thermal.lines', fn ($lines): bool => collect($lines)->pluck('text')->contains('Refund no.                          T1-000001-R1')));
+            ->where('thermal.lines.0.text', '          *** REPRINT ***')
+            ->where('thermal.lines', fn ($lines): bool => collect($lines)->pluck('text')->contains('Refund no.              T1-000001-R1')));
     }
 
     public function test_the_a4_invoice_follows_the_receipt_settings(): void

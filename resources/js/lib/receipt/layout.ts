@@ -1,6 +1,8 @@
 /**
  * The thermal receipt as lines of fixed-width text: 48 characters on 80 mm
- * paper, 32 on 58 mm (docs/PHARMACY.md §9, branch 9).
+ * paper, 32 on 58 mm (docs/PHARMACY.md §9, branch 9). In large print (a
+ * pharmacy) 36 on 80 mm, with the grand total double height; ESC/POS is laid
+ * out for the printer's own font, so never large print (forPrinter()).
  *
  * A mirror of saleLayout() in app/Services/Receipts/ReceiptLayout.php
  * (ReceiptLayout::sale()), for the receipts the till prints itself (sales
@@ -18,6 +20,8 @@ export type PrintOptions = {
     showBatch: boolean;
     showExpiry: boolean;
     showPrescriber: boolean;
+    /** Sent for a pharmacy only (ReceiptService::printOptions()). */
+    largePrint?: boolean;
 };
 
 export type LayoutShop = {
@@ -84,8 +88,25 @@ export type LayoutSale = {
 
 export const COLUMNS: Record<number, number> = { 80: 48, 58: 32 };
 
-export function columns(paperWidth: number): number {
-    return COLUMNS[paperWidth] ?? COLUMNS[80];
+/** 2 mm a character (12.6 px) across the 72 mm of 80 mm paper. 58 mm paper keeps its columns. */
+export const LARGE_COLUMNS: Record<number, number> = { 80: 36 };
+
+export function columns(paperWidth: number, largePrint = false): number {
+    const paper = paperWidth === 58 ? 58 : 80;
+
+    return (largePrint ? LARGE_COLUMNS[paper] : null) ?? COLUMNS[paper];
+}
+
+/** The shop as ESC/POS prints it: the printer's own font, so never large print. */
+export function forPrinter<Shop extends LayoutShop>(shop: Shop): Shop {
+    if (shop.receipt === undefined) {
+        return shop;
+    }
+
+    const options = { ...shop.receipt };
+    delete options.largePrint;
+
+    return { ...shop, receipt: options };
 }
 
 /** "2026-10-21 14:05" as printed: "21/10/2026 14:05". */
@@ -147,7 +168,8 @@ export function itemName(item: LayoutItem): string {
 /** A sale receipt: ReceiptLayout::sale(). */
 export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
     const options = shop.receipt;
-    const width = columns(options?.paperWidth ?? 80);
+    const largePrint = options?.largePrint ?? false;
+    const width = columns(options?.paperWidth ?? 80, largePrint);
     const showBatch = options?.showBatch ?? true;
     const showExpiry = options?.showExpiry ?? true;
     const showPrescriber = options?.showPrescriber ?? false;
@@ -216,6 +238,7 @@ export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
         hang = 0,
         bold = false,
         isAmount = true,
+        tall = false,
     ): void => {
         const left = ascii(leftText);
         const right = ascii(rightText);
@@ -235,7 +258,7 @@ export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
         const wrapped = wrap(left, width, indent, indent + hang);
 
         if (right === '') {
-            wrapped.forEach((line) => push(line, bold));
+            wrapped.forEach((line) => push(line, bold, tall));
 
             return;
         }
@@ -259,8 +282,8 @@ export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
             }
         }
 
-        wrapped.forEach((line) => push(line, bold));
-        push(last.padEnd(width - right.length) + right, bold);
+        wrapped.forEach((line) => push(line, bold, tall));
+        push(last.padEnd(width - right.length) + right, bold, tall);
     };
 
     const text = (value: string, indent = 0, hang = 0, bold = false) =>
@@ -477,7 +500,15 @@ export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
         );
     }
 
-    row(`TOTAL ${shop.currency}`, money(sale.grandTotal), 0, 0, true);
+    row(
+        `TOTAL ${shop.currency}`,
+        money(sale.grandTotal),
+        0,
+        0,
+        true,
+        true,
+        largePrint,
+    );
 
     if (taxOn && sale.items.some((item) => item.taxExempt)) {
         text('E = tax exempt');

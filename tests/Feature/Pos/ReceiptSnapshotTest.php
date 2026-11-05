@@ -63,9 +63,9 @@ class ReceiptSnapshotTest extends BatchTestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('pos/Receipt')
                 ->where('title', 'Reprint T1-000001')
-                ->where('thermal.lines.0.text', '                *** REPRINT ***')
-                ->where('thermal.lines', fn ($lines): bool => collect($lines)->pluck('text')->contains('            REPRINT 18/10/2026 12:00')
-                    && collect($lines)->pluck('text')->contains('               by Clinic Cashier')));
+                ->where('thermal.lines.0.text', '          *** REPRINT ***')
+                ->where('thermal.lines', fn ($lines): bool => collect($lines)->pluck('text')->contains('      REPRINT 18/10/2026 12:00')
+                    && collect($lines)->pluck('text')->contains('         by Clinic Cashier')));
 
         // Only whoever reprinted it may open it.
         $this->actingAs($this->owner)

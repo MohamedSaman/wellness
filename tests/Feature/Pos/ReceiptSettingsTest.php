@@ -34,7 +34,7 @@ class ReceiptSettingsTest extends BatchTestCase
     public function test_a_pharmacy_starts_with_the_batch_and_prescriber_printed_and_the_expiry_hidden(): void
     {
         $this->assertSame(
-            ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true],
+            ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true],
             ReceiptService::printOptions($this->shop),
         );
         $this->assertSame('names', $this->shop->setting('opd_receipt_medicines'));
@@ -68,7 +68,7 @@ class ReceiptSettingsTest extends BatchTestCase
             ->assertNotified('Receipt settings saved');
 
         $shop = $this->shop->fresh();
-        $this->assertSame(['paperWidth' => 58, 'showBatch' => false, 'showExpiry' => true, 'showPrescriber' => false], ReceiptService::printOptions($shop));
+        $this->assertSame(['paperWidth' => 58, 'showBatch' => false, 'showExpiry' => true, 'showPrescriber' => false, 'largePrint' => true], ReceiptService::printOptions($shop));
         $this->assertSame('totals', $shop->setting('opd_receipt_medicines'));
         $this->assertSame("Reg. no. PH 1234\nOpen 8 am to 8 pm", $shop->receipt_header);
         $this->assertSame('Thank you', $shop->receipt_footer);
@@ -97,7 +97,7 @@ class ReceiptSettingsTest extends BatchTestCase
             ->assertDontSee('Exp 03/2027')
             ->assertSee('Prescriber: Dr. S. Perera')
             ->assertSee('Paracetamol Syrup 120 mg/5 ml')
-            ->assertSee('width: calc(48ch', false)
+            ->assertSee('width: calc(36ch', false)
             ->fillForm(['receipt_show_expiry' => true, 'receipt_paper_width' => 58, 'opd_receipt_medicines' => 'totals', 'receipt_footer' => 'Preview footer'])
             ->assertSee('Batch PN2611 Exp 03/2027')
             ->assertSee('width: calc(32ch', false)
@@ -118,7 +118,7 @@ class ReceiptSettingsTest extends BatchTestCase
         $this->setShopSetting('receipt_paper_width', 58);
 
         $this->assertSame(
-            ['paperWidth' => 58, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true],
+            ['paperWidth' => 58, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true],
             app(CatalogSyncService::class)->shopSettings($this->shop->fresh())['receipt'],
         );
     }

@@ -56,6 +56,9 @@ class ReceiptLayoutParityTest extends BatchTestCase
                 $shops[] = $shop;
             }
         }
+        foreach ([80, 58] as $paperWidth) {
+            $shops[] = [...$receipts->shop(), 'receipt' => ['paperWidth' => $paperWidth, 'showBatch' => true, 'showExpiry' => true, 'showPrescriber' => true, 'largePrint' => true]];
+        }
         $shops[] = [...$receipts->shop(), 'name' => 'Doctor’s Clinic & Pharmacy Ltd. of Kandy Central', 'header' => "Reg. no. PH 1234\n\nSuperlongunbrokenwordthatcannotfitonalineatall", 'footer' => null, 'taxNumber' => 'VAT-99', 'decimals' => 0, 'currency' => 'JPY'];
         $shops[] = [...$receipts->shop(), 'receipt' => null, 'phone' => null, 'address' => null];
 
@@ -73,7 +76,8 @@ class ReceiptLayoutParityTest extends BatchTestCase
 
             $this->assertSame(array_column($server, 'text'), array_column($till[$n]['lines'], 'text'), "Lines differ: {$name}");
             $this->assertSame($server, $till[$n]['lines'], "Styles differ: {$name}");
-            $this->assertSame(base64_encode(EscPos::encode($server)), $till[$n]['escpos'], "ESC/POS differs: {$name}");
+            $printer = (new ReceiptLayout(ReceiptLayout::forPrinter($cases[$name]['shop'])))->sale($cases[$name]['sale']);
+            $this->assertSame(base64_encode(EscPos::encode($printer)), $till[$n]['escpos'], "ESC/POS differs: {$name}");
         }
     }
 

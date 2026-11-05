@@ -544,14 +544,14 @@ class ReceiptLayoutTest extends BatchTestCase
         $this->actingAs($this->cashier)->get(route('pos.receipt', $sale))->assertInertia(fn (Assert $page) => $page
             ->component('pos/Receipt')
             ->where('thermal.paperWidth', 80)
-            ->where('thermal.columns', 48)
-            ->where('thermal.lines.0.text', '                  DEMO CLINIC')
+            ->where('thermal.columns', 36)
+            ->where('thermal.lines.0.text', '            DEMO CLINIC')
             ->where('thermal.lines.0.bold', true)
             ->where('thermal.lines.0.tall', true)
             ->where('invoiceUrl', route('sales.invoice', $sale))
             ->where('sale.items.0.strength', '500 mg')
             ->where('sale.till.location', 'General Pharmacy')
-            ->where('shop.receipt', ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true]));
+            ->where('shop.receipt', ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true]));
 
         $this->setShopSetting('receipt_paper_width', 58);
 

@@ -45,6 +45,18 @@ class RetailReceiptsTest extends AdminTestCase
             ->where('shop.receipt', ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => true, 'showPrescriber' => false]));
     }
 
+    public function test_retail_slips_stay_at_48_columns_with_no_large_print(): void
+    {
+        $sale = $this->sale();
+        app(CheckoutService::class)->void($sale, $this->owner, 'Rang up twice');
+        $receipts = app(ReceiptService::class);
+        $thermal = $receipts->thermal('void', $receipts->voidSlip($sale->fresh() ?? $sale));
+
+        $this->assertSame(48, $thermal['columns']);
+        $this->assertFalse($thermal['largePrint']);
+        $this->assertSame([], array_filter($thermal['lines'], fn (array $line): bool => $line['tall'] && str_starts_with($line['text'], 'TO GIVE BACK')));
+    }
+
     public function test_retail_receipt_settings_start_as_retail_always_was_and_have_no_pharmacy_choices(): void
     {
         $this->assertSame(['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => true, 'showPrescriber' => false], ReceiptService::printOptions($this->shop));
