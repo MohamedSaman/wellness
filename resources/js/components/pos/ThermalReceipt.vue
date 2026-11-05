@@ -28,7 +28,11 @@ const style = computed(() => ({
     // A monospaced character is 0.6 em wide. At 48 columns that is Font A of an
     // ESC/POS printer: 1.5 mm a character.
     fontSize: `${Math.round((printableWidth.value / props.columns / 0.6) * 1000) / 1000}mm`,
-    width: `${props.columns}ch`,
+    // In large print, millimetres: `ch` rounds to whole pixels where the screen
+    // hints text, which would put the box outside what the head reaches.
+    width: props.largePrint
+        ? `${printableWidth.value}mm`
+        : `${props.columns}ch`,
 }));
 </script>
 
@@ -97,6 +101,8 @@ const style = computed(() => ({
     font-family:
         'POS Receipt Mono', 'Liberation Mono', 'Courier New', monospace;
     font-synthesis: none;
+    /* Exact character widths, on any screen: the printer gets what was measured. */
+    text-rendering: geometricPrecision;
 }
 
 /* The image has the head's own dots: 288 x 160 at most, 8 dots a mm. */

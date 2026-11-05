@@ -3,7 +3,10 @@
 // writes [{lines, escpos}] as JSON. Run with node --experimental-strip-types.
 import { readFileSync } from 'node:fs';
 import { encodeEscPos } from '../../resources/js/lib/receipt/escpos.ts';
-import { forPrinter, saleLayout } from '../../resources/js/lib/receipt/layout.ts';
+import {
+    forPrinter,
+    saleLayout,
+} from '../../resources/js/lib/receipt/layout.ts';
 
 const input = JSON.parse(readFileSync(0, 'utf8'));
 const output = input.cases.map(({ shop, sale }) => {
