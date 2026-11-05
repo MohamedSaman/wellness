@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Products\Pages;
 
 use App\Exceptions\PosException;
+use App\Filament\Resources\Products\DuplicateProductAction;
 use App\Filament\Resources\Products\Pages\Concerns\ProductFormPage;
 use App\Filament\Resources\Products\ProductFormData;
 use App\Filament\Resources\Products\ProductResource;
@@ -33,6 +34,7 @@ class EditProduct extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            DuplicateProductAction::make(),
             LabelActions::productAction(),
             Action::make('markReviewed')
                 ->label('Mark as reviewed')

@@ -7,20 +7,25 @@ use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Filament\Resources\Products\Pages\CreateProduct;
 use App\Filament\Resources\Products\Pages\EditProduct;
+use App\Filament\Resources\Products\Pages\ListProducts;
 use App\Filament\Resources\Products\ProductFormData;
+use App\Filament\Resources\Products\ProductResource;
 use App\Models\AttributeOption;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\Product;
 use App\Models\ProductAttribute;
+use App\Models\Shop;
 use App\Models\StockBatch;
 use App\Models\StockLevel;
 use App\Models\StockMovement;
 use App\Services\Data\BatchInput;
 use App\Services\Data\DrugData;
 use App\Services\ProductCatalogService;
+use App\Support\CurrentShop;
 use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
 /**
@@ -355,5 +360,174 @@ class AdminProductFormTest extends BatchTestCase
         Livewire::test(EditProduct::class, ['record' => $this->saved()->getRouteKey()])
             ->assertSee('Save')
             ->assertDontSee('Save & add another');
+    }
+
+    private function panadol(): Product
+    {
+        $product = app(ProductCatalogService::class)->create(
+            ['name' => 'Panadol 500 mg Tablets', 'unit' => 'Tablet', 'whole_units_only' => true],
+            [[
+                'sku' => 'PAN-500',
+                'barcode' => '4790000000999',
+                'price' => 2_000,
+                'cost' => 1_000,
+                'reorder_level' => 7,
+                'bin_location' => 'A3',
+                'opening_stock' => 40,
+                'opening_batch' => new BatchInput('PN1', '12/2030'),
+                'allow_unit_sale' => false,
+                'packs' => [
+                    ['name' => 'Strip', 'factor' => 10, 'price' => 18_000, 'barcode' => '4790000000998'],
+                    ['name' => 'Old box', 'factor' => 50, 'price' => 90_000, 'is_active' => false],
+                ],
+            ]],
+            user: $this->owner,
+            drug: new DrugData(['Paracetamol'], DosageForm::Tablet, DrugSchedule::Otc, brandName: 'Panadol', strengthValue: 500, strengthUnit: 'mg', registrationNo: 'NMRA-1'),
+        );
+
+        return $product->refresh();
+    }
+
+    private function duplicating(Product $product): Testable
+    {
+        return Livewire::withQueryParams(['duplicate' => $product->getRouteKey()])->test(CreateProduct::class);
+    }
+
+    public function test_a_duplicate_starts_from_everything_but_what_belongs_to_the_original(): void
+    {
+        $component = $this->duplicating($this->panadol())
+            ->assertFormSet([
+                'name' => 'Panadol 500 mg Tablets',
+                'unit' => 'Tablet',
+                'drug.brand_name' => 'Panadol',
+                'drug.strength_value' => '500',
+                'drug.registration_no' => 'NMRA-1',
+            ]);
+
+        $row = array_values($component->get('data.variants'))[0];
+
+        $this->assertNull($row['id']);
+        $this->assertNull($row['sku']);
+        $this->assertNull($row['barcode']);
+        $this->assertNull($row['cost']);
+        $this->assertNull($row['average_cost'] ?? null);
+        $this->assertNull($row['last_cost'] ?? null);
+        $this->assertEquals(0, $row['opening_stock']);
+        $this->assertNull($row['opening_batch_no']);
+        $this->assertNull($row['opening_expiry']);
+
+        $this->assertEquals(20, $row['price']);
+        $this->assertEquals(7, $row['reorder_level']);
+        $this->assertSame('A3', $row['bin_location']);
+        $this->assertFalse($row['allow_unit_sale']);
+
+        // The discontinued box stays behind: it would come back on sale.
+        $packs = array_values($row['packs']);
+        $this->assertCount(1, $packs);
+        $this->assertSame('Strip', $packs[0]['name']);
+        $this->assertEquals(180, $packs[0]['price']);
+        $this->assertNull($packs[0]['id']);
+        $this->assertNull($packs[0]['barcode']);
+    }
+
+    public function test_duplicating_a_medicine_and_changing_its_strength_saves_a_new_product(): void
+    {
+        $original = $this->panadol();
+        $variant = $original->variants()->sole();
+        $stock = StockLevel::query()->where('product_variant_id', $variant->getKey())->sole();
+        $before = [$original->attributesToArray(), $variant->attributesToArray(), $original->drugDetail?->attributesToArray()];
+        $movements = StockMovement::query()->count();
+        $batches = StockBatch::query()->count();
+
+        $this->duplicating($original)
+            ->fillForm(['name' => 'Panadol 1000 mg Tablets', 'drug.strength_value' => '1000'])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $copy = $this->saved('Panadol 1000 mg Tablets');
+        $copyVariant = $copy->variants()->sole();
+
+        $this->assertNotSame($original->getKey(), $copy->getKey());
+        $this->assertEquals(1_000, $copy->drugDetail->strength_value);
+        $this->assertSame('Paracetamol', $copy->generics->sole()->name);
+        $this->assertNotSame('PAN-500', $copyVariant->sku);
+        $this->assertNotSame('4790000000999', $copyVariant->barcode);
+        $this->assertSame('A3', $copyVariant->bin_location);
+        $this->assertEquals(0, $copyVariant->cost_price);
+        $this->assertNull($copyVariant->units()->where('name', 'Strip')->sole()->barcode);
+        $this->assertSame(0, $copyVariant->units()->where('name', 'Old box')->count());
+
+        // No stock or batches came along, and the original is as it was.
+        $this->assertSame($movements, StockMovement::query()->count());
+        $this->assertSame($batches, StockBatch::query()->count());
+        $this->assertSame(0, StockLevel::query()->where('product_variant_id', $copyVariant->getKey())->where('quantity', '>', 0)->count());
+        $this->assertSame($before, [$original->refresh()->attributesToArray(), $variant->refresh()->attributesToArray(), $original->drugDetail?->refresh()->attributesToArray()]);
+        $this->assertEquals($stock->quantity, $stock->refresh()->quantity);
+    }
+
+    public function test_a_duplicate_keeps_options_that_still_apply_and_clears_the_rest(): void
+    {
+        $category = $this->categoryWithAxis();
+        $product = $this->syrup([
+            ['price' => 400, 'options' => [AttributeOption::query()->where('value', 'Small')->sole()]],
+            ['price' => 500, 'options' => [AttributeOption::query()->where('value', 'Large')->sole()]],
+        ], $category);
+
+        $component = $this->duplicating($product);
+        $rows = array_values($component->get('data.variants'));
+
+        $this->assertEquals([$this->option($category, 'Small'), $this->option($category, 'Large')], array_column($rows, 'options'));
+
+        // The attribute is no longer a variant axis of the category.
+        $category->productAttributes()->updateExistingPivot(ProductAttribute::query()->sole()->getKey(), ['is_variant_axis' => false]);
+
+        $rows = array_values($this->duplicating($product)->get('data.variants'));
+
+        $this->assertSame([[], []], array_column($rows, 'options'));
+    }
+
+    public function test_changing_the_category_of_a_duplicate_leaves_none_of_the_old_options(): void
+    {
+        $category = $this->categoryWithAxis();
+        $plain = Category::query()->create(['name' => 'Plain', 'slug' => 'plain']);
+        $product = $this->syrup([['price' => 400, 'options' => [AttributeOption::query()->where('value', 'Small')->sole()]]], $category);
+
+        $this->duplicating($product)
+            ->fillForm(['name' => 'Moved', 'category_id' => $plain->getKey()])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(0, $this->saved('Moved')->variants()->sole()->attributeValues()->count());
+    }
+
+    public function test_save_and_add_another_after_a_duplicate_leaves_a_blank_form(): void
+    {
+        $this->duplicating($this->panadol())
+            ->fillForm(['name' => 'Copy'])
+            ->call('createAnother')
+            ->assertHasNoFormErrors()
+            ->assertFormSet(['name' => null]);
+    }
+
+    public function test_a_duplicate_of_another_shops_product_is_not_found(): void
+    {
+        $other = Shop::query()->create(['name' => 'Other', 'code' => 'OTHER', 'business_type' => 'retail', 'currency' => 'LKR', 'timezone' => 'Asia/Colombo']);
+        $foreign = app(CurrentShop::class)->runAs($other, fn (): Product => Product::query()->create(['name' => 'Theirs', 'unit' => 'pcs']));
+
+        $this->get(ProductResource::getUrl('create', ['duplicate' => 'no-such-product']))->assertNotFound();
+        $this->get(ProductResource::getUrl('create', ['duplicate' => $foreign->getRouteKey()]))->assertNotFound();
+        $this->get(ProductResource::getUrl('create'))->assertOk();
+    }
+
+    public function test_only_who_can_create_products_sees_duplicate(): void
+    {
+        $product = $this->panadol();
+
+        Livewire::test(ListProducts::class)->assertTableActionVisible('duplicate', $product);
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])->assertActionVisible('duplicate');
+
+        $this->actingAs($this->cashier);
+
+        Livewire::test(ListProducts::class)->assertTableActionHidden('duplicate', $product);
     }
 }

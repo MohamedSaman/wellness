@@ -269,3 +269,29 @@ test.describe('a failed save', () => {
         ).toBeInViewport();
     });
 });
+
+test('a product is duplicated from its row in the list, and saved as new', async ({
+    page,
+}) => {
+    await page.goto('/admin/products');
+    const row = page.locator('tbody .fi-ta-row').first();
+    const original = await row.getByRole('link').first().innerText();
+
+    await row.getByRole('link', { name: 'Duplicate' }).click();
+    await expect(page).toHaveURL(/\/admin\/products\/create\?duplicate=/);
+
+    const name = page.locator('[id="form.name"]');
+    await expect(name).toHaveValue(/.+/);
+    await expect(page.locator('[id$=".sku"]').first()).toHaveValue('');
+    await expect(page.locator('[id$=".barcode"]').first()).toHaveValue('');
+    await expect(page.locator('[id$=".opening_stock"]').first()).toHaveValue('0');
+    await expect(page.getByText('Copied from')).toBeVisible();
+
+    const copy = `Copy ${Date.now()}`;
+    await name.fill(copy);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/edit$/);
+    await expect(page.locator('[id="form.name"]')).toHaveValue(copy);
+    expect(original).toBeTruthy();
+});

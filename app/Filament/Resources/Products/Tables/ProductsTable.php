@@ -6,6 +6,7 @@ use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Enums\StorageCondition;
 use App\Enums\TaxCategory;
+use App\Filament\Resources\Products\DuplicateProductAction;
 use App\Filament\Support\LabelActions;
 use App\Models\Brand;
 use App\Models\Category;
@@ -145,6 +146,7 @@ class ProductsTable
             ->defaultSort('name')
             ->recordActions([
                 EditAction::make()->iconButton()->tooltip('Edit'),
+                DuplicateProductAction::make()->iconButton()->tooltip('Duplicate'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
