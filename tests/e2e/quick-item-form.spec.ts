@@ -17,7 +17,7 @@ const field = (modal: Locator, name: string): Locator =>
     modal.locator(`[id="mountedActionSchema0.${name}"]`);
 
 // Names and barcodes no other test or browser has: they share a database.
-const unique = (): string => crypto.randomUUID().replaceAll('-', '');
+const unique = (): string => `${crypto.randomUUID().slice(0, 13)} item`;
 const barcode = (): string =>
     `${Date.now()}${Math.floor(Math.random() * 1000)}`.padEnd(16, '0');
 
@@ -33,9 +33,14 @@ async function openNewItem(page: Page, path: string): Promise<Locator> {
     return modal;
 }
 
-/** Everything required, so a submit would create the item. */
+/**
+ * Everything required, so a submit would create the item. And a price: these
+ * items stay in the shared database, and admin-tables.spec.ts expects a price
+ * on every row of the products list.
+ */
 async function fillIn(modal: Locator, name: string): Promise<void> {
     await field(modal, 'name').fill(name);
+    await field(modal, 'price').fill('20');
     await field(modal, 'generic_names').fill('Paracetamol');
     await field(modal, 'generic_names').press('Enter');
     await expect(
