@@ -218,7 +218,7 @@ class QuickItemForm
                     ->maxLength(255)
                     ->live(onBlur: true)
                     ->columnSpan(['md' => 2]),
-                TextInput::make('barcode')->maxLength(100)->rule(self::barcodeRule()),
+                TextInput::make('barcode')->maxLength(100)->rule(self::barcodeRule())->extraInputAttributes(BarcodeInput::ENTER_MOVES_TO_NEXT_FIELD),
                 TagsInput::make('generic_names')
                     ->label('Generic name')
                     ->placeholder('Paracetamol')
@@ -265,7 +265,7 @@ class QuickItemForm
                 ->schema([
                     TextInput::make('name')->required()->maxLength(30)->placeholder('Box of 30'),
                     TextInput::make('factor')->label('Contains')->numeric()->integer()->minValue(1)->required(),
-                    TextInput::make('barcode')->maxLength(100)->rule(self::barcodeRule()),
+                    TextInput::make('barcode')->maxLength(100)->rule(self::barcodeRule())->extraInputAttributes(BarcodeInput::ENTER_MOVES_TO_NEXT_FIELD),
                     PurchasingForm::moneyField('price', 'Price')->placeholder('Not for sale yet')->visible(fn (): bool => self::canPrice()),
                 ]),
             self::duplicateField(),
@@ -283,7 +283,7 @@ class QuickItemForm
                     ->options(fn (): array => Category::query()->orderBy('name')->pluck('name', 'id')->all())
                     ->searchable(),
                 TextInput::make('unit')->default('pcs')->required()->maxLength(20),
-                TextInput::make('barcode')->maxLength(100)->rule(self::barcodeRule()),
+                TextInput::make('barcode')->maxLength(100)->rule(self::barcodeRule())->extraInputAttributes(BarcodeInput::ENTER_MOVES_TO_NEXT_FIELD),
                 PurchasingForm::moneyField('cost', 'Cost')->visible(fn (): bool => PurchasingForm::user()?->can('cost.view') ?? false),
             ]),
             self::duplicateField(),

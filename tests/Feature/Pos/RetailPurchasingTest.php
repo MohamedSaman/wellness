@@ -104,6 +104,23 @@ class RetailPurchasingTest extends AdminTestCase
         $this->assertSame(['balance' => -$return->total, 'outstanding' => 0, 'credit' => $return->total, 'difference' => 0], app(SupplierService::class)->reconcile($supplier));
     }
 
+    /** tests/e2e/quick-item-form.spec.ts presses Enter on the clinic's form; it can't reach this one. */
+    public function test_enter_in_the_barcode_of_a_new_retail_item_moves_on(): void
+    {
+        app(ModuleService::class)->enable($this->shop, 'purchasing');
+        $this->actingAs($this->owner);
+
+        $page = Livewire::test(CreatePurchaseOrder::class);
+        $key = (string) array_key_first($page->get('data.lines'));
+
+        $page->mountAction(TestAction::make('createOption')->schemaComponent("lines.{$key}.variant_id", 'form'));
+
+        preg_match('/<input\b[^>]*id="mountedActionSchema0\.barcode"[^>]*>/', $page->getMountedActionModalHtml(), $input);
+
+        $this->assertNotEmpty($input);
+        $this->assertStringContainsString('x-on:keydown.enter.prevent="', $input[0]);
+    }
+
     public function test_a_retail_item_is_created_from_an_order_line_with_the_retail_essentials(): void
     {
         app(ModuleService::class)->enable($this->shop, 'purchasing');
