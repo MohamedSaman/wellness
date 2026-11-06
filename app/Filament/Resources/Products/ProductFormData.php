@@ -20,6 +20,7 @@ use App\Services\Data\DrugData;
 use App\Support\CurrentShop;
 use App\Support\Money;
 use App\Support\Quantity;
+use Illuminate\Support\Arr;
 
 /**
  * Translates between the product form (prices typed as 1250.50) and what
@@ -127,6 +128,61 @@ class ProductFormData
             'fitment_ids' => $product->fitments->modelKeys(),
             'variants' => $variants,
         ];
+    }
+
+    /**
+     * The form of a new product started from `$product`: everything except
+     * what belongs to the original alone. No ids (every row saves as new), no
+     * SKU or barcodes (generated on save, or typed), no opening stock or batch,
+     * and no costs: a copy has received nothing yet. Stock and batches are not
+     * part of the form at all, so none can be copied.
+     *
+     * Inactive packs and variants stay behind: a new row has no Active toggle,
+     * so a copy would come back on sale. (All of them, if none is active.) An
+     * option stays only while its attribute is still one of the category's
+     * variant axes; otherwise the field is left for the user to choose.
+     *
+     * A medicine is usually copied to enter another strength or form, so what
+     * describes that one also starts empty: the name (it prints on the receipt,
+     * and nothing generates it, so it must be typed again), the description
+     * and the NMRA registration, which belongs to one strength and form.
+     *
+     * @return array<string, mixed>
+     */
+    public static function forDuplicate(Product $product): array
+    {
+        $data = self::fromProduct($product);
+
+        $axes = $product->category?->productAttributes()->wherePivot('is_variant_axis', true)->pluck('product_attributes.id')->all() ?? [];
+        $location = self::user()?->workLocation(app(CurrentShop::class)->getOrFail())->getKey();
+
+        $variants = array_filter($data['variants'], fn (array $variant): bool => $variant['is_active']) ?: $data['variants'];
+
+        $data['variants'] = array_values(array_map(fn (array $variant): array => [
+            ...Arr::except($variant, ['average_cost', 'last_cost', 'is_active']),
+            'id' => null,
+            'sku' => null,
+            'barcode' => null,
+            'cost' => null,
+            'opening_stock' => 0,
+            'opening_location_id' => $location,
+            'opening_batch_no' => null,
+            'opening_expiry' => null,
+            'opening_accept_near_expiry' => false,
+            'options' => Arr::only($variant['options'], $axes),
+            'packs' => array_values(array_map(
+                fn (array $pack): array => [...Arr::except($pack, ['is_active']), 'id' => null, 'barcode' => null],
+                array_filter($variant['packs'], fn (array $pack): bool => (bool) $pack['is_active']),
+            )),
+        ], $variants));
+
+        if ($data['is_medicine']) {
+            $data['name'] = null;
+            $data['description'] = null;
+            $data['drug']['registration_no'] = null;
+        }
+
+        return $data;
     }
 
     /**

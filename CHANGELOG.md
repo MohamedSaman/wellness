@@ -10,6 +10,10 @@ Every release is a semantic version tag (`v1.2.0`; a pre-release `v1.2.0-rc.1` g
 
 ### Added
 
+- **Duplicate product**, from the Edit page and the products list: opens Create pre-filled, without ids, SKU, barcodes, costs, opening stock or batch. A medicine's copy also leaves out the name, description and NMRA number.
+- Product form: Enter in a variant or pack Barcode field moves to the next field, so a scanner no longer saves the form.
+- Create new item, on order and GRN lines: Enter in a Barcode field also moves to the next field, so a scanner no longer creates the item.
+- **Same medicine check**: the product form refuses a new medicine that repeats one in the catalog (generic, brand name, strength, unit, dosage form and manufacturer), with a link to it.
 - Cloud deployment ([docs/deploy/CLOUD.md](docs/deploy/CLOUD.md)): `scripts/provision-server.sh` (Ubuntu 26.04: PHP 8.5-FPM, MySQL 8.4 on localhost, Caddy with Let's Encrypt, deploy user with SSH keys only, firewall, fail2ban, security updates, swap, time sync), `scripts/add-client.sh` (one Linux user, database, `.env`, PHP pool, Caddy site, queue worker and scheduler per client and environment), `scripts/deploy.sh` and `scripts/rollback.sh` (backup first, release folders, one-step switch, rollback of migrations or restore), `scripts/package-release.sh` and the release workflow.
 - Backups: `pos:backup` (nightly, database and files, encrypted with age, uploaded with rclone, 14 daily and 12 monthly kept), `pos:backup:verify` (weekly restore into a scratch database), `pos:backup:restore`, `pos:backup:list`.
 - Monitoring: Administration → System health, dashboard backup tiles, `pos:health --alert` (mail and bell), `/up` checks the database; tills report waiting offline sales and their clock.
@@ -22,6 +26,8 @@ Every release is a semantic version tag (`v1.2.0`; a pre-release `v1.2.0-rc.1` g
 - First print test on the real printer ([TILLS.md](docs/deploy/TILLS.md#first-print-test-on-the-real-printer)), with the XP-80C fallback.
 
 ### Changed
+
+- Product form: full page width in a responsive grid; Medicine, Selling & stock and More details collapse to one line (collapsed on edit); each variant is a compact row with the rarely used fields under **More**; help text behind an info icon; per-location **Sell loose** on one line; packs as compact rows; opening batch and location show only with opening stock; sticky footer with **Save & add another** (create only), an error count and a jump to the first error. No field, rule or saved data changed. Saved variants and packs no longer show a delete button: it never removed them. The variant drag handle is gone: nothing stored the order.
 
 - The admin panel signs in through `/login` (Fortify), so the owner's two-factor code is always asked; `/admin/login` is gone.
 - A till registered again for offline sales drops the offline invoice numbers it had reserved.

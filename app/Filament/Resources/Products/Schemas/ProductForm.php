@@ -8,6 +8,8 @@ use App\Enums\DrugRoute;
 use App\Enums\DrugSchedule;
 use App\Enums\StorageCondition;
 use App\Enums\TaxCategory;
+use App\Filament\Resources\Products\ProductResource;
+use App\Filament\Support\BarcodeInput;
 use App\Models\Category;
 use App\Models\Generic;
 use App\Models\Location;
@@ -17,7 +19,11 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\VariantUnit;
 use App\Models\VehicleModel;
+use App\Services\ReceivingItemService;
 use App\Support\CurrentShop;
+use App\Support\Quantity;
+use Closure;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -30,91 +36,51 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 class ProductForm
 {
+    /**
+     * Opening batch, expiry and location only matter once there is opening
+     * stock. Decided in the browser, not with live() and visible(): a field
+     * hidden on the server is not saved, loses its default and only appears
+     * after the round trip, by when Tab has already left the row. The fields'
+     * own visible() and required() rules stay as they were.
+     */
+    private const HAS_OPENING_STOCK_JS = "Number(\$get('opening_stock')) > 0";
+
+    /** Help text sits behind this icon on the field's label; the wording is the same as it ever was. */
+    private const INFO = Heroicon::OutlinedInformationCircle;
+
+    /** Product details fit the room the form has, whatever the sidebar leaves it. */
+    private const DETAIL_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 3, '@6xl' => 4];
+
+    /**
+     * A variant's main fields sit on one line once their labels fit it (seven
+     * columns any sooner wraps "Opening batch expiry" over three lines and
+     * knocks the inputs out of line). On a laptop that is two lines, the
+     * opening stock fields on the second.
+     */
+    private const VARIANT_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 4, '@7xl' => 7];
+
+    /** A pack's labels are short, so its fields fit one line sooner (a saved pack's Active toggle may wrap on a laptop). */
+    private const PACK_COLUMNS = ['default' => 1, '@md' => 2, '@3xl' => 6, '@5xl' => 7];
+
+    /** Inside a section's heading or description: only there can Alpine see the section's isCollapsed. */
+    private const REFRESH_WHEN_COLLAPSED = '<span x-init="$watch(\'isCollapsed\', (collapsed) => collapsed && $wire.$refresh())"></span>';
+
     public static function configure(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             // Pharmacy shops: the product form is a medicine form, drug details first.
             self::medicineSection(),
 
-            Section::make('Product')
-                ->columns(2)
-                ->schema([
-                    TextInput::make('name')
-                        ->required()
-                        ->maxLength(255)
-                        ->columnSpanFull()
-                        ->helperText(fn (): ?string => self::pharmacy() ? 'As it should appear on the receipt: brand, strength and form ("Panadol 500 mg Tablets").' : null),
-                    Select::make('category_id')
-                        ->label('Category')
-                        ->relationship('category', 'name')
-                        ->searchable()
-                        ->preload()
-                        ->live()
-                        ->afterStateUpdated(fn (Set $set) => $set('product_attributes', []))
-                        ->helperText('The category decides which attributes (Size, Colour ...) this product uses.'),
-                    // A pharmacy's brands are its manufacturers (GSK, State Pharmaceuticals).
-                    Select::make('brand_id')
-                        ->label(fn (): string => self::pharmacy() ? 'Manufacturer' : 'Brand')
-                        ->relationship('brand', 'name')
-                        ->searchable()
-                        ->preload(),
-                    // Stock is counted in this unit, so it is fixed once stock has moved.
-                    TextInput::make('unit')
-                        ->label(fn (): string => self::pharmacy() ? 'Base unit' : 'Unit')
-                        ->default('pcs')
-                        ->required()
-                        ->maxLength(20)
-                        ->live(onBlur: true)
-                        ->disabled(fn (?Product $record): bool => self::baseUnitLocked($record))
-                        ->dehydrated()
-                        ->helperText(fn (?Product $record): ?string => self::baseUnitLocked($record)
-                            ? 'Locked: this product has stock movements, all counted in this unit.'
-                            : (self::pharmacy() ? 'Stock is counted in this unit (Tablet, Bottle, Vial). It is locked once stock moves.' : null)),
-                    Toggle::make('track_stock')->default(true)->live()->helperText(fn (): string => self::pharmacy()
-                        ? 'Turn off for services such as a consultation fee.'
-                        : 'Turn off for services such as fitting or labour.'),
-                    // Services only: a stock item is always sold at its list price (docs/PHARMACY.md §4.3).
-                    Toggle::make('allow_price_override')
-                        ->label('Price can be changed at the till')
-                        ->default(false)
-                        ->visible(fn (Get $get): bool => ! (bool) $get('track_stock'))
-                        ->helperText('The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
-                    // Pharmacy: stock in batches with expiry dates, sold first expiry first out.
-                    Toggle::make('track_batches')
-                        ->label('Batches and expiry')
-                        ->default(true)
-                        ->live()
-                        ->visible(fn (Get $get): bool => self::pharmacy() && (bool) $get('track_stock'))
-                        ->helperText(fn (?Product $record): string => $record?->exists === true
-                            ? 'Stock is received with a batch number and expiry, and sold first expiry first out. Can only be changed while the item has no stock.'
-                            : 'Stock is received with a batch number and expiry, and sold first expiry first out. On for every medicine.'),
-                    Toggle::make('whole_units_only')
-                        ->label('Whole units only')
-                        ->default(true)
-                        ->live()
-                        ->visible(fn (): bool => self::pharmacy())
-                        ->helperText('Sold, received, counted and returned in whole units of whatever unit is used: 1 strip or 3 tablets, never half a tablet or half a box.'),
-                    Select::make('tax_category')
-                        ->label('Tax')
-                        ->options(TaxCategory::options())
-                        ->default(TaxCategory::Exempt->value)
-                        ->selectablePlaceholder(false)
-                        ->required()
-                        ->visible(fn (): bool => self::pharmacy())
-                        ->helperText("Medicines are usually exempt. The shop's tax rate applies to standard items only."),
-                    Toggle::make('is_active')->default(true),
-                    Textarea::make('description')->columnSpanFull(),
-                    Group::make()
-                        ->columns(2)
-                        ->columnSpanFull()
-                        ->schema(fn (Get $get): array => self::productAttributeFields($get('category_id')))
-                        ->visible(fn (Get $get): bool => self::attributesFor($get('category_id'), false)->isNotEmpty()),
-                ]),
+            self::productSection(),
+            self::sellingSection(),
+            self::moreDetailsSection(),
 
             Section::make('Spare part details')
                 ->description('Only for spare parts.')
@@ -154,19 +120,23 @@ class ProductForm
                         ->minItems(1)
                         ->maxItems(fn (Get $get): ?int => self::attributesFor($get('category_id'), true)->isEmpty() ? 1 : null)
                         ->deletable(fn (Get $get): bool => true)
+                        ->deleteAction(self::deleteUnsavedRowsOnly(...))
+                        // Nothing stores the order of a product's variants.
+                        ->reorderable(false)
                         ->addActionLabel('Add variant')
                         ->itemLabel(fn (array $state): ?string => $state['sku'] ?? null)
-                        ->columns(4)
+                        ->columns(self::VARIANT_COLUMNS)
+                        ->gridContainer()
                         ->default([[]])
                         ->schema([
                             Hidden::make('id'),
                             Group::make()
-                                ->columns(4)
+                                ->columns(self::VARIANT_COLUMNS)
                                 ->columnSpanFull()
                                 ->schema(fn (Get $get): array => self::variantAxisFields($get('../../category_id')))
                                 ->visible(fn (Get $get): bool => self::attributesFor($get('../../category_id'), true)->isNotEmpty()),
                             TextInput::make('sku')->label('SKU')->maxLength(100),
-                            TextInput::make('barcode')->maxLength(100),
+                            TextInput::make('barcode')->maxLength(100)->extraInputAttributes(BarcodeInput::ENTER_MOVES_TO_NEXT_FIELD),
                             TextInput::make('price')
                                 ->label(fn (Get $get): string => (self::pharmacy() ? 'Price per '.($get('../../unit') ?: 'unit') : 'Selling price').' ('.self::currency().')')
                                 ->numeric()
@@ -182,57 +152,32 @@ class ProductForm
                                 ->visible(fn (Get $get): bool => blank($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
                             TextInput::make('average_cost')
                                 ->label('Average cost')
-                                ->helperText('Weighted average. Changes with Stock In or Revalue cost.')
+                                ->hintIcon(self::INFO, tooltip: 'Weighted average. Changes with Stock In or Revalue cost.')
                                 ->disabled()
                                 ->dehydrated(false)
                                 ->visible(fn (Get $get): bool => filled($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
-                            TextInput::make('last_cost')
-                                ->label('Last cost')
-                                ->helperText('Unit cost of the latest delivery.')
-                                ->disabled()
-                                ->dehydrated(false)
-                                ->placeholder('-')
-                                ->visible(fn (Get $get): bool => filled($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
-                            TextInput::make('reorder_level')->numeric()->minValue(0)->default(0),
-                            TextInput::make('bin_location')->label('Shelf / bin')->maxLength(100),
                             TextInput::make('opening_stock')
                                 ->numeric()
                                 ->minValue(0)
                                 ->default(0)
-                                ->helperText('Recorded as the first stock movement.')
+                                ->hintIcon(self::INFO, tooltip: 'Recorded as the first stock movement.')
                                 ->visible(fn (Get $get): bool => blank($get('id'))),
-                            // multi_location: which location the opening stock is counted at.
-                            Select::make('opening_location_id')
-                                ->label('Opening stock at')
-                                ->options(fn (): array => Location::options())
-                                ->default(fn (): ?int => self::workLocationId())
-                                ->selectablePlaceholder(false)
-                                ->visible(fn (Get $get): bool => blank($get('id')) && app(CurrentShop::class)->getOrFail()->hasModule('multi_location')),
                             // Batch-tracked items: the batch the opening stock is counted in.
                             TextInput::make('opening_batch_no')
                                 ->label('Opening batch no.')
                                 ->maxLength(50)
                                 ->required(fn (Get $get): bool => self::opensBatch($get) && (float) $get('opening_stock') > 0)
-                                ->visible(fn (Get $get): bool => self::opensBatch($get)),
+                                ->visible(fn (Get $get): bool => self::opensBatch($get))
+                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
                             TextInput::make('opening_expiry')
                                 ->label('Opening batch expiry')
                                 ->placeholder('03/2027')
-                                ->helperText('The month or date printed on the pack.')
+                                ->hintIcon(self::INFO, tooltip: 'The month or date printed on the pack.')
                                 ->maxLength(10)
                                 ->required(fn (Get $get): bool => self::opensBatch($get) && (float) $get('opening_stock') > 0)
-                                ->visible(fn (Get $get): bool => self::opensBatch($get)),
-                            Toggle::make('opening_accept_near_expiry')
-                                ->label('Accept short expiry')
-                                ->helperText('Owner only: receive it even though it expires soon.')
-                                ->visible(fn (Get $get): bool => self::opensBatch($get) && (auth()->user()?->can('batches.manage') ?? false)),
-                            Toggle::make('is_active')->default(true)->visible(fn (Get $get): bool => filled($get('id'))),
-                            Toggle::make('allow_unit_sale')
-                                ->label('Sell loose')
-                                ->default(true)
-                                ->visible(fn (): bool => self::pharmacy())
-                                ->helperText(fn (Get $get): string => 'Sell a single '.($get('../../unit') ?: 'unit').' as well as the packs. An item with no packs always sells this way.'),
-                            ...self::looseSaleByLocation(),
-                            self::packsRepeater(),
+                                ->visible(fn (Get $get): bool => self::opensBatch($get))
+                                ->visibleJs(self::HAS_OPENING_STOCK_JS),
+                            self::variantMoreSection(),
                         ]),
                 ]),
         ]);
@@ -250,14 +195,192 @@ class ProductForm
         return $user instanceof User ? (int) $user->workLocation(app(CurrentShop::class)->getOrFail())->getKey() : null;
     }
 
+    /**
+     * The fields a variant rarely needs, collapsed to one line. A collapsed
+     * section keeps them on the page, so they still save and validate.
+     */
+    private static function variantMoreSection(): Section
+    {
+        return Section::make(fn (Get $get): HtmlString => new HtmlString(self::REFRESH_WHEN_COLLAPSED.e(ProductFormSummary::variant($get, self::pharmacy()))))
+            // Its own key: by default it comes from the heading, which changes with
+            // what is typed, and a new key would close the section under the user.
+            ->key('more')
+            ->compact()
+            ->collapsible()
+            ->collapsed()
+            ->columnSpanFull()
+            ->columns(self::DETAIL_COLUMNS)
+            ->gridContainer()
+            ->schema([
+                TextInput::make('reorder_level')->numeric()->minValue(0)->default(0),
+                TextInput::make('bin_location')->label('Shelf / bin')->maxLength(100),
+                TextInput::make('last_cost')
+                    ->label('Last cost')
+                    ->hintIcon(self::INFO, tooltip: 'Unit cost of the latest delivery.')
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->placeholder('-')
+                    ->visible(fn (Get $get): bool => filled($get('id')) && (auth()->user()?->can('cost.view') ?? false)),
+                // multi_location: which location the opening stock is counted at.
+                Select::make('opening_location_id')
+                    ->label('Opening stock at')
+                    ->options(fn (): array => Location::options())
+                    ->default(fn (): ?int => self::workLocationId())
+                    ->selectablePlaceholder(false)
+                    ->visible(fn (Get $get): bool => blank($get('id')) && app(CurrentShop::class)->getOrFail()->hasModule('multi_location'))
+                    ->visibleJs(self::HAS_OPENING_STOCK_JS),
+                Toggle::make('opening_accept_near_expiry')
+                    ->label('Accept short expiry')
+                    ->hintIcon(self::INFO, tooltip: 'Owner only: receive it even though it expires soon.')
+                    ->visible(fn (Get $get): bool => self::opensBatch($get) && (auth()->user()?->can('batches.manage') ?? false))
+                    ->visibleJs(self::HAS_OPENING_STOCK_JS),
+                Toggle::make('is_active')->default(true)->visible(fn (Get $get): bool => filled($get('id'))),
+                Toggle::make('allow_unit_sale')
+                    ->label('Sell loose')
+                    ->default(true)
+                    ->live()
+                    ->visible(fn (): bool => self::pharmacy())
+                    ->hintIcon(self::INFO, tooltip: fn (Get $get): string => 'Sell a single '.($get('../../unit') ?: 'unit').' as well as the packs. An item with no packs always sells this way.'),
+                ...self::looseSaleByLocation(),
+                self::packsRepeater(),
+            ]);
+    }
+
+    /**
+     * A saved row can't be removed here: ProductCatalogService::update() only
+     * creates and changes variants and packs, so a deleted row would come
+     * straight back. (Packs are deactivated instead; see packsRepeater().)
+     */
+    private static function deleteUnsavedRowsOnly(Action $action): Action
+    {
+        return $action->visible(fn (array $arguments, Repeater $component): bool => $component->isDeletable()
+            && blank(($component->getRawState()[$arguments['item']] ?? [])['id'] ?? null));
+    }
+
+    /** Always open: what identifies the item. */
+    private static function productSection(): Section
+    {
+        return Section::make('Product')
+            ->columns(self::DETAIL_COLUMNS)
+            ->gridContainer()
+            ->schema([
+                TextInput::make('name')
+                    ->required()
+                    ->maxLength(255)
+                    ->columnSpan(['@md' => 2])
+                    ->hintIcon(fn (): ?Heroicon => self::pharmacy() ? self::INFO : null, tooltip: 'As it should appear on the receipt: brand, strength and form ("Panadol 500 mg Tablets").'),
+                Select::make('category_id')
+                    ->label('Category')
+                    ->relationship('category', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->live()
+                    ->afterStateUpdated(fn (Set $set) => $set('product_attributes', []))
+                    ->hintIcon(self::INFO, tooltip: 'The category decides which attributes (Size, Colour ...) this product uses.'),
+                // A pharmacy's brands are its manufacturers (GSK, State Pharmaceuticals).
+                Select::make('brand_id')
+                    ->label(fn (): string => self::pharmacy() ? 'Manufacturer' : 'Brand')
+                    ->relationship('brand', 'name')
+                    ->searchable()
+                    ->preload(),
+                Toggle::make('is_active')->default(true),
+            ]);
+    }
+
+    private static function sellingSection(): Section
+    {
+        return self::collapsibleSection('Selling & stock', null, fn (Get $get): string => ProductFormSummary::selling($get, self::pharmacy()))
+            ->schema([
+                // Stock is counted in this unit, so it is fixed once stock has moved.
+                TextInput::make('unit')
+                    ->label(fn (): string => self::pharmacy() ? 'Base unit' : 'Unit')
+                    ->default('pcs')
+                    ->required()
+                    ->maxLength(20)
+                    ->live(onBlur: true)
+                    ->disabled(fn (?Product $record): bool => self::baseUnitLocked($record))
+                    ->dehydrated()
+                    // Stays on show: it says why the field can't be changed.
+                    ->helperText(fn (?Product $record): ?string => self::baseUnitLocked($record) ? 'Locked: this product has stock movements, all counted in this unit.' : null)
+                    ->hintIcon(fn (?Product $record): ?Heroicon => self::pharmacy() && ! self::baseUnitLocked($record) ? self::INFO : null, tooltip: 'Stock is counted in this unit (Tablet, Bottle, Vial). It is locked once stock moves.'),
+                Select::make('tax_category')
+                    ->label('Tax')
+                    ->options(TaxCategory::options())
+                    ->default(TaxCategory::Exempt->value)
+                    ->selectablePlaceholder(false)
+                    ->required()
+                    ->visible(fn (): bool => self::pharmacy())
+                    ->hintIcon(self::INFO, tooltip: "Medicines are usually exempt. The shop's tax rate applies to standard items only."),
+                Toggle::make('track_stock')->default(true)->live()->hintIcon(self::INFO, tooltip: fn (): string => self::pharmacy()
+                    ? 'Turn off for services such as a consultation fee.'
+                    : 'Turn off for services such as fitting or labour.'),
+                // Services only: a stock item is always sold at its list price (docs/PHARMACY.md §4.3).
+                Toggle::make('allow_price_override')
+                    ->label('Price can be changed at the till')
+                    ->default(false)
+                    ->visible(fn (Get $get): bool => ! (bool) $get('track_stock'))
+                    ->hintIcon(self::INFO, tooltip: 'The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
+                // Pharmacy: stock in batches with expiry dates, sold first expiry first out.
+                Toggle::make('track_batches')
+                    ->label('Batches and expiry')
+                    ->default(true)
+                    ->live()
+                    ->visible(fn (Get $get): bool => self::pharmacy() && (bool) $get('track_stock'))
+                    ->hintIcon(self::INFO, tooltip: fn (?Product $record): string => $record?->exists === true
+                        ? 'Stock is received with a batch number and expiry, and sold first expiry first out. Can only be changed while the item has no stock.'
+                        : 'Stock is received with a batch number and expiry, and sold first expiry first out. On for every medicine.'),
+                Toggle::make('whole_units_only')
+                    ->label('Whole units only')
+                    ->default(true)
+                    ->live()
+                    ->visible(fn (): bool => self::pharmacy())
+                    ->hintIcon(self::INFO, tooltip: 'Sold, received, counted and returned in whole units of whatever unit is used: 1 strip or 3 tablets, never half a tablet or half a box.'),
+            ]);
+    }
+
+    private static function moreDetailsSection(): Section
+    {
+        return self::collapsibleSection('More details', null, ProductFormSummary::moreDetails(...))
+            ->schema([
+                Textarea::make('description')->columnSpanFull(),
+                Group::make()
+                    ->columns(self::DETAIL_COLUMNS)
+                    ->gridContainer()
+                    ->columnSpanFull()
+                    ->schema(fn (Get $get): array => self::productAttributeFields($get('category_id')))
+                    ->visible(fn (Get $get): bool => self::attributesFor($get('category_id'), false)->isNotEmpty()),
+            ]);
+    }
+
+    /**
+     * Open while creating, collapsed to one line of `$summary` while editing.
+     * A collapse asks the server for the line again: most of these fields
+     * aren't live, so it would otherwise describe what the section held the
+     * last time the form was rendered. `$whenOpen` is what the section says
+     * about itself while it is open.
+     *
+     * @param  Closure(Get): string  $summary
+     */
+    private static function collapsibleSection(string $heading, ?string $whenOpen, Closure $summary): Section
+    {
+        return Section::make($heading)
+            ->description(fn (Get $get): HtmlString => new HtmlString(
+                self::REFRESH_WHEN_COLLAPSED
+                .($whenOpen === null ? '' : '<span x-show="! isCollapsed" x-cloak>'.e($whenOpen).'</span>')
+                .'<span x-show="isCollapsed" x-cloak>'.e($summary($get)).'</span>'
+            ))
+            ->collapsible()
+            ->collapsed(fn (?Product $record): bool => $record?->exists === true)
+            ->columns(self::DETAIL_COLUMNS)
+            ->gridContainer();
+    }
+
     private static function medicineSection(): Section
     {
         $isMedicine = fn (Get $get): bool => (bool) $get('is_medicine');
 
-        return Section::make('Medicine')
-            ->description('Generic and brand names are both searchable at the till.')
+        return self::collapsibleSection('Medicine', 'Generic and brand names are both searchable at the till.', ProductFormSummary::medicine(...))
             ->visible(fn (): bool => self::pharmacy())
-            ->columns(3)
             ->schema([
                 Toggle::make('is_medicine')
                     ->label('This is a medicine')
@@ -272,15 +395,15 @@ class ProductForm
                             $set('track_batches', $state);
                         }
                     })
-                    ->helperText('Turn off for a consultation fee or sundries.'),
+                    ->hintIcon(self::INFO, tooltip: 'Turn off for a consultation fee or sundries.'),
                 TagsInput::make('drug.generic_names')
                     ->label('Generic name')
                     ->placeholder('Paracetamol')
-                    ->helperText('Add each one for a combination (Amoxicillin, Clavulanic acid).')
+                    ->hintIcon(self::INFO, tooltip: 'Add each one for a combination (Amoxicillin, Clavulanic acid).')
                     ->suggestions(fn (): array => Generic::query()->orderBy('name')->limit(500)->pluck('name')->all())
                     ->required()
                     ->visible($isMedicine)
-                    ->columnSpan(2),
+                    ->columnSpan(['@md' => 2]),
                 TextInput::make('drug.brand_name')
                     ->label('Brand name')
                     ->placeholder('Panadol')
@@ -291,6 +414,8 @@ class ProductForm
                     ->numeric()
                     ->minValue(0)
                     ->rule('gt:0')
+                    ->rules([self::isNotAnExistingMedicine(...)])
+                    ->allowHtmlValidationMessages()
                     ->placeholder('500')
                     ->visible($isMedicine),
                 TextInput::make('drug.strength_unit')
@@ -306,7 +431,7 @@ class ProductForm
                     ->required()
                     ->live()
                     ->afterStateUpdated(fn (?string $state, Get $get, Set $set, ?Product $record) => self::applyUnitDefaults($state, $get, $set, $record))
-                    ->helperText(fn (?Product $record): ?string => $record?->exists === true ? null : 'Fills in the base unit, loose sale and packs below; change them as needed.')
+                    ->hintIcon(fn (?Product $record): ?Heroicon => $record?->exists === true ? null : self::INFO, tooltip: 'Fills in the base unit, loose sale and packs below; change them as needed.')
                     ->visible($isMedicine),
                 Select::make('drug.schedule')
                     ->label('Schedule')
@@ -325,25 +450,69 @@ class ProductForm
                     ->minValue(0)
                     ->maxValue(3650)
                     ->placeholder(fn (): string => 'Shop setting ('.(int) app(CurrentShop::class)->getOrFail()->setting('min_days_to_expiry_for_sale', 0).')')
-                    ->helperText('Blank uses the shop setting. For example 30 for insulin.')
+                    ->hintIcon(self::INFO, tooltip: 'Blank uses the shop setting. For example 30 for insulin.')
                     ->visible($isMedicine),
                 Select::make('drug.storage_condition')
                     ->label('Storage condition')
                     ->options(StorageCondition::options())
                     ->placeholder('Not set')
-                    ->helperText('Fridge items are not put back on the shelf when returned, by default.')
+                    ->hintIcon(self::INFO, tooltip: 'Fridge items are not put back on the shelf when returned, by default.')
                     ->visible($isMedicine),
                 TextInput::make('drug.storage_note')
                     ->label('Storage note')
                     ->placeholder('Store below 25 °C, protect from light')
                     ->maxLength(255)
-                    ->columnSpan(2)
+                    ->columnSpan(['@md' => 2])
                     ->visible($isMedicine),
                 TextInput::make('drug.registration_no')
                     ->label('NMRA registration no.')
                     ->maxLength(50)
                     ->visible($isMedicine),
             ]);
+    }
+
+    /**
+     * A new medicine may not repeat one in the catalog. A blank strength is
+     * not compared (Laravel skips this rule for it), as when receiving and
+     * importing. Unlike those two this refuses, so the manufacturer counts as
+     * well: two makers' unbranded tablets are different products. A second
+     * size of the same medicine is a pack of it (a medicine has one variant).
+     */
+    private static function isNotAnExistingMedicine(Get $get, ?Product $record): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail) use ($get, $record): void {
+            $existing = $record?->exists === true || ! is_numeric($value) ? null : self::sameMedicine($get, Quantity::normalize((string) $value));
+
+            if ($existing !== null) {
+                // Allowed HTML in this field's messages: the product's name is the only thing in it that was typed.
+                $fail(sprintf(
+                    'A product with this name, strength and form already exists: <a href="%s" target="_blank" rel="noopener" style="text-decoration: underline">%s</a>',
+                    e(ProductResource::getUrl('edit', ['record' => $existing])),
+                    e($existing->name),
+                ));
+            }
+        };
+    }
+
+    private static function sameMedicine(Get $get, float $strength): ?Product
+    {
+        $dosageForm = DosageForm::tryFrom((string) $get('drug.dosage_form'));
+        $generics = array_values(array_map('strval', (array) $get('drug.generic_names')));
+
+        if ($dosageForm === null || $generics === []) {
+            return null;
+        }
+
+        $brand = fn (?string $name): string => Str::lower(Str::squish((string) $name));
+        $ids = app(ReceivingItemService::class)->sameMedicine($generics, $strength, $get('drug.strength_unit'), $dosageForm);
+
+        return Product::query()
+            ->with('drugDetail')
+            ->whereKey($ids)
+            ->where('brand_id', filled($get('brand_id')) ? (int) $get('brand_id') : null)
+            ->orderBy('id')
+            ->get()
+            ->first(fn (Product $product): bool => $brand($product->drugDetail?->brand_name) === $brand($get('drug.brand_name')));
     }
 
     /**
@@ -405,8 +574,10 @@ class ProductForm
             ->visible(fn (): bool => self::pharmacy())
             ->default([])
             ->columnSpanFull()
-            ->columns(4)
-            ->addActionLabel('Add pack')
+            ->columns(self::PACK_COLUMNS)
+            ->gridContainer()
+            ->deleteAction(self::deleteUnsavedRowsOnly(...))
+            ->addActionLabel('+ Add pack')
             ->itemLabel(fn (array $state): ?string => filled($state['name'] ?? null)
                 ? (filled($state['factor'] ?? null) ? VariantUnit::describe((string) $state['name'], (string) $state['factor']) : (string) $state['name'])
                 : null)
@@ -421,14 +592,14 @@ class ProductForm
                     ->minValue(fn (Get $get): int|float => $get('../../../../whole_units_only') ? 1 : 0.001)
                     ->integer(fn (Get $get): bool => (bool) $get('../../../../whole_units_only'))
                     // A hint, not a suffix: in a pack row the suffix left no room to type.
-                    ->helperText(fn (Get $get): string => ($get('../../../../unit') ?: 'Base unit').' per pack'),
-                TextInput::make('barcode')->maxLength(100),
+                    ->hintIcon(self::INFO, tooltip: fn (Get $get): string => ($get('../../../../unit') ?: 'Base unit').' per pack'),
+                TextInput::make('barcode')->maxLength(100)->extraInputAttributes(BarcodeInput::ENTER_MOVES_TO_NEXT_FIELD),
                 TextInput::make('price')
                     ->label(fn (): string => 'Price ('.self::currency().')')
                     ->numeric()
                     ->minValue(0)
                     // Clearing an existing pack's price keeps it; untick "Sold" to stop selling it.
-                    ->helperText(fn (Get $get): ?string => blank($get('id')) ? 'Empty: not for sale yet.' : null)
+                    ->hintIcon(fn (Get $get): ?Heroicon => blank($get('id')) ? self::INFO : null, tooltip: 'Empty: not for sale yet.')
                     ->visible(fn (): bool => auth()->user()?->can('prices.manage') ?? false),
                 Toggle::make('is_sellable')->label('Sold')->default(true),
                 Toggle::make('is_purchasable')->label('Bought')->default(true),
@@ -445,9 +616,11 @@ class ProductForm
     /**
      * Selling loose per location (pharmacy with several locations): Yes, No,
      * or as "Sell loose" above. Syrup: No at General Pharmacy, Yes at
-     * Doctor's Medicines. Checkout honours it from branch 8.
+     * Doctor's Medicines. Checkout honours it from branch 8. One line until
+     * someone wants to change it; a collapsed section keeps every location's
+     * field on the page, so its rule is saved either way.
      *
-     * @return list<Select>
+     * @return list<Section>
      */
     private static function looseSaleByLocation(): array
     {
@@ -457,13 +630,26 @@ class ProductForm
             return [];
         }
 
-        return array_values(Location::query()->where('is_active', true)->ordered()->get()->map(
-            fn (Location $location): Select => Select::make("loose_at.{$location->getKey()}")
-                ->label("Sell loose at {$location->code}")
-                ->options(['yes' => 'Yes', 'no' => 'No'])
-                ->placeholder('As "Sell loose"')
-                ->helperText($location->name),
-        )->all());
+        $locations = Location::query()->where('is_active', true)->ordered()->get();
+
+        return [
+            Section::make('Customise per location')
+                ->description(fn (Get $get): string => ProductFormSummary::looseSale($get, $locations))
+                ->compact()
+                ->collapsible()
+                ->collapsed()
+                ->columnSpanFull()
+                ->columns(self::DETAIL_COLUMNS)
+                ->gridContainer()
+                ->schema(array_values($locations->map(
+                    fn (Location $location): Select => Select::make("loose_at.{$location->getKey()}")
+                        ->label("Sell loose at {$location->code}")
+                        ->options(['yes' => 'Yes', 'no' => 'No'])
+                        ->placeholder('As "Sell loose"')
+                        ->live()
+                        ->hintIcon(self::INFO, tooltip: $location->name),
+                )->all())),
+        ];
     }
 
     private static function pharmacy(): bool

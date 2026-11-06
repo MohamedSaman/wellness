@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\Products\Pages;
 
 use App\Exceptions\PosException;
+use App\Filament\Resources\Products\DuplicateProductAction;
+use App\Filament\Resources\Products\Pages\Concerns\ProductFormPage;
 use App\Filament\Resources\Products\ProductFormData;
 use App\Filament\Resources\Products\ProductResource;
 use App\Filament\Support\LabelActions;
@@ -19,6 +21,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class EditProduct extends EditRecord
 {
+    use ProductFormPage;
+
     protected static string $resource = ProductResource::class;
 
     /**
@@ -30,6 +34,7 @@ class EditProduct extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            DuplicateProductAction::make(),
             LabelActions::productAction(),
             Action::make('markReviewed')
                 ->label('Mark as reviewed')
@@ -54,6 +59,11 @@ class EditProduct extends EditRecord
                     Notification::make()->title("{$record->name} reviewed: it is for sale")->success()->send();
                 }),
         ];
+    }
+
+    protected function getSaveFormAction(): Action
+    {
+        return parent::getSaveFormAction()->label('Save');
     }
 
     /**
