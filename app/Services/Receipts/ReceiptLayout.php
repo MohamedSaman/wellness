@@ -222,6 +222,120 @@ final class ReceiptLayout
         return $this->lines;
     }
 
+    /**
+     * A shift's summary on the receipt printer: every figure of the A4
+     * summary (ShiftService::summary(), as calculated there), plus the
+     * shift's invoice range and the discounts given on its bills. The
+     * difference says SHORT or OVER, and there are lines to sign.
+     *
+     * @param  array<string, mixed>  $shift  ShiftController::summary()'s thermal payload
+     * @return list<array{text: string, bold: bool, tall: bool}>
+     */
+    public function shiftSummary(array $shift): array
+    {
+        $this->start([]);
+        /** @var array<string, mixed> $summary */
+        $summary = $shift['summary'];
+        /** @var array{opening: int, sales: int, refunds: int, expected: int, counted: int|null, difference: int|null} $cash */
+        $cash = $summary['cash'];
+        /** @var list<array{method: string, label: string, amount: int}> $payments */
+        $payments = $summary['payments'];
+        /** @var array{first: string, last: string}|null $invoices */
+        $invoices = $shift['invoices'] ?? null;
+        $optional = fn (?int $minor): string => $minor === null ? '-' : $this->money($minor);
+
+        $this->header();
+        $this->center('SHIFT SUMMARY', bold: true, tall: true);
+        /** @var array{code: string, name?: string|null, location?: string|null}|null $till */
+        $till = $shift['till'] ?? null;
+
+        if ($till !== null) {
+            $name = trim((string) ($till['name'] ?? ''));
+            $this->detail('Till', trim($till['code'].($name !== '' && $name !== $till['code'] ? ' '.$name : '')));
+
+            if (filled($till['location'] ?? null)) {
+                $this->detail('Location', (string) $till['location']);
+            }
+        }
+
+        $this->detail('Cashier', (string) $shift['cashier']);
+        $this->detail('Opened', self::date((string) $shift['openedAt']));
+        $this->detail('Closed', filled($shift['closedAt'] ?? null) ? self::date((string) $shift['closedAt']) : 'Still open');
+        $this->detail('Printed', self::date((string) $shift['printedAt']));
+        $this->rule();
+
+        $this->row('Bills', number_format((int) $summary['bills']));
+        $this->detail('Invoices', $invoices === null ? '-' : ($invoices['first'] === $invoices['last'] ? $invoices['first'] : $invoices['first'].' to '.$invoices['last']));
+        $this->row('Sales', $this->money((int) $summary['gross']));
+        $this->row('Discounts given', $this->money((int) $shift['discounts']));
+        $this->row('Refunds ('.$summary['refunds_count'].')', $this->money(-(int) $summary['refunds']));
+        $this->row('NET SALES '.$this->shop['currency'], $this->money((int) $summary['net']), bold: true);
+        $this->row('Voided bills ('.$summary['voids'].')', $this->money((int) $summary['voids_total']));
+        $this->rule();
+
+        $this->text('Payments', bold: true);
+
+        foreach ($payments as $payment) {
+            $this->row($payment['label'], $this->money($payment['amount']));
+        }
+
+        if ($payments === []) {
+            $this->text('No payments.');
+        }
+
+        $this->text('Cash is net of change given back.');
+        $this->rule();
+
+        $this->row('Opening float', $this->money($cash['opening']));
+        $this->row('Cash sales', $this->money($cash['sales']));
+        $this->row('Cash refunds', $this->money(-$cash['refunds']));
+        $this->grandTotal('EXPECTED CASH '.$this->shop['currency'], $this->money($cash['expected']));
+        $this->row('Counted', $optional($cash['counted']));
+        $this->row('Difference', $optional($cash['difference']), bold: true);
+
+        if ($cash['difference'] !== null) {
+            $this->center(match ($cash['difference'] <=> 0) {
+                -1 => '*** SHORT '.$this->money(-$cash['difference']).' ***',
+                1 => '*** OVER '.$this->money($cash['difference']).' ***',
+                0 => 'Balanced',
+            }, bold: true, tall: $cash['difference'] !== 0);
+        }
+
+        $this->rule();
+
+        foreach (['Cashier', 'Checked by', 'Date'] as $signature) {
+            $this->push('');
+            $this->push('');
+            $this->push(str_pad($signature.' ', $this->width, '_'));
+        }
+
+        return $this->lines;
+    }
+
+    /**
+     * A label and its value, as row() prints them (the value under its label
+     * when both do not fit). A value as long as a line is wrapped first, so
+     * every piece is shorter than a line: row() only moves a value under its
+     * label, it does not wrap one (a till name of a full line would never
+     * fit, for row() or the till's layout.ts).
+     */
+    private function detail(string $label, string $value): void
+    {
+        $value = self::ascii($value);
+
+        if (strlen($value) < $this->width) {
+            $this->row($label, $value, amount: false);
+
+            return;
+        }
+
+        $this->text($label);
+
+        foreach ($this->wrap($value, $this->width - 1) as $part) {
+            $this->row('', trim($part), amount: false);
+        }
+    }
+
     /** "2026-10-21 14:05" as printed: "21/10/2026 14:05". */
     public static function date(string $value): string
     {
