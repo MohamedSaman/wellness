@@ -160,8 +160,12 @@ for (const viewport of viewports) {
                 const href = await print.getAttribute('href');
                 const summary = await context.newPage();
                 await summary.goto(href!.replace(/\?print=1$/, ''));
+                // The clinic prints it on the receipt printer, as a receipt.
+                await expect(
+                    summary.locator('[data-test=thermal-lines]'),
+                ).toContainText('SHIFT SUMMARY');
                 await expectInside(
-                    summary.locator('.page'),
+                    summary.locator('[data-test=receipt]'),
                     'printed shift summary',
                     { window: 'width' },
                 );
