@@ -115,6 +115,15 @@ async function close(): Promise<void> {
     }
 }
 
+/**
+ * Opened by the till (not `noopener`), like a receipt: the summary page
+ * prints itself with ?print=1 and, on a thermal printer, closes once
+ * printed (pages/pos/Receipt.vue), so a kiosk till is not left behind it.
+ */
+function printSummary(event: MouseEvent): void {
+    window.open((event.currentTarget as HTMLAnchorElement).href, '_blank');
+}
+
 function done(): void {
     emit('update:open', false);
     router.reload({ only: ['shift', 'tills'] });
@@ -250,9 +259,9 @@ function money(minor: number | null): string {
                 v-if="closed && summary"
                 :href="ShiftController.summary.url(closed.uuid) + '?print=1'"
                 target="_blank"
-                rel="noopener"
                 class="text-center text-sm font-medium underline underline-offset-4"
                 data-test="print-shift-summary"
+                @click.prevent="printSummary"
                 >Print the shift summary</a
             >
             <Button v-if="closed" class="h-14 text-lg" @click="done"
