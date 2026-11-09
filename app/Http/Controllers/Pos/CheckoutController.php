@@ -27,6 +27,7 @@ class CheckoutController extends Controller
             customerPhone: $input['customer_phone'] ?? null,
             billType: $request->billType(),
             opdMedicinesAmount: $request->medicinesAmount(),
+            patient: $request->patientInput(),
         ));
 
         return response()->json([

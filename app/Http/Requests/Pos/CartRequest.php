@@ -6,6 +6,7 @@ use App\Enums\BillType;
 use App\Enums\PaymentMethod;
 use App\Services\Data\BatchPick;
 use App\Services\Data\CartLine;
+use App\Services\Data\PatientInput;
 use App\Services\Data\PaymentInput;
 use Illuminate\Validation\Rule;
 
@@ -45,7 +46,16 @@ abstract class CartRequest extends PosRequest
             'payments.*.method' => ['required', Rule::enum(PaymentMethod::class)],
             'payments.*.amount' => ['required', self::MONEY],
             'payments.*.reference' => ['nullable', 'string', 'max:100'],
+            // The patient found or added at the till (pharmacy; branch 13).
+            ...PatientInput::rules(),
         ];
+    }
+
+    public function patientInput(): ?PatientInput
+    {
+        $patient = $this->validated('patient');
+
+        return PatientInput::fromArray(is_array($patient) ? $patient : null);
     }
 
     /** @return list<CartLine> */

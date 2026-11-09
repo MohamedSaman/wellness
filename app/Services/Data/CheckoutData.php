@@ -43,5 +43,7 @@ final readonly class CheckoutData
         // Offline: the till's clock minus the server's at upload, in seconds
         // (positive = the till is ahead); null online and for older clients.
         public ?int $clockOffsetSeconds = null,
+        // The patient (pharmacy; docs/PHARMACY.md, branch 13): found or added at the till.
+        public ?PatientInput $patient = null,
     ) {}
 }

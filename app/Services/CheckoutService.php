@@ -25,6 +25,7 @@ use App\Services\Data\BatchAllocation;
 use App\Services\Data\BatchPick;
 use App\Services\Data\CartLine;
 use App\Services\Data\CheckoutData;
+use App\Services\Data\PatientInput;
 use App\Services\Data\PaymentInput;
 use App\Support\CurrentShop;
 use App\Support\Money;
@@ -42,6 +43,7 @@ class CheckoutService
         private readonly CurrentShop $currentShop,
         private readonly BatchPlanner $planner,
         private readonly BatchService $batches,
+        private readonly PatientService $patients,
     ) {}
 
     public function checkout(CheckoutData $data): Sale
@@ -77,7 +79,8 @@ class CheckoutService
             $this->checkDiscountLimit($shop, $data->cashier, $totals['subtotal'], $totals['discount_total']);
         }
 
-        $review = [...$review, ...$this->checkPrescriptions($shop, $data, $totals['lines'])];
+        [$patientInput, $patientName, $patientReview] = $this->checkPatient($shop, $data, $totals['lines']);
+        $review = [...$review, ...$patientReview, ...$this->checkPrescriptions($shop, $data, $totals['lines'], $patientName)];
 
         [$paidTotal, $changeDue, $paymentIssues] = $this->checkPayments($data->payments, $totals['grand_total'], $data->isOfflineSync, $shop);
         $review = [...$review, ...$paymentIssues];
@@ -86,8 +89,10 @@ class CheckoutService
         [$clockOffset, $reportedAt, $storedSoldAt] = $this->tillClock($shop, $data, $syncedAt, $review);
 
         // attempts: 3 retries the whole checkout if MySQL resolves a deadlock between two tills.
-        return DB::transaction(function () use ($shop, $data, $priceList, $variants, $totals, $tax, $paidTotal, $changeDue, $review, $locations, $syncedAt, $clockOffset, $reportedAt, $storedSoldAt): Sale {
+        return DB::transaction(function () use ($shop, $data, $priceList, $variants, $totals, $tax, $paidTotal, $changeDue, $review, $locations, $syncedAt, $clockOffset, $reportedAt, $storedSoldAt, $patientInput): Sale {
             $shift = $this->openShiftFor($shop, $data, $review);
+            $soldAt = $storedSoldAt ?? $data->soldAt ?? now();
+            $patient = $patientInput === null ? null : $this->patients->forSale($patientInput, $soldAt, $data->device, $data->cashier, $data->isOfflineSync);
             $invoiceNo = $this->invoiceNumberFor($shop, $data, $review);
             $isOpd = $data->billType === BillType::Opd;
             $listValue = $isOpd ? self::medicinesListValue($totals['lines']) : null;
@@ -113,11 +118,14 @@ class CheckoutService
                 'change_due' => $changeDue,
                 'tax_rate' => $tax['rate'],
                 'prices_include_tax' => $tax['inclusive'],
-                'customer_name' => $data->customerName,
+                // On a pharmacy bill, the patient's name as sold (branch 13; the controlled-drug register reads it).
+                'customer_name' => $patient['name'] ?? $data->customerName,
                 'customer_phone' => $data->customerPhone,
+                'patient_id' => $patient === null ? null : $patient['patient']->getKey(),
+                'patient_age_months' => $patient['age_months'] ?? null,
                 'notes' => $data->notes,
                 // As the till's clock said (and the receipt printed), unless no column can hold it.
-                'sold_at' => $storedSoldAt ?? $data->soldAt ?? now(),
+                'sold_at' => $soldAt,
                 'synced_at' => $syncedAt,
                 // Null: the sale's own time (Sale::booted()); set when an offline till's clock was out.
                 'reported_at' => $reportedAt,
@@ -1033,6 +1041,63 @@ class CheckoutService
     }
 
     /**
+     * The patient (pharmacy; docs/PHARMACY.md, branch 13). The shop's
+     * patient_on_sale says when one is required: 'always', or 'rx' when the
+     * sale has a prescription-only or controlled line ('ask' and 'off' never
+     * require one; the controlled-drug register asks for the name on its
+     * own, checkPrescriptions()). Online a missing patient is refused, as is
+     * a patient the shop does not have and the till gave no name for;
+     * offline both are flagged and the sale is kept. Without the pharmacy
+     * module a patient is ignored, so a retail sale is unchanged.
+     *
+     * @param  list<array<string, mixed>>  $priced
+     * @return array{0: PatientInput|null, 1: string|null, 2: list<array<string, mixed>>} the patient to record, their name, offline review reasons
+     */
+    private function checkPatient(Shop $shop, CheckoutData $data, array $priced): array
+    {
+        if (! $shop->hasModule('pharmacy')) {
+            return [null, null, []];
+        }
+
+        $input = $data->patient;
+        $name = PatientService::cleanName($input?->name);
+        $review = [];
+
+        if ($input !== null && $name === null) {
+            $name = $this->patients->find($input->uuid)?->name;
+
+            if ($name === null) {
+                if (! $data->isOfflineSync) {
+                    throw new PosException("That patient was not found. Enter the patient's name.");
+                }
+
+                $review[] = ['type' => 'patient_unknown', 'message' => 'The till named a patient this shop does not have, without a name. The sale was recorded without the patient.'];
+                $input = null;
+            }
+        }
+
+        if ($input === null) {
+            $mode = (string) $shop->setting('patient_on_sale', 'ask');
+            $rxLine = Arr::first($priced, fn (array $line): bool => in_array(DrugSchedule::tryFrom((string) $line['drug_schedule']), [DrugSchedule::PrescriptionOnly, DrugSchedule::Controlled], true));
+            $missing = match (true) {
+                $mode === 'always' => ['Choose or add the patient for this sale.', 'This sale was recorded without the patient the shop requires on every sale.'],
+                $mode === 'rx' && $rxLine !== null => ["{$rxLine['sku']} is a prescription medicine: choose or add the patient.", "{$rxLine['sku']} is a prescription medicine and was sold without the patient."],
+                default => null,
+            };
+
+            if ($missing !== null) {
+                if (! $data->isOfflineSync) {
+                    throw new PosException($missing[0]);
+                }
+
+                $review[] = ['type' => 'patient_missing', 'message' => $missing[1]];
+            }
+        }
+
+        return [$input, $name, $review];
+    }
+
+    /**
      * Prescription lines (docs/PHARMACY.md §4.10): a prescription-only or
      * controlled medicine needs a prescriber when the shop says so
      * (rx_prescriber `required`), and with the controlled-drug register on, a
@@ -1042,7 +1107,7 @@ class CheckoutService
      * @param  list<array<string, mixed>>  $priced
      * @return list<array<string, mixed>> offline review reasons
      */
-    private function checkPrescriptions(Shop $shop, CheckoutData $data, array $priced): array
+    private function checkPrescriptions(Shop $shop, CheckoutData $data, array $priced, ?string $patientName = null): array
     {
         $prescriberRequired = $shop->setting('rx_prescriber') === 'required';
         $register = (bool) $shop->setting('controlled_register');
@@ -1071,7 +1136,7 @@ class CheckoutService
 
             if ($data->isOfflineSync) {
                 $review[] = ['type' => 'controlled_offline', 'sku' => $sku, 'message' => "{$sku} is a controlled drug and was sold offline. Check the controlled-drug register."];
-            } elseif (blank($data->customerName)) {
+            } elseif (blank($patientName ?? $data->customerName)) {
                 throw new PosException("Enter the patient's name for {$sku} (controlled drug).");
             }
         }
@@ -1338,6 +1403,8 @@ class CheckoutService
                 'line_discount' => $lineDiscount,
                 'tax_category' => $variant->product->tax_category->value,
                 'drug_schedule' => $variant->product->drugDetail?->schedule->value,
+                // The dispensing register's form as sold (branch 13).
+                'dosage_form' => $variant->product->drugDetail?->dosage_form->value,
                 'prescriber' => $this->text($cartLine->prescriber, 150),
                 'prescription_ref' => $this->text($cartLine->prescriptionRef, 100),
             ];
