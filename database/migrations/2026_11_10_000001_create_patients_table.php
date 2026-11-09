@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -60,11 +61,17 @@ return new class extends Migration
             $table->dropColumn('dosage_form');
         });
 
-        Schema::table('sales', function (Blueprint $table) {
+        // SQLite rebuilds the table to drop a foreign key column; sale_items and payments point at it.
+        // Inside a transaction SQLite ignores foreign_keys = OFF, but honours deferred checks.
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('PRAGMA defer_foreign_keys = ON');
+        }
+
+        Schema::withoutForeignKeyConstraints(fn () => Schema::table('sales', function (Blueprint $table) {
             $table->dropIndex(['shop_id', 'patient_id']);
             $table->dropConstrainedForeignId('patient_id');
             $table->dropColumn('patient_age_months');
-        });
+        }));
 
         Schema::dropIfExists('patients');
     }
