@@ -230,8 +230,45 @@ export async function goOffline(
     );
 }
 
+/**
+ * F9 to payment (docs/PHARMACY.md, branch 13): a clinic's till shows the
+ * Patient & prescription step first. With a patient, it is added there by
+ * name and age (Enter, Enter); without, the step is skipped (Esc).
+ */
+export async function openPayment(
+    page: Page,
+    patient: { name: string; age: string } | null = null,
+): Promise<Locator> {
+    const pay = dialog(page, 'Payment');
+    const step = page.locator('[data-test=prescription-dialog]');
+
+    // F9 waits for the cart's price (worked out on the till while offline): press again until something opens.
+    await expect(async () => {
+        await page.keyboard.press('F9');
+        await expect(pay.or(step)).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+
+    if (await step.isVisible()) {
+        if (patient === null) {
+            await page.keyboard.press('Escape');
+        } else {
+            await step.locator('[data-test=patient-name]').fill(patient.name);
+            await page.keyboard.press('Enter');
+            await step.locator('[data-test=patient-age]').fill(patient.age);
+            await page.keyboard.press('Enter');
+        }
+    }
+
+    await expect(pay).toBeVisible();
+
+    return pay;
+}
+
 /** Rings up a sale on the till's own catalog; returns its invoice number, the Sale complete dialog open. */
-export async function sellOffline(page: Page): Promise<string> {
+export async function sellOffline(
+    page: Page,
+    patient: { name: string; age: string } | null = null,
+): Promise<string> {
     await page.locator('[data-test=pos-search]').fill('Panadol');
     await page
         .locator('[data-test=search-result]', { hasText: 'Panadol' })
@@ -239,12 +276,7 @@ export async function sellOffline(page: Page): Promise<string> {
         .click();
     await expect(page.locator('[data-test=cart-line]')).toHaveCount(1);
 
-    const pay = dialog(page, 'Payment');
-    // F9 waits for the cart's price (worked out on the till while offline): press again until it opens.
-    await expect(async () => {
-        await page.keyboard.press('F9');
-        await expect(pay).toBeVisible({ timeout: 1_000 });
-    }).toPass({ timeout: 30_000 });
+    const pay = await openPayment(page, patient);
     await pay.getByRole('button', { name: 'Exact' }).click();
     await pay.locator('[data-test=complete-sale]').click();
 

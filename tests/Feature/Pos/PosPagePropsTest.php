@@ -101,7 +101,13 @@ class PosPagePropsTest extends PharmacyTestCase
             ->where('pharmacy.controlledRegister', false)
             ->where('pharmacy.bankTransferReferenceRequired', true)
             ->where('pharmacy.opdReceiptMedicines', 'totals')
-            ->where('pharmacy.opdConsultation', null));
+            ->where('pharmacy.opdConsultation', null)
+            ->where('pharmacy.patientOnSale', 'ask'));
+
+        // Branch 13: when the till needs the patient.
+        $this->setShopSetting('patient_on_sale', 'always');
+        $this->page($this->owner, $this->genTill())->assertInertia(fn (Assert $page) => $page
+            ->where('pharmacy.patientOnSale', 'always'));
     }
 
     public function test_the_consultation_item_is_presented_for_the_till(): void

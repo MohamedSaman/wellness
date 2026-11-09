@@ -65,6 +65,8 @@ export type PosPharmacy = {
     defaultPrescriber: string | null;
     /** Controlled lines need the patient's name, and can't be sold offline. */
     controlledRegister: boolean;
+    /** Branch 13: when a sale needs the patient. Missing before it: 'ask'. */
+    patientOnSale?: PatientOnSale;
     bankTransferReferenceRequired: boolean;
     opdReceiptMedicines: OpdReceiptMedicines;
     /** OPD bills: warn below this % of the medicines' list value; 0 = never. */
@@ -74,6 +76,35 @@ export type PosPharmacy = {
 } | null;
 
 export type BillType = 'standard' | 'opd';
+
+/**
+ * Branch 13 (shop setting patient_on_sale): 'ask' shows the patient step and
+ * the cashier may skip it; 'rx' requires a patient on a sale with a
+ * prescription-only or controlled line; 'always' on every sale; 'off' never
+ * asks (a controlled line with the register on still needs the name).
+ */
+export type PatientOnSale = 'ask' | 'rx' | 'always' | 'off';
+
+/** A patient as the till knows them: name and age only (PatientService::forTill()). */
+export type PosPatient = {
+    uuid: string;
+    name: string;
+    /** Age in months on age_on; null when the clinic does not know it. */
+    age_months: number | null;
+    /** YYYY-MM-DD: the day age_months was worked out (the till ages it from there). */
+    age_on: string;
+    last_visit?: string | null;
+};
+
+/** The sale's patient: one found, or one added at this till (online or offline). */
+export type SalePatient = {
+    uuid: string;
+    name: string;
+    /** Age at this visit in months, as typed or as known; null = not known. */
+    ageMonths: number | null;
+    /** Added at this till for this sale: the server creates them with it. */
+    isNew: boolean;
+};
 
 export type PosShift = {
     uuid: string;
@@ -264,6 +295,9 @@ export type ReceiptPrintOptions = {
     showPrescriber: boolean;
     /** A pharmacy only: 36 characters on 80 mm paper (ReceiptLayout). */
     largePrint?: boolean;
+    /** A pharmacy only (branch 13): the patient's name and age under the cashier. */
+    showPatientName?: boolean;
+    showPatientAge?: boolean;
 };
 
 export type ReceiptShop = {
@@ -356,6 +390,8 @@ export type ReceiptSale = {
     opdReceiptMedicines?: OpdReceiptMedicines;
     /** OPD bills: the Medicines amount (sum of the medicine lines); null otherwise. */
     medicinesTotal?: number | null;
+    /** A pharmacy (branch 13): the patient as sold, printed per Receipt settings. */
+    patient?: { name: string | null; age: string | null } | null;
 };
 
 /** A row of the recent sales panel (F6). */

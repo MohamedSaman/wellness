@@ -3,6 +3,7 @@ import QuoteController from '@/actions/App/Http/Controllers/Pos/QuoteController'
 import { useOfflinePos } from '@/composables/useOfflinePos';
 import { ApiError, postJson } from '@/lib/http';
 import { formatQuantity } from '@/lib/money';
+import { formatAge } from '@/lib/patientAge';
 import type {
     OfflineReceipt,
     OfflineShop,
@@ -12,6 +13,7 @@ import { planLine, saleDay, toProposal } from '@/lib/offline/fefo';
 import type { BatchPlan } from '@/lib/offline/fefo';
 import {
     OfflinePricingError,
+    checkPatient,
     checkPrescribers,
     isRxSchedule,
     previewPaymentsOffline,
@@ -24,6 +26,7 @@ import { itemsById } from '@/lib/offline/search';
 import type {
     BillType,
     DrugInfo,
+    PatientOnSale,
     PaymentMethod,
     PaymentRow,
     PosBatch,
@@ -31,6 +34,7 @@ import type {
     PosUnit,
     Quote,
     RxPrescriberRule,
+    SalePatient,
 } from '@/types/pos';
 
 /**
@@ -105,9 +109,17 @@ export type CartState = {
     medicinesAmount: string;
     /** The sale's prescription, applied to every Rx line that has none of its own. */
     prescription: { prescriber: string; ref: string };
-    /** The patient (controlled drugs with the register on). */
+    /**
+     * The controlled-drug register's patient name and phone (as before branch
+     * 13). The name now comes from the patient; this field is only what an
+     * older saved cart typed. The phone is still typed for a controlled drug.
+     */
     customerName: string;
     customerPhone: string;
+    /** Branch 13: the patient found or added in the Patient & prescription step. */
+    patient: SalePatient | null;
+    /** The cashier skipped the patient step for this sale (the shop allows it). */
+    patientSkipped: boolean;
 };
 
 /** What the till is (set by the checkout page through configure()); not part of the sale. */
@@ -123,6 +135,8 @@ export type CartContext = {
     rxPrescriber: RxPrescriberRule;
     /** The consultation item, pre-added to every new OPD bill. */
     opdConsultation: PosItem | null;
+    /** Branch 13: when a sale needs the patient. */
+    patientOnSale: PatientOnSale;
 };
 
 type SavedCart = Pick<
@@ -136,6 +150,8 @@ type SavedCart = Pick<
     | 'prescription'
     | 'customerName'
     | 'customerPhone'
+    | 'patient'
+    | 'patientSkipped'
 >;
 
 const newUuid = () => crypto.randomUUID();
@@ -148,6 +164,7 @@ const context = reactive<CartContext>({
     defaultPrescriber: null,
     rxPrescriber: 'prompt',
     opdConsultation: null,
+    patientOnSale: 'ask',
 });
 
 const state = reactive<CartState>({
@@ -164,6 +181,8 @@ const state = reactive<CartState>({
     prescription: { prescriber: '', ref: '' },
     customerName: '',
     customerPhone: '',
+    patient: null,
+    patientSkipped: false,
 });
 
 const offline = useOfflinePos();
@@ -508,13 +527,45 @@ function requestBody() {
                           : state.medicinesAmount,
               }
             : {}),
-        ...(state.customerName.trim() === ''
+        ...(state.customerName.trim() === '' || state.patient !== null
             ? {}
             : { customer_name: state.customerName.trim() }),
         ...(state.customerPhone.trim() === ''
             ? {}
             : { customer_phone: state.customerPhone.trim() }),
+        ...(state.patient === null
+            ? {}
+            : { patient: patientBody(state.patient) }),
     };
+}
+
+/** The patient as checkout and the offline outbox send them (PatientInput). */
+function patientBody(patient: SalePatient) {
+    return {
+        uuid: patient.uuid,
+        name: patient.name,
+        age_months: patient.ageMonths,
+    };
+}
+
+/**
+ * Why this sale cannot be paid for without a patient (branch 13), with the
+ * server's words (CheckoutService::checkPatient()); null when it can.
+ */
+export function patientRequirement(): string | null {
+    if (!context.pharmacy || state.patient !== null) {
+        return null;
+    }
+
+    if (context.patientOnSale === 'always') {
+        return 'Choose or add the patient for this sale.';
+    }
+
+    const rxLine = state.lines.find(isRxLine);
+
+    return context.patientOnSale === 'rx' && rxLine !== undefined
+        ? `${rxLine.sku} is a prescription medicine: choose or add the patient.`
+        : null;
 }
 
 function scheduleQuote(): void {
@@ -636,6 +687,8 @@ export function usePosCart() {
         };
         state.customerName = '';
         state.customerPhone = '';
+        state.patient = null;
+        state.patientSkipped = false;
 
         if (state.billType === 'opd' && context.opdConsultation !== null) {
             addItem(context.opdConsultation);
@@ -871,6 +924,8 @@ export function usePosCart() {
                 prescription: state.prescription,
                 customerName: state.customerName,
                 customerPhone: state.customerPhone,
+                patient: state.patient,
+                patientSkipped: state.patientSkipped,
             }),
         ) as SavedCart;
     }
@@ -891,6 +946,8 @@ export function usePosCart() {
         };
         state.customerName = saved.customerName ?? '';
         state.customerPhone = saved.customerPhone ?? '';
+        state.patient = saved.patient ?? null;
+        state.patientSkipped = saved.patientSkipped ?? false;
     }
 
     /** Sale body for POST /pos/checkout: ids, units and quantities, never list prices. */
@@ -934,10 +991,14 @@ export function usePosCart() {
         const prescriptionRefs = cartLines.map(prescriptionRefFor);
 
         checkPrescribers(priced.lines, prescribers, priced.shop);
+        checkPatient(priced.lines, state.patient !== null, priced.shop);
 
         const uuid = state.uuid;
         const opd = state.billType === 'opd';
-        const customerName = state.customerName.trim() || null;
+        const patient = state.patient;
+        // The patient's name as sold (the server keeps it as customer_name), else what an older cart typed.
+        const customerName =
+            patient?.name ?? (state.customerName.trim() || null);
         const customerPhone = state.customerPhone.trim() || null;
         const cashier = offline.state.cashier;
         const methodLabel = (method: string) =>
@@ -988,6 +1049,7 @@ export function usePosCart() {
                 ...(customerPhone === null
                     ? {}
                     : { customer_phone: customerPhone }),
+                ...(patient === null ? {} : { patient: patientBody(patient) }),
             },
             receipt: {
                 invoiceNo,
@@ -1054,6 +1116,14 @@ export function usePosCart() {
                 billType: state.billType,
                 opdReceiptMedicines: priced.opdReceiptMedicines,
                 medicinesTotal: totals.medicines_total,
+                // As the server's receipt (ReceiptService::patient()): printed per Receipt settings.
+                patient:
+                    customerName === null && patient?.ageMonths == null
+                        ? null
+                        : {
+                              name: customerName,
+                              age: formatAge(patient?.ageMonths ?? null),
+                          },
             },
         });
 
@@ -1064,6 +1134,18 @@ export function usePosCart() {
         };
     }
 
+    /** The sale's patient (found or added), or none. */
+    function setPatient(patient: SalePatient | null): void {
+        state.patient = patient;
+        state.patientSkipped = false;
+    }
+
+    /** The cashier skipped the patient step (only when the shop allows it). */
+    function skipPatient(): void {
+        state.patient = null;
+        state.patientSkipped = true;
+    }
+
     return {
         state,
         context,
@@ -1071,6 +1153,9 @@ export function usePosCart() {
         medicinesTotal,
         prescriptionError,
         hasRxLines,
+        patientRequirement,
+        setPatient,
+        skipPatient,
         configure,
         offlineSale,
         addItem,
