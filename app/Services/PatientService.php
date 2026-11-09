@@ -12,8 +12,8 @@ use App\Services\Data\PatientInput;
 use App\Support\CurrentShop;
 use App\Support\PatientAge;
 use Carbon\CarbonImmutable;
-use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -72,7 +72,8 @@ class PatientService
                 return null;
             }
 
-            $patient = Patient::query()->createOrFirst(['uuid' => strtolower($input->uuid)], [
+            $patient = $this->create([
+                'uuid' => strtolower($input->uuid),
                 'name' => $typedName,
                 'birth_date' => $input->ageMonths === null ? null : PatientAge::birthDate($input->ageMonths, $day)->toDateString(),
                 'birth_date_estimated' => $input->ageMonths !== null,
@@ -92,6 +93,24 @@ class PatientService
             'name' => $offline && $typedName !== null ? $typedName : $patient->name,
             'age_months' => $input->ageMonths ?? PatientAge::at($patient->birth_date, $day),
         ];
+    }
+
+    /**
+     * Create a patient inside the checkout's transaction, once: another
+     * till's sale (or a retry) may be inserting the same uuid. The insert
+     * runs in a savepoint; on a duplicate, a locking read finds the row the
+     * other transaction committed, which a plain read inside this
+     * transaction's snapshot would not see on MySQL (REPEATABLE READ).
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function create(array $attributes): Patient
+    {
+        try {
+            return DB::transaction(fn (): Patient => Patient::query()->create($attributes));
+        } catch (UniqueConstraintViolationException $duplicate) {
+            return Patient::query()->where('uuid', $attributes['uuid'])->sharedLock()->first() ?? throw $duplicate;
+        }
     }
 
     /**
