@@ -41,7 +41,7 @@ use Illuminate\Support\Facades\Storage;
  * A retail shop's sale receipt is the HTML receipt it always had
  * (ReceiptView.vue); its refund and void slips use the thermal layout.
  *
- * @phpstan-type PrintOptions array{paperWidth: int, showBatch: bool, showExpiry: bool, showPrescriber: bool, largePrint?: bool}
+ * @phpstan-type PrintOptions array{paperWidth: int, showBatch: bool, showExpiry: bool, showPrescriber: bool, largePrint?: bool, showPatientName?: bool, showPatientAge?: bool}
  * @phpstan-type ReceiptShop array{name: string, address: ?string, phone: ?string, taxNumber: ?string, logoUrl: ?string, header: ?string, footer: ?string, currency: string, decimals: int, receipt: PrintOptions}
  */
 class ReceiptService
@@ -229,8 +229,13 @@ class ReceiptService
             'showBatch' => (bool) $shop->setting('receipt_show_batch', true),
             'showExpiry' => (bool) $shop->setting('receipt_show_expiry', true),
             'showPrescriber' => (bool) $shop->setting('receipt_show_prescriber', false),
-            // A pharmacy's receipts are set larger for the thermal head (ReceiptLayout); retail's stay as they were.
-            ...($shop->hasModule('pharmacy') ? ['largePrint' => true] : []),
+            // A pharmacy's receipts are set larger for the thermal head (ReceiptLayout), and print the
+            // patient's name and age when the shop says so (branch 13); retail's stay as they were.
+            ...($shop->hasModule('pharmacy') ? [
+                'largePrint' => true,
+                'showPatientName' => (bool) $shop->setting('receipt_show_patient_name', false),
+                'showPatientAge' => (bool) $shop->setting('receipt_show_patient_age', false),
+            ] : []),
         ];
     }
 

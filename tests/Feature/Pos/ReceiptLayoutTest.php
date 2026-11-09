@@ -551,7 +551,7 @@ class ReceiptLayoutTest extends BatchTestCase
             ->where('invoiceUrl', route('sales.invoice', $sale))
             ->where('sale.items.0.strength', '500 mg')
             ->where('sale.till.location', 'General Pharmacy')
-            ->where('shop.receipt', ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true]));
+            ->where('shop.receipt', ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true, 'showPatientName' => false, 'showPatientAge' => false]));
 
         $this->setShopSetting('receipt_paper_width', 58);
 

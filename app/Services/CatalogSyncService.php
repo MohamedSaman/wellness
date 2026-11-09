@@ -3,11 +3,13 @@
 namespace App\Services;
 
 use App\Models\Device;
+use App\Models\Patient;
 use App\Models\ProductVariant;
 use App\Models\Shop;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
 use App\Support\CurrentShop;
+use App\Support\PatientAge;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -49,6 +51,7 @@ class CatalogSyncService
      *     items: list<array<string, mixed>>,
      *     deleted: list<int>,
      *     vehicles: array<int, mixed>|null,
+     *     patients: list<array{uuid: string, name: string, age_months: int|null, age_on: string}>|null,
      * }
      */
     public function changes(Device $device, ?CarbonInterface $since, int $afterId = 0): array
@@ -106,6 +109,9 @@ class CatalogSyncService
             'items' => array_values($sellable->map(fn (ProductVariant $variant): array => $this->present($variant, $device, $fitment))->all()),
             'deleted' => array_values($gone->map(fn (ProductVariant $variant): int => (int) $variant->getKey())->all()),
             'vehicles' => $fitment && $afterId === 0 && $this->vehiclesChanged($since) ? $this->vehicles() : null,
+            // Pharmacy (branch 13): the patients, name and age only, so the till finds them offline.
+            // A full sync replaces the till's copy; a delta brings who was added or changed.
+            'patients' => $afterId === 0 && $shop->hasModule('pharmacy') ? $this->patients($shop, $since) : null,
         ];
     }
 
@@ -141,6 +147,8 @@ class CatalogSyncService
             'rxPrescriber' => (string) $shop->setting('rx_prescriber', 'prompt'),
             'defaultPrescriber' => $shop->setting('default_prescriber'),
             'controlledRegister' => (bool) $shop->setting('controlled_register'),
+            // Patients (branch 13): ask, rx, always or off.
+            'patientOnSale' => self::patientOnSale($shop),
             'minDaysToExpiryForSale' => max(0, (int) $shop->setting('min_days_to_expiry_for_sale', 0)),
             'opdReceiptMedicines' => (string) $shop->setting('opd_receipt_medicines', 'names'),
             'opdConsultationVariantId' => $this->nullableInt($shop->setting('opd_consultation_variant_id')),
@@ -150,6 +158,37 @@ class CatalogSyncService
             // Receipts (branch 9): paper width and what the offline receipt prints under each medicine.
             'receipt' => ReceiptService::printOptions($shop),
         ];
+    }
+
+    /** The shop's patient_on_sale, one of its four values ('ask' when unknown). */
+    public static function patientOnSale(Shop $shop): string
+    {
+        $mode = (string) $shop->setting('patient_on_sale', 'ask');
+
+        return in_array($mode, ['ask', 'rx', 'always', 'off'], true) ? $mode : 'ask';
+    }
+
+    /**
+     * Every patient (a full sync) or those added or changed since the last
+     * one, as the till keeps them: no notes.
+     *
+     * @return list<array{uuid: string, name: string, age_months: int|null, age_on: string}>
+     */
+    private function patients(Shop $shop, ?CarbonInterface $since): array
+    {
+        $day = PatientService::visitDay($shop);
+
+        return array_values(Patient::query()
+            ->when($since !== null, fn (Builder $query) => $query->where('updated_at', '>=', $since))
+            ->orderBy('id')
+            ->get(['id', 'uuid', 'name', 'birth_date'])
+            ->map(fn (Patient $patient): array => [
+                'uuid' => $patient->uuid,
+                'name' => $patient->name,
+                'age_months' => PatientAge::at($patient->birth_date, $day),
+                'age_on' => $day->toDateString(),
+            ])
+            ->all());
     }
 
     /**
