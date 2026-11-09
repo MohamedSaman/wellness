@@ -81,6 +81,61 @@ class ReceiptLayoutParityTest extends BatchTestCase
         }
     }
 
+    /**
+     * The patient's row (branch 13) under every combination of the two
+     * settings, on both papers and in large print: the same lines and bytes.
+     */
+    public function test_the_tills_layout_prints_the_patient_exactly_as_the_server(): void
+    {
+        $this->requireNode();
+        $this->stockTheClinic();
+        $receipts = app(ReceiptService::class);
+        $sale = $receipts->sale($this->billAtGeneral());
+
+        $patients = [
+            'name and age' => ['name' => 'Nimal Perera', 'age' => '34 y'],
+            'baby' => ['name' => 'Baby Silva', 'age' => '8 m'],
+            'name only' => ['name' => 'Kamala Fernando', 'age' => null],
+            'age only' => ['name' => null, 'age' => '71 y'],
+            'long, odd text' => ['name' => 'Wijesinghe Mudiyanselage Ralahamillage Nimalasiri Bandara Gunawardena', 'age' => '102 y'],
+            'accents' => ['name' => '  Zoë O’Brien–Perera ', 'age' => '23 m'],
+            'none' => null,
+        ];
+
+        $cases = [];
+        foreach ($patients as $name => $patient) {
+            foreach ([[80, false], [58, false], [80, true]] as [$paperWidth, $large]) {
+                foreach ([[true, true], [true, false], [false, true], [false, false]] as [$showName, $showAge]) {
+                    $options = ['paperWidth' => $paperWidth, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'showPatientName' => $showName, 'showPatientAge' => $showAge];
+                    $cases["{$name} / {$paperWidth}".($large ? ' large' : '')." / name {$showName} age {$showAge}"] = [
+                        'shop' => [...$receipts->shop(), 'receipt' => $large ? [...$options, 'largePrint' => true] : $options],
+                        'sale' => [...$sale, 'patient' => $patient],
+                    ];
+                }
+            }
+        }
+
+        $till = $this->runTill(array_values($cases));
+
+        foreach (array_keys($cases) as $n => $name) {
+            $server = (new ReceiptLayout($cases[$name]['shop']))->sale($cases[$name]['sale']);
+
+            $this->assertSame($server, $till[$n]['lines'], "Lines differ: {$name}");
+            $printer = (new ReceiptLayout(ReceiptLayout::forPrinter($cases[$name]['shop'])))->sale($cases[$name]['sale']);
+            $this->assertSame(base64_encode(EscPos::encode($printer)), $till[$n]['escpos'], "ESC/POS differs: {$name}");
+        }
+
+        // What each combination prints, on the server.
+        $text = fn (array $options, ?array $patient): string => implode("\n", array_column((new ReceiptLayout([...$receipts->shop(), 'receipt' => ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => true, 'showPrescriber' => false, ...$options]]))->sale([...$sale, 'patient' => $patient]), 'text'));
+        $nimal = ['name' => 'Nimal Perera', 'age' => '34 y'];
+        $this->assertMatchesRegularExpression('/^Patient +Nimal Perera \(34 y\)$/m', $text(['showPatientName' => true, 'showPatientAge' => true], $nimal));
+        $this->assertMatchesRegularExpression('/^Patient +Nimal Perera$/m', $text(['showPatientName' => true], $nimal));
+        $this->assertMatchesRegularExpression('/^Age +34 y$/m', $text(['showPatientAge' => true], $nimal));
+        $this->assertStringNotContainsString('Nimal', $text([], $nimal));
+        $this->assertStringNotContainsString('34 y', $text([], $nimal));
+        $this->assertStringNotContainsString('Patient', $text(['showPatientName' => true, 'showPatientAge' => true], null));
+    }
+
     /** @return array<string, mixed> */
     private function oddSale(): array
     {
