@@ -605,6 +605,7 @@ watch(
         defaultPrescriber: props.pharmacy?.defaultPrescriber ?? null,
         rxPrescriber: props.pharmacy?.rxPrescriber ?? 'prompt',
         opdConsultation: props.pharmacy?.opdConsultation ?? null,
+        patientOnSale: patientMode.value,
     }),
     (context) => cart.configure(context),
     { immediate: true, deep: true },
