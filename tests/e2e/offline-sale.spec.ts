@@ -12,7 +12,8 @@ import {
  * offline billing"): approved for offline sales, it keeps billing from its
  * own catalog with the connection cut, holds the sale, and uploads it as
  * soon as the connection is back; the server then has the sale and System
- * health shows nothing waiting. The page stays open throughout, as on a
+ * health shows nothing waiting; a patient added on the till offline reaches
+ * the server once, with the sale. The page stays open throughout, as on a
  * till PC (the service worker that serves it after a reload is blocked in
  * these tests).
  */
@@ -36,11 +37,13 @@ test('a till keeps billing offline and syncs the sale on reconnect', async ({
     });
 
     let invoice = '';
+    // A patient added at the till while it is offline (branch 13): one per browser, so runs never meet.
+    const patient = `Offline Patient ${test.info().project.name} ${Date.now()}`;
 
     await test.step('The connection drops: the sale is made on the till', async () => {
         await goOffline(page, context);
 
-        invoice = await sellOffline(page);
+        invoice = await sellOffline(page, { name: patient, age: '8m' });
         expect(invoice).toMatch(/^T1-\d{6}$/);
         await page.locator('[data-test=new-sale]').click();
 
@@ -57,6 +60,13 @@ test('a till keeps billing offline and syncs the sale on reconnect', async ({
 
         await admin.goto('/admin/sales');
         await expect(admin.getByText(invoice)).toBeVisible();
+
+        // The patient added offline is on the server once, with this sale and their age at it.
+        await admin.goto('/admin/patients');
+        await expect(admin.getByText(patient)).toHaveCount(1);
+        await admin.getByText(patient).click();
+        await expect(admin.getByText(invoice)).toBeVisible();
+        await expect(admin.getByText('8 m').first()).toBeVisible();
 
         // The till reports what it holds with its next request: sync once more.
         await syncNow.click();
