@@ -47,6 +47,10 @@
                 <dt>{{ $shop->hasModule('pharmacy') ? 'Patient' : 'Customer' }}</dt>
                 <dd><strong>{{ $sale['customerName'] }}</strong>@if (filled($sale['customerPhone']))<br>{{ $sale['customerPhone'] }}@endif</dd>
             @endif
+            {{-- The patient's age at the visit (branch 13), when the shop prints it. --}}
+            @if (($options['showPatientAge'] ?? false) && filled($sale['patient']['age'] ?? null))
+                <dt>Age</dt><dd>{{ $sale['patient']['age'] }}</dd>
+            @endif
             @if (filled($receiptShop['header']))
                 <dt></dt><dd class="notes">{{ $receiptShop['header'] }}</dd>
             @endif

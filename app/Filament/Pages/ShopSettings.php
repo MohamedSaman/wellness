@@ -6,6 +6,7 @@ use App\Filament\Support\BrandingForm;
 use App\Models\ProductVariant;
 use App\Models\Shop;
 use App\Models\User;
+use App\Services\CatalogSyncService;
 use App\Support\CurrentShop;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -83,6 +84,7 @@ class ShopSettings extends Page
             'default_prescriber' => $shop->setting('default_prescriber'),
             'rx_prescriber' => $shop->setting('rx_prescriber'),
             'controlled_register' => (bool) $shop->setting('controlled_register'),
+            'patient_on_sale' => CatalogSyncService::patientOnSale($shop),
             'opd_consultation_variant_id' => $shop->setting('opd_consultation_variant_id'),
             'bank_transfer_reference_required' => (bool) $shop->setting('bank_transfer_reference_required'),
             'opd_below_list_warning_percent' => $shop->setting('opd_below_list_warning_percent'),
@@ -183,6 +185,17 @@ class ShopSettings extends Page
                                 'prompt' => 'Ask only: the till may sell without it',
                             ])
                             ->required(),
+                        // Branch 13: the till's Patient & prescription step (F7).
+                        Radio::make('patient_on_sale')
+                            ->label('Patient on sale')
+                            ->options([
+                                'ask' => 'Ask, can skip: the till asks on every sale; the cashier may skip it',
+                                'rx' => 'Required for prescription & controlled medicines',
+                                'always' => 'Required for every sale',
+                                'off' => 'Off: the till does not ask',
+                            ])
+                            ->helperText("The patient's name and age, found or added at the till, kept on the sale and in the dispensing register. With the controlled-drug register on, a controlled drug still needs the patient's name whatever this says.")
+                            ->required(),
                         Select::make('opd_consultation_variant_id')
                             ->label('OPD consultation item')
                             ->options(fn (): array => $this->consultationOptions())
@@ -273,6 +286,7 @@ class ShopSettings extends Page
                     'default_prescriber' => filled($data['default_prescriber'] ?? null) ? trim((string) $data['default_prescriber']) : null,
                     'rx_prescriber' => (string) $data['rx_prescriber'],
                     'controlled_register' => (bool) $data['controlled_register'],
+                    'patient_on_sale' => in_array($data['patient_on_sale'] ?? null, ['ask', 'rx', 'always', 'off'], true) ? (string) $data['patient_on_sale'] : 'ask',
                     'opd_consultation_variant_id' => $this->consultationVariantId($data['opd_consultation_variant_id'] ?? null),
                     'bank_transfer_reference_required' => (bool) $data['bank_transfer_reference_required'],
                     'opd_below_list_warning_percent' => max(0, min(100, (int) $data['opd_below_list_warning_percent'])),

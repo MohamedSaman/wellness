@@ -20,6 +20,7 @@ use App\Observers\AuditObserver;
 use App\Services\Receipts\EscPos;
 use App\Services\Receipts\ReceiptLayout;
 use App\Support\CurrentShop;
+use App\Support\PatientAge;
 use App\Support\Quantity;
 use App\Support\ReportPeriod;
 use Illuminate\Database\Eloquent\Builder;
@@ -240,6 +241,21 @@ class ReceiptService
     }
 
     /**
+     * The patient as the sale keeps them (branch 13): their name as sold
+     * (customer_name, also the controlled-drug register's patient) and their
+     * age at the visit, "8 m" or "34 y"; null when the sale has neither.
+     *
+     * @return array{name: string|null, age: string|null}|null
+     */
+    public static function patient(Sale $sale): ?array
+    {
+        $name = filled($sale->customer_name) ? trim((string) $sale->customer_name) : null;
+        $age = PatientAge::format($sale->patient_age_months);
+
+        return $name === null && $age === null ? null : ['name' => $name, 'age' => $age];
+    }
+
+    /**
      * The sale as printed. With $reprint, the receipt is marked as a duplicate
      * and says when and by whom it was reprinted.
      *
@@ -277,6 +293,8 @@ class ReceiptService
             'till' => $this->till($sale),
             'customerName' => $sale->customer_name,
             'customerPhone' => $sale->customer_phone,
+            // A pharmacy bill's patient as sold (branch 13): printed per Receipt settings.
+            ...($shop->hasModule('pharmacy') ? ['patient' => self::patient($sale)] : []),
             'subtotal' => $sale->subtotal,
             'discountTotal' => $sale->discount_total,
             'taxTotal' => $sale->tax_total,

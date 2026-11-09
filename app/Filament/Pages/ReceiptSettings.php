@@ -75,6 +75,8 @@ class ReceiptSettings extends Page
             'receipt_show_expiry' => ReceiptService::printOptions($shop)['showExpiry'],
             'receipt_show_prescriber' => ReceiptService::printOptions($shop)['showPrescriber'],
             'opd_receipt_medicines' => $shop->setting('opd_receipt_medicines') === 'totals' ? 'totals' : 'names',
+            'receipt_show_patient_name' => (bool) $shop->setting('receipt_show_patient_name'),
+            'receipt_show_patient_age' => (bool) $shop->setting('receipt_show_patient_age'),
         ]);
     }
 
@@ -129,6 +131,19 @@ class ReceiptSettings extends Page
                                 ->required()
                                 ->live(),
                         ]),
+                    // Branch 13: off by default; the sale and the dispensing register keep both.
+                    Section::make('Patient on receipts')
+                        ->visible($pharmacy)
+                        ->schema([
+                            Toggle::make('receipt_show_patient_name')
+                                ->label("Print the patient's name")
+                                ->helperText('The sale and the dispensing register keep the patient either way.')
+                                ->live(),
+                            Toggle::make('receipt_show_patient_age')
+                                ->label("Print the patient's age")
+                                ->helperText('Their age at the visit: "8 m" under 2 years, else "34 y".')
+                                ->live(),
+                        ]),
                 ]),
                 Section::make('Preview')
                     ->description(fn (): string => $this->shop()->hasModule('pharmacy')
@@ -174,6 +189,8 @@ class ReceiptSettings extends Page
                     'receipt_show_expiry' => (bool) $data['receipt_show_expiry'],
                     'receipt_show_prescriber' => (bool) $data['receipt_show_prescriber'],
                     'opd_receipt_medicines' => (string) $data['opd_receipt_medicines'] === 'totals' ? 'totals' : 'names',
+                    'receipt_show_patient_name' => (bool) ($data['receipt_show_patient_name'] ?? false),
+                    'receipt_show_patient_age' => (bool) ($data['receipt_show_patient_age'] ?? false),
                 ] : []),
             ],
         ]);
@@ -198,7 +215,11 @@ class ReceiptSettings extends Page
             'showBatch' => (bool) ($data['receipt_show_batch'] ?? true),
             'showExpiry' => (bool) ($data['receipt_show_expiry'] ?? true),
             'showPrescriber' => (bool) ($data['receipt_show_prescriber'] ?? false),
-            ...($shop->hasModule('pharmacy') ? ['largePrint' => true] : []),
+            ...($shop->hasModule('pharmacy') ? [
+                'largePrint' => true,
+                'showPatientName' => (bool) ($data['receipt_show_patient_name'] ?? false),
+                'showPatientAge' => (bool) ($data['receipt_show_patient_age'] ?? false),
+            ] : []),
         ];
         $opdMedicines = ($data['opd_receipt_medicines'] ?? 'names') === 'totals' ? 'totals' : 'names';
         $layout = fn (): ReceiptLayout => new ReceiptLayout($receiptShop);
