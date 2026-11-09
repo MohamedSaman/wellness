@@ -3,6 +3,7 @@
 use App\Models\Device;
 use App\Models\DrugDetail;
 use App\Models\Location;
+use App\Models\Patient;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Shop;
@@ -60,6 +61,11 @@ return [
         // Controlled-drug register (branch 11): when on, a controlled line needs the
         // patient's name online and is blocked offline on the till.
         'controlled_register' => false,
+        // Patients on sales (branch 13): the till's Patient & prescription step (F7) on every
+        // sale. 'ask': shown, the cashier may skip it; 'rx': required when the sale has a
+        // prescription-only or controlled line; 'always': required on every sale; 'off': not
+        // shown (still asked for a controlled line while the controlled-drug register is on).
+        'patient_on_sale' => 'ask',
         // The Consultation product's variant id: the fee line an OPD bill starts with.
         'opd_consultation_variant_id' => null,
         // What an OPD receipt prints for the medicines: their 'names' (no prices) or
@@ -83,6 +89,10 @@ return [
         'receipt_show_batch' => true,
         'receipt_show_expiry' => true,
         'receipt_show_prescriber' => false,
+        // The patient on the receipt (branch 13): their name, their age. The sale and the
+        // dispensing register keep both whatever is printed.
+        'receipt_show_patient_name' => false,
+        'receipt_show_patient_age' => false,
         // Branding (Shop settings → Branding): the brand colour (#rrggbb) is the admin
         // panel's primary colour and the till's accent, as a shade scale kept readable
         // (App\Support\BrandPalette); null keeps the panel's amber and the till's own
@@ -446,6 +456,10 @@ return [
         'system.health' => 'See the system health page: version, disk, queue, scheduler, backups and each till\'s last sync',
         'backups.download' => 'Download the latest backup (encrypted; opened only with the offline recovery key)',
         'audit.view' => 'View the audit log (includes cost price history)',
+        // Patients (docs/PHARMACY.md, branch 13). Owner only for now; a Pharmacist and a Doctor
+        // role should get dispensing_register.view when they are defined.
+        'dispensing_register.view' => 'See the dispensing register and each patient\'s history (pharmacy)',
+        'patients.manage' => 'Edit a patient\'s name, age or date of birth and notes (pharmacy)',
     ],
 
     /*
@@ -486,6 +500,7 @@ return [
         SupplierOpeningBalance::class,
         SupplierPayment::class,
         SupplierAllocation::class,
+        Patient::class,
     ],
 
     /*

@@ -25,6 +25,8 @@ use Illuminate\Support\Carbon;
  * @property bool $needs_review
  * @property list<array<string, mixed>>|null $review_reasons
  * @property Carbon|null $reviewed_at
+ * @property int|null $patient_id
+ * @property int|null $patient_age_months the patient's age at the visit (customer_name is their name as sold)
  *
  * A completed checkout. All amounts are integers in minor units.
  * Sales are never deleted: they are voided or returned.
@@ -72,6 +74,7 @@ class Sale extends Model
             'opd_below_list' => 'boolean',
             'clock_offset_seconds' => 'integer',
             'reported_at' => 'datetime',
+            'patient_age_months' => 'integer',
         ];
     }
 
@@ -143,6 +146,12 @@ class Sale extends Model
     public function location(): BelongsTo
     {
         return $this->belongsTo(Location::class);
+    }
+
+    /** @return BelongsTo<Patient, $this> */
+    public function patient(): BelongsTo
+    {
+        return $this->belongsTo(Patient::class);
     }
 
     /** @return BelongsTo<Shift, $this> */
