@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToShop;
 use App\Models\Concerns\HasPublicUuid;
+use App\Support\CurrentShop;
 use App\Support\PatientAge;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -47,7 +48,7 @@ class Patient extends Model
     /** Age in months on a day (the shop's today when omitted); null without a date of birth. */
     public function ageMonths(?CarbonInterface $day = null): ?int
     {
-        return PatientAge::at($this->birth_date, $day ?? Carbon::now($this->shop?->timezone ?: config('app.timezone')));
+        return PatientAge::at($this->birth_date, $day ?? Carbon::now(app(CurrentShop::class)->get()?->timezone ?: config('app.timezone')));
     }
 
     /**
