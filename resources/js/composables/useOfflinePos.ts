@@ -9,6 +9,7 @@ import type {
     SyncSalePayload,
 } from '@/lib/offline/db';
 import { unitsOf } from '@/lib/offline/pricing';
+import { wipePatients } from '@/lib/offline/patients';
 import { forgetSearchCache } from '@/lib/offline/search';
 import {
     TillAccessError,
@@ -227,6 +228,8 @@ function prepare(): Promise<void> {
             if (error instanceof ApiError && REFUSALS.includes(error.status)) {
                 state.refused = true;
                 state.lastSyncError = error.message;
+                // Not approved (revoked) or set up on another browser: no patients here (branch 13).
+                await wipePatients().catch(() => undefined);
             } else {
                 noteFailure(error);
             }
@@ -287,6 +290,12 @@ async function runSync(options: { force?: boolean; catalog?: boolean } = {}) {
             }
         } catch (error) {
             noteFailure(error);
+
+            // Revoked, reset or its token refused: the till keeps no patients (branch 13),
+            // before the token is replaced and the next (full) sync brings them back.
+            if (error instanceof TillAccessError) {
+                await wipePatients().catch(() => undefined);
+            }
         } finally {
             await refreshCounts();
             state.syncing = false;
