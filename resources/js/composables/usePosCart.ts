@@ -581,7 +581,9 @@ function startWatching(): void {
 
     watching = true;
     watch(
-        () => JSON.stringify(requestBody()),
+        // The patient does not change the price: choosing one must not re-price the cart
+        // (a stale quote holds F9 back until it is fresh).
+        () => JSON.stringify({ ...requestBody(), patient: undefined }),
         () => scheduleQuote(),
     );
 }
