@@ -27,7 +27,7 @@ The till does not sign you out by itself. **Sign out** when you leave the counte
 | F2                          | Go to the search box                                        |
 | F3                          | Switch this bill between **OPD bill** and **Itemised bill** |
 | F6                          | Recent sales (reprint a receipt)                            |
-| F7                          | Prescription details                                        |
+| F7                          | Patient and prescription                                    |
 | F8                          | Go to the **Medicines amount** box                          |
 | Enter (in Medicines amount) | Back to the search box                                      |
 | F9 or Ctrl + Enter          | Pay                                                         |
@@ -79,16 +79,18 @@ The totals show:
 
 OPD bills take **no discounts**. There is no Discount button on an OPD bill.
 
-### Step 5: prescription details
+### Step 5: patient and prescription details
 
-If any medicine is prescription-only or controlled, a **Prescription** button (F7) appears.
+**Pay** (F9) first opens the **Patient & prescription** box (or press the **Patient** button, F7, any time).
 
-1. Press **Prescription** (or F7).
-2. **Prescriber**: usually already filled in with the clinic's doctor. Change it only if the prescription is from someone else.
-3. **Rx reference (optional)**: for example the OPD number.
-4. Press **Done**.
+1. Type the patient's name. Choose them from the list (click, or down arrow and **Enter**).
+2. A new patient: the full name, **Enter**, the age (**34**, or **8m** for a baby), **Enter**.
+3. No patient: **Skip patient** (or Esc), unless the box says the patient is **Required**.
+4. **Prescriber**: usually already filled in with the clinic's doctor. Change it only if the prescription is from someone else.
+5. **Rx reference (optional)**: for example the OPD number.
+6. Press **Continue to payment**.
 
-The prescriber is required. If it is missing, **Pay** opens this box first. Fill it in and press **Continue to payment**.
+The prescriber is required. If it is missing, the box says so in red.
 
 ### Step 6: take payment and print
 

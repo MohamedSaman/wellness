@@ -12,13 +12,14 @@ This note says where the clinic's POS and pharmacy system keeps its data, how it
 
 ## 2. What data the system holds
 
-| Kind                          | Examples                                                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Sales                         | Bills, items, prices, payments (cash, card, bank transfer with its reference), returns and voids           |
-| Patient details on some sales | The patient's name typed on a bill, the prescriber's name and the prescription reference on medicine lines |
-| Stock and purchasing          | Medicines, batches and expiries, suppliers, orders, deliveries, supplier invoices and payments             |
-| Staff accounts                | Name, email, role, encrypted password, sign-in times, two-factor settings                                  |
-| Audit log                     | Who changed what and when (prices, costs, users, settings), with the address and browser used              |
+| Kind                          | Examples                                                                                                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sales                         | Bills, items, prices, payments (cash, card, bank transfer with its reference), returns and voids                                                           |
+| Patient details on some sales | The patient's name typed on a bill, the prescriber's name and the prescription reference on medicine lines                                                 |
+| Patients                      | Each patient's name and age (or date of birth), notes the owner types, and which bills were theirs: the dispensing register of who received which medicine |
+| Stock and purchasing          | Medicines, batches and expiries, suppliers, orders, deliveries, supplier invoices and payments                                                             |
+| Staff accounts                | Name, email, role, encrypted password, sign-in times, two-factor settings                                                                                  |
+| Audit log                     | Who changed what and when (prices, costs, users, settings), with the address and browser used                                                              |
 
 The system holds **no clinical records** (diagnoses, notes, results) and no card numbers (card payments are taken on the bank's terminal; only an optional reference is typed).
 
@@ -26,7 +27,7 @@ The system holds **no clinical records** (diagnoses, notes, results) and no card
 
 - **The live system:** one server at \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ in \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ (Singapore or Mumbai). The clinic's data is in its own database, used by its own program account; other Webxkey clients on the same server cannot reach it.
 - **Backups:** at a second company, in a different place from the server (section 5).
-- **Till PCs:** each till keeps a copy of the item list (names, prices, stock) and, while the internet is down, the bills made since, until they are sent to the server. Nothing else stays on the PCs.
+- **Till PCs:** each till keeps a copy of the item list (names, prices, stock), the patients' names and ages (so a patient can be found while the internet is down; never the notes) and, while the internet is down, the bills made since, until they are sent to the server. The patients' copy is wiped as soon as the till's offline access is reset or revoked. Nothing else stays on the PCs.
 
 ## 4. How it is protected
 
@@ -49,11 +50,11 @@ The system holds **no clinical records** (diagnoses, notes, results) and no card
 | Who               | What they can see                                                                                                                                                                                                       |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The owner (Admin) | Everything, including costs, profit and the audit log                                                                                                                                                                   |
-| Cashiers          | The till, their own sales, items and stock; nothing in the back office                                                                                                                                                  |
+| Cashiers          | The till, their own sales, items and stock, and at the till a patient's name and age to choose them for a bill; nothing in the back office                                                                              |
 | Webxkey support   | The server and database, to run, update, back up and fix the system: named staff only (\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_), each with their own key. On request, Webxkey tells the clinic who accessed the server and why |
 | Hosting providers | Encrypted backups (unreadable to them); the server's disk under their own security terms                                                                                                                                |
 
-The owner adds and removes staff accounts; a deactivated account is signed out at once.
+The owner adds and removes staff accounts; a deactivated account is signed out at once. Only the owner opens the dispensing register and the patients' pages (a pharmacist or doctor account can be given this later), and every time anyone opens or exports them, or opens a patient, it is written to the audit log.
 
 ## 7. How long data is kept
 
@@ -70,7 +71,7 @@ If Webxkey learns of unauthorised access to the clinic's data, or loss of it, We
 
 - Keep the recovery key and the owner's two-factor recovery codes safe and private.
 - Give each staff member their own account; deactivate it on the day they leave.
-- Type only what the bill needs about a patient (name, prescriber, prescription reference).
+- Type only what the bill needs about a patient (name, age, prescriber, prescription reference). The patient's name and age are printed on receipts only if the clinic turns that on.
 - Keep the till PCs locked away from the public when the clinic is closed.
 
 ## Approval

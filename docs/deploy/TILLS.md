@@ -130,7 +130,7 @@ An approved till gets ready for offline sales by itself, whoever is signed in: n
 
 **The owner's approval** is **Offline sales allowed** on Administration → Tills, one till at a time, or **Set up offline sales** pressed by the owner at the till. It is off for a new till. Tills that already had an offline registration were approved when this arrived.
 
-**An approved till, open and online**, without any button: takes its sync token (`POST /pos/till/prepare`), downloads the catalog and reserves a block of invoice numbers. It keeps these fresh on load, whenever the connection returns and every 5 minutes, and keeps trying every 20 seconds until it is ready. Waiting sales upload the same way. **Refresh now** does it at once, and also retries sales the server refused.
+**An approved till, open and online**, without any button: takes its sync token (`POST /pos/till/prepare`), downloads the catalog and reserves a block of invoice numbers. It keeps these fresh on load, whenever the connection returns and every 5 minutes, and keeps trying every 20 seconds until it is ready. A clinic's catalog also carries the patients' names and ages (never their notes), so the cashier finds a patient offline; the till wipes them, and its catalog cursor, as soon as the server refuses its token (revoked, reset) or refuses to prepare it, and a reset till downloads them again once it is set up ([PHARMACY.md, branch 13](../PHARMACY.md#as-built-branch-13)). Waiting sales upload the same way. **Refresh now** does it at once, and also retries sales the server refused.
 
 **One browser for each till.** The server gives an approved till's token to the first browser that asks and refuses any other, so a cashier's sign-in on another PC never gets a copy of the till.
 

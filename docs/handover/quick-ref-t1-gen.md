@@ -1,26 +1,26 @@
 # Quick reference: T1 General Pharmacy
 
-| Task                            | Steps                                                                                                                                                                               |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start of day                    | Sign in. Count the drawer. **Opening cash (LKR)**, **Open shift**. Check the top bar: **T1**, **Shift open**, **Online**.                                                           |
-| Find an item                    | Scan the barcode, or type brand, generic or strength (F2). Arrow keys + Enter, or tap.                                                                                              |
-| Unit / pack                     | Use the unit list on the line (**Tablet** or **Box of 30**). Whole numbers only. Box barcode adds a box.                                                                            |
-| Batch                           | Shown under each line. Earliest expiry first, chosen for you. Never sell expired stock.                                                                                             |
-| Prescription                    | **Prescription** (F7): **Prescriber** (required), **Rx reference (optional)**, **Done**.                                                                                            |
-| Pay                             | **Pay** (F9). Check **Total due**.                                                                                                                                                  |
-| Cash                            | Type the cash given, or **Exact** / a note button. Give the **Change due**.                                                                                                         |
-| Card                            | **Add card**. Slip number in **Reference**.                                                                                                                                         |
-| Bank transfer                   | **Add bank transfer**. Type the transfer reference: it is required.                                                                                                                 |
-| Finish                          | **Complete sale** (Ctrl + Enter), **Print receipt**, **New sale**.                                                                                                                  |
-| Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                |
-| Discount                        | None at the clinic (no button). Ask the Admin.                                                                                                                                      |
-| Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                      |
-| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                          |
-| End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**. |
+| Task                            | Steps                                                                                                                                                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start of day                    | Sign in. Count the drawer. **Opening cash (LKR)**, **Open shift**. Check the top bar: **T1**, **Shift open**, **Online**.                                                                                                   |
+| Find an item                    | Scan the barcode, or type brand, generic or strength (F2). Arrow keys + Enter, or tap.                                                                                                                                      |
+| Unit / pack                     | Use the unit list on the line (**Tablet** or **Box of 30**). Whole numbers only. Box barcode adds a box.                                                                                                                    |
+| Batch                           | Shown under each line. Earliest expiry first, chosen for you. Never sell expired stock.                                                                                                                                     |
+| Patient and prescription        | **Pay** opens it (or F7): type the patient's name and choose them, or name **Enter** age (**34** / **8m**) **Enter** for a new one; **Skip patient** (Esc) if none. **Prescriber** (required), **Rx reference (optional)**. |
+| Pay                             | **Pay** (F9). Check **Total due**.                                                                                                                                                                                          |
+| Cash                            | Type the cash given, or **Exact** / a note button. Give the **Change due**.                                                                                                                                                 |
+| Card                            | **Add card**. Slip number in **Reference**.                                                                                                                                                                                 |
+| Bank transfer                   | **Add bank transfer**. Type the transfer reference: it is required.                                                                                                                                                         |
+| Finish                          | **Complete sale** (Ctrl + Enter), **Print receipt**, **New sale**.                                                                                                                                                          |
+| Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                                                        |
+| Discount                        | None at the clinic (no button). Ask the Admin.                                                                                                                                                                              |
+| Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                                                              |
+| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                                                                  |
+| End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**.                                         |
 
 ## Keys
 
-F2 search · F6 recent sales · F7 prescription · F9 pay · Ctrl + Enter complete sale
+F2 search · F6 recent sales · F7 patient and prescription · F9 pay · Ctrl + Enter complete sale
 
 ## If something goes wrong
 
