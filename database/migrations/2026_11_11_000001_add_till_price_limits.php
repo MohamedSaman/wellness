@@ -47,6 +47,12 @@ return new class extends Migration
             $table->index('price_changed_by');
         });
 
+        $this->backfillAndReport();
+    }
+
+    /** backfill(), then says how many lines it changed: in the log and on the migrate command's output. */
+    public function backfillAndReport(): int
+    {
         $updated = $this->backfill();
         $message = "sale_items.price_changed_by: {$updated} typed-price line(s) backfilled.";
 
@@ -55,6 +61,8 @@ return new class extends Migration
         if (app()->runningInConsole() && ! app()->runningUnitTests()) {
             (new ConsoleOutput)->writeln("  <info>{$message}</info>");
         }
+
+        return $updated;
     }
 
     /** Fills price_changed_by on the typed lines sold before it; returns how many lines it changed. */
