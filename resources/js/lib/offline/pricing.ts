@@ -9,6 +9,7 @@ import type {
     QuoteLine,
 } from '@/types/pos';
 import type { CatalogItem, OfflineShop, OfflineTill } from './db';
+import { formatMoney } from '../money';
 
 /**
  * Offline pricing. A line-for-line copy of CheckoutService::calculate(),
@@ -268,7 +269,9 @@ export function quoteOffline(
         if (override !== null) {
             checkPriceOverride(
                 items.get(cartLine.variantId) as CatalogItem,
+                cartLine.unitId,
                 override,
+                shop,
                 context,
             );
         }
@@ -498,12 +501,51 @@ function checkOpdBill(
 }
 
 /**
- * The price override rule (§5.4): a non-stock product that allows it, a
- * cashier with pos.price_override, a price above zero.
+ * ProductVariant::tillPriceProblem(): why the till may not charge `price`
+ * (minor units, per base unit) at a typed price, or null when it may: above
+ * zero and within the item's limits (branch 14). The cart line's price box
+ * shows the same message before the price is confirmed.
+ */
+export function typedPriceProblem(
+    item: { sku: string; price_min?: number | null; price_max?: number | null },
+    price: number,
+    decimals: number,
+    currency: string,
+): string | null {
+    const min = item.price_min ?? null;
+    const max = item.price_max ?? null;
+    const money = (minor: number) => formatMoney(minor, decimals, currency);
+
+    if (price <= 0) {
+        return `The price of ${item.sku} must be more than zero.`;
+    }
+
+    if (min !== null && max !== null && (price < min || price > max)) {
+        return `The price of ${item.sku} must be between ${money(min)} and ${money(max)}.`;
+    }
+
+    if (max !== null && price > max) {
+        return `The price of ${item.sku} can't be more than ${money(max)}.`;
+    }
+
+    if (min !== null && price < min) {
+        return `The price of ${item.sku} can't be less than ${money(min)}.`;
+    }
+
+    return null;
+}
+
+/**
+ * CheckoutService::checkPriceOverrides(): an item that allows it (a
+ * pharmacy's non-medicine, elsewhere a service; the catalog says which), a
+ * cashier with pos.price_override, not a stock line of an OPD bill (in the
+ * Medicines amount), the base unit, and typedPriceProblem().
  */
 function checkPriceOverride(
     item: CatalogItem,
+    unitId: number | null | undefined,
     price: number,
+    shop: OfflineShop,
     context: OfflineSaleContext,
 ): void {
     if (!item.allow_price_override) {
@@ -516,10 +558,32 @@ function checkPriceOverride(
         throw new OfflinePricingError('You are not allowed to change prices.');
     }
 
-    if (price <= 0) {
+    if (context.billType === 'opd' && item.track_stock) {
         throw new OfflinePricingError(
-            `The price of ${item.sku} must be more than zero.`,
+            `${item.sku} is in the Medicines amount on an OPD bill: its price can't be typed.`,
         );
+    }
+
+    const unit =
+        unitId === null || unitId === undefined
+            ? null
+            : (item.units ?? []).find((u) => u.id === unitId);
+
+    if (unit && !unit.is_base) {
+        throw new OfflinePricingError(
+            `${item.sku}'s price can only be changed for a single ${item.unit}, not a ${unit.name}.`,
+        );
+    }
+
+    const problem = typedPriceProblem(
+        item,
+        price,
+        shop.decimals,
+        shop.currency,
+    );
+
+    if (problem !== null) {
+        throw new OfflinePricingError(problem);
     }
 }
 

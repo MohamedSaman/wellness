@@ -10,7 +10,7 @@ import {
 import { reactive } from 'vue';
 import ScheduleBadge from '@/components/pos/ScheduleBadge.vue';
 import { Button } from '@/components/ui/button';
-import { usePosCart } from '@/composables/usePosCart';
+import { typesPrice, usePosCart } from '@/composables/usePosCart';
 import type { CartLineState } from '@/composables/usePosCart';
 import { formatMoney, formatQuantity, toInputValue } from '@/lib/money';
 import {
@@ -20,6 +20,7 @@ import {
     inPacks,
     today,
 } from '@/lib/pharmacyDisplay';
+import { toMinor, typedPriceProblem } from '@/lib/offline/pricing';
 import type { Quote, QuoteLine } from '@/types/pos';
 
 const props = defineProps<{
@@ -45,6 +46,8 @@ const emit = defineEmits<{
     quantity: [line: CartLineState, quantity: number];
     discount: [line: CartLineState, value: string];
     remove: [line: CartLineState];
+    /** A price was confirmed with Enter: the search box takes the focus back. */
+    priceDone: [];
 }>();
 
 const cart = usePosCart();
@@ -53,6 +56,16 @@ const discountOpen = reactive<Record<string, boolean>>({});
 const rxOpen = reactive<Record<string, boolean>>({});
 /** Why the last change to a line was refused (part units, a unit not sold here). */
 const lineMessage = reactive<Record<string, string>>({});
+/**
+ * Branch 14: what the cashier is typing in a line's price box, until Enter
+ * (or leaving the box) confirms it; and why it can't be confirmed (outside
+ * the item's limits). The line keeps its last confirmed price meanwhile.
+ */
+const priceDraft = reactive<Record<string, string>>({});
+const priceError = reactive<Record<string, string>>({});
+const priceInputs = new Map<string, HTMLInputElement>();
+/** Whether the line was waiting for its price before typing started (Escape goes back to that). */
+const awaitingBefore: Record<string, boolean> = {};
 
 /** The quote's line for a cart line (the quote keeps the cart's order). */
 function quoteLine(index: number): QuoteLine | null {
@@ -175,8 +188,144 @@ function onBatch(line: CartLineState, event: Event): void {
     cart.pickBatch(line, value === '' ? null : Number(value));
 }
 
-function onPrice(line: CartLineState, event: Event): void {
-    cart.setPrice(line, (event.target as HTMLInputElement).value);
+/** The line's price box shows (cashier.canOverridePrice and typesPrice()). */
+function showsPrice(line: CartLineState): boolean {
+    return (
+        !!props.canOverridePrice &&
+        typesPrice(line, props.opdBill ? 'opd' : 'standard')
+    );
+}
+
+function setPriceInput(key: string, el: unknown): void {
+    if (el instanceof HTMLInputElement) {
+        priceInputs.set(key, el);
+    } else {
+        priceInputs.delete(key);
+    }
+}
+
+/** Opens a line's price box (an item that asks for its price, or payment waiting for one). */
+function focusPrice(key: string): void {
+    const input = priceInputs.get(key);
+
+    input?.focus();
+    input?.select();
+}
+
+defineExpose({ focusPrice });
+
+/** The line is charged a typed price other than its list price. */
+function priceChanged(line: CartLineState): boolean {
+    return (
+        showsPrice(line) &&
+        line.price.trim() !== '' &&
+        line.listPrice !== null &&
+        toMinor(line.price, props.decimals) !== line.listPrice
+    );
+}
+
+function onPriceInput(line: CartLineState, event: Event): void {
+    if (priceDraft[line.key] === undefined) {
+        awaitingBefore[line.key] = line.awaitingPrice;
+    }
+
+    priceDraft[line.key] = (event.target as HTMLInputElement).value;
+    delete priceError[line.key];
+    // Not charged until confirmed: payment waits for Enter (or leaving the box).
+    line.awaitingPrice = true;
+}
+
+/**
+ * Confirms what the price box holds: blank or the list price = the list
+ * price; anything else must be within the item's limits (the server's
+ * message, typedPriceProblem()). Returns false when it can't be confirmed;
+ * the message shows under the line and the box keeps what was typed.
+ */
+function confirmPrice(line: CartLineState): boolean {
+    const draft = priceDraft[line.key];
+
+    if (draft === undefined && !line.awaitingPrice) {
+        return true;
+    }
+
+    const text = (draft ?? line.price).trim();
+    const fail = (message: string): boolean => {
+        priceError[line.key] = message;
+        line.awaitingPrice = true;
+
+        return false;
+    };
+
+    if (text !== '' && !/^\d[\d,]*(\.\d*)?$|^\.\d+$/.test(text)) {
+        return fail('Type a price such as 1500 or 1500.50.');
+    }
+
+    const price = text === '' ? null : toMinor(text, props.decimals);
+
+    if (price === null || price === line.listPrice) {
+        if (line.listPrice === null) {
+            return fail(`Enter the price of ${line.sku}.`);
+        }
+
+        cart.setPrice(line, '');
+    } else {
+        const problem = typedPriceProblem(
+            {
+                sku: line.sku,
+                price_min: line.priceMin,
+                price_max: line.priceMax,
+            },
+            price,
+            props.decimals,
+            props.currency,
+        );
+
+        if (problem !== null) {
+            return fail(problem);
+        }
+
+        cart.setPrice(line, text);
+    }
+
+    delete priceDraft[line.key];
+    delete priceError[line.key];
+
+    return true;
+}
+
+function onPriceKey(line: CartLineState, event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+
+        // Ctrl+Enter pays (the page's shortcut): confirm first, then let it through.
+        if (confirmPrice(line) && !(event.ctrlKey || event.metaKey)) {
+            emit('priceDone');
+        }
+    } else if (event.key === 'F9') {
+        // Pay: confirm first; payment still waits if the price can't be confirmed.
+        confirmPrice(line);
+    } else if (event.key === 'Escape' && priceDraft[line.key] !== undefined) {
+        event.preventDefault();
+        delete priceDraft[line.key];
+        delete priceError[line.key];
+        // Back to the confirmed price; an item that asked for its price still waits for one.
+        line.awaitingPrice = awaitingBefore[line.key] ?? false;
+    }
+}
+
+/** What the price box tells the cashier while it waits: the limits, then Enter. */
+function priceHint(line: CartLineState): string {
+    const money = (minor: number) => formatMoney(minor, props.decimals);
+    const range =
+        line.priceMin !== null && line.priceMax !== null
+            ? `${money(line.priceMin)} to ${money(line.priceMax)}`
+            : line.priceMax !== null
+              ? `up to ${money(line.priceMax)}`
+              : null;
+
+    return range === null
+        ? 'Type the price and press Enter.'
+        : `Type the price (${range}) and press Enter.`;
 }
 
 function showRx(line: CartLineState): boolean {
@@ -308,12 +457,13 @@ function sameAsSale(line: CartLineState): void {
                 >
 
                 <label
-                    v-if="canOverridePrice && line.allowPriceOverride"
+                    v-if="showsPrice(line)"
                     class="flex items-center gap-1.5 text-sm text-muted-foreground"
                 >
                     Price
                     <input
-                        :value="line.price"
+                        :ref="(el) => setPriceInput(line.key, el)"
+                        :value="priceDraft[line.key] ?? line.price"
                         type="text"
                         inputmode="decimal"
                         :placeholder="
@@ -322,14 +472,36 @@ function sameAsSale(line: CartLineState): void {
                                 : toInputValue(line.listPrice, decimals)
                         "
                         aria-label="Price"
-                        class="h-12 w-28 rounded-lg border bg-background px-3 text-right text-base text-foreground tabular-nums"
-                        data-test="line-price"
-                        @input="onPrice(line, $event)"
-                        @keydown.enter.prevent="
-                            ($event.target as HTMLInputElement).blur()
+                        :aria-invalid="
+                            priceError[line.key] ? 'true' : undefined
                         "
+                        :aria-describedby="
+                            priceError[line.key] || line.awaitingPrice
+                                ? `price-note-${line.key}`
+                                : undefined
+                        "
+                        class="h-12 w-28 rounded-lg border bg-background px-3 text-right text-base text-foreground tabular-nums"
+                        :class="{
+                            'border-destructive ring-1 ring-destructive':
+                                priceError[line.key],
+                            'border-primary ring-1 ring-primary':
+                                !priceError[line.key] && line.awaitingPrice,
+                        }"
+                        data-test="line-price"
+                        @input="onPriceInput(line, $event)"
+                        @keydown="onPriceKey(line, $event)"
+                        @blur="confirmPrice(line)"
                     />
                 </label>
+                <span
+                    v-if="priceChanged(line)"
+                    class="text-sm text-muted-foreground"
+                    data-test="line-list-price"
+                    >was
+                    <s class="tabular-nums">{{
+                        formatMoney(line.listPrice, decimals)
+                    }}</s></span
+                >
 
                 <Button
                     v-if="!opdBill && canDiscount !== false"
@@ -354,6 +526,24 @@ function sameAsSale(line: CartLineState): void {
                     <Trash2 class="size-5" />
                 </Button>
             </div>
+
+            <p
+                v-if="
+                    showsPrice(line) &&
+                    (priceError[line.key] || line.awaitingPrice)
+                "
+                :id="`price-note-${line.key}`"
+                :role="priceError[line.key] ? 'alert' : undefined"
+                class="mt-2 text-sm"
+                :class="
+                    priceError[line.key]
+                        ? 'text-destructive'
+                        : 'text-muted-foreground'
+                "
+                data-test="line-price-note"
+            >
+                {{ priceError[line.key] ?? priceHint(line) }}
+            </p>
 
             <div
                 v-if="
