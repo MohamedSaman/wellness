@@ -9,7 +9,6 @@ import type {
     QuoteLine,
 } from '@/types/pos';
 import type { CatalogItem, OfflineShop, OfflineTill } from './db';
-import { formatMoney } from '../money';
 
 /**
  * Offline pricing. A line-for-line copy of CheckoutService::calculate(),
@@ -140,6 +139,24 @@ export function allocate(amount: number, weights: number[]): number[] {
     parts[weights.indexOf(Math.max(...weights))] += remainder;
 
     return parts;
+}
+
+/**
+ * Money::format() with the shop's currency ("LKR 1,500.00"), as the server's
+ * typed-price messages say it. Kept here, not imported, so this file runs on
+ * its own (OpdListValueTest runs it under node).
+ */
+function formatMoneyText(
+    minor: number,
+    decimals: number,
+    currency: string,
+): string {
+    const text = (minor / 10 ** decimals).toLocaleString('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+    });
+
+    return currency ? `${currency} ${text}` : text;
 }
 
 /** Money::format() without a currency, as used in server messages. */
@@ -514,7 +531,7 @@ export function typedPriceProblem(
 ): string | null {
     const min = item.price_min ?? null;
     const max = item.price_max ?? null;
-    const money = (minor: number) => formatMoney(minor, decimals, currency);
+    const money = (minor: number) => formatMoneyText(minor, decimals, currency);
 
     if (price <= 0) {
         return `The price of ${item.sku} must be more than zero.`;
