@@ -8,6 +8,7 @@ use App\Filament\Resources\Products\ProductFormData;
 use App\Models\AuditLog;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use Database\Seeders\DemoClinicTillPricesSeeder;
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Tests\Feature\Pos\Concerns\WorksWithCheckout;
@@ -140,6 +141,25 @@ class TillPriceLimitsAdminTest extends BatchTestCase
             ->where('auditable_id', $dressing->getKey())
             ->get()
             ->contains(fn (AuditLog $log): bool => ($log->new_values['till_price_max'] ?? null) === 300_000));
+    }
+
+    public function test_the_demo_seeder_sets_the_consultations_max_and_adds_a_dressing_and_a_lab_test(): void
+    {
+        $fee = $this->consultation(150_000);
+
+        $this->seed(DemoClinicTillPricesSeeder::class);
+
+        $this->assertSame(500_000, $fee->fresh()?->till_price_max);
+        $this->assertSame(150_000, $fee->fresh()?->priceOn(), 'The fee itself is unchanged.');
+
+        $dressing = Product::query()->where('name', 'Wound dressing')->with('drugDetail')->firstOrFail();
+        $this->assertTrue($dressing->allowsPriceOverride());
+        $this->assertSame([20_000, 150_000], [$dressing->variants()->firstOrFail()->till_price_min, $dressing->variants()->firstOrFail()->till_price_max]);
+        $this->assertSame(200.0, $dressing->variants()->firstOrFail()->stockAt($this->general) + $dressing->variants()->firstOrFail()->stockAt($this->doctors));
+
+        $cbs = Product::query()->where('name', 'CBS (full blood count)')->with('drugDetail')->firstOrFail();
+        $this->assertTrue($cbs->asksPriceAtTill());
+        $this->assertNull($cbs->variants()->firstOrFail()->till_price_min);
     }
 
     private function dressing(): ProductVariant

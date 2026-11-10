@@ -60,6 +60,7 @@ class DemoClinicSeeder extends Seeder
             $this->call(DemoClinicStockSeeder::class);
             $this->call(DemoClinicPurchasingSeeder::class);
             $this->call(DemoClinicCountersSeeder::class);
+            $this->call(DemoClinicTillPricesSeeder::class);
             $this->call(DemoClinicStockControlSeeder::class);
             $this->call(DemoClinicPatientsSeeder::class);
         }
