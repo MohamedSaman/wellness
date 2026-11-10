@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $prescription_id Phase 2 prescriptions; always null for now
  * @property string|null $strength the medicine's strength when sold ("500 mg"), for receipts
  * @property string|null $base_unit_name what stock is counted in when sold ("Tablet"), for receipts
+ * @property int|null $price_changed_by the cashier who typed the line's price (null: not typed; branch 14)
  *
  * A line on a sale. Name, SKU, price and cost are copied at the moment of
  * sale so later product edits never change past receipts or profit reports.
@@ -59,7 +60,14 @@ class SaleItem extends Model
             'drug_schedule' => DrugSchedule::class,
             'dosage_form' => DosageForm::class, // null on lines sold before branch 13 and on non-medicines
             'prescription_id' => 'integer',
+            'price_changed_by' => 'integer',
         ];
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function priceChangedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'price_changed_by');
     }
 
     /** @return BelongsTo<Sale, $this> */

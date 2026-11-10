@@ -15,6 +15,9 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 /**
  * The sellable, stockable item: one SKU + one barcode + its own stock.
  * e.g. "Vega Off-Road Helmet / M / Matte Black".
+ *
+ * @property int|null $till_price_min the lowest unit price the till may type (base unit, minor units; branch 14)
+ * @property int|null $till_price_max the highest; required in a pharmacy shop when the price can be changed
  */
 class ProductVariant extends Model
 {
@@ -32,6 +35,8 @@ class ProductVariant extends Model
             'last_cost_price' => 'integer', // unit cost of the latest delivery
             'reorder_level' => 'decimal:3',
             'is_active' => 'boolean',
+            'till_price_min' => 'integer', // lowest price the till may type, base unit, minor units (branch 14)
+            'till_price_max' => 'integer', // highest; required in a pharmacy shop when the price can be changed
         ];
     }
 
@@ -195,6 +200,26 @@ class ProductVariant extends Model
         $column = $this->qualifyColumn('barcode');
 
         $query->where(fn (Builder $q) => $q->whereNull($column)->orWhere($column, 'like', '2'.str_repeat('_', 12)));
+    }
+
+    /**
+     * Why the till may not charge $price (minor units, per base unit) for this
+     * variant at a typed price, or null when it may (docs/PHARMACY.md, branch
+     * 14): above zero, and within the variant's limits when it has them. The
+     * till says the same (pricing.ts typedPriceProblem()).
+     */
+    public function tillPriceProblem(int $price, Shop $shop): ?string
+    {
+        $min = $this->till_price_min;
+        $max = $this->till_price_max;
+
+        return match (true) {
+            $price <= 0 => "The price of {$this->sku} must be more than zero.",
+            $min !== null && $max !== null && ($price < $min || $price > $max) => "The price of {$this->sku} must be between {$shop->formatMoney($min)} and {$shop->formatMoney($max)}.",
+            $max !== null && $price > $max => "The price of {$this->sku} can't be more than {$shop->formatMoney($max)}.",
+            $min !== null && $price < $min => "The price of {$this->sku} can't be less than {$shop->formatMoney($min)}.",
+            default => null,
+        };
     }
 
     /** Selling price in minor units on a price list (default list if null). */
