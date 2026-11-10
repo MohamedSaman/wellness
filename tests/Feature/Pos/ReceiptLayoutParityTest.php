@@ -4,11 +4,16 @@ namespace Tests\Feature\Pos;
 
 use App\Enums\PaymentMethod;
 use App\Enums\ReturnReason;
+use App\Enums\StockMovementType;
 use App\Services\CheckoutService;
+use App\Services\Data\CartLine;
+use App\Services\Data\CheckoutData;
+use App\Services\Data\PaymentInput;
 use App\Services\Receipts\EscPos;
 use App\Services\Receipts\ReceiptLayout;
 use App\Services\ReceiptService;
 use App\Services\ReturnService;
+use App\Services\StockService;
 use Illuminate\Support\Facades\Process;
 use Tests\Feature\Pos\Concerns\WorksWithCheckout;
 use Tests\Feature\Pos\Concerns\WorksWithReceipts;
@@ -39,8 +44,18 @@ class ReceiptLayoutParityTest extends BatchTestCase
         $voided = $this->billAtGeneral();
         app(CheckoutService::class)->void($voided, $this->owner, 'Rang up twice');
 
+        // Branch 14: prices typed at the till, one up and one down. List prices nothing else costs.
+        $dressing = $this->openPriceItem('Wound dressing', 51_234, max: 150_000, min: 20_000, tracksStock: true);
+        app(StockService::class)->record($dressing, $this->general, StockMovementType::StockIn, 10, $this->owner, unitCost: 10_000);
+        $cbs = $this->openPriceItem('CBS', 102_345, max: 300_000, ask: true);
+        $typed = app(CheckoutService::class)->checkout(new CheckoutData($this->till, $this->cashier, [
+            new CartLine($dressing->getKey(), 2, unitPriceOverride: 120_000),
+            new CartLine($cbs->getKey(), 1, unitPriceOverride: 80_000),
+        ], [new PaymentInput(PaymentMethod::Cash, 1_000_000)]));
+
         $sales = [
             'gen' => $receipts->sale($this->billAtGeneral()),
+            'typed prices' => $receipts->sale($typed),
             'opd' => $receipts->sale($opd),
             'opd totals' => [...$receipts->sale($opd), 'opdReceiptMedicines' => 'totals'],
             'returned, reprinted' => $receipts->sale($gen->fresh() ?? $gen, $receipts->recordReprint($gen, $this->owner, null)),
@@ -79,6 +94,13 @@ class ReceiptLayoutParityTest extends BatchTestCase
             $printer = (new ReceiptLayout(ReceiptLayout::forPrinter($cases[$name]['shop'])))->sale($cases[$name]['sale']);
             $this->assertSame(base64_encode(EscPos::encode($printer)), $till[$n]['escpos'], "ESC/POS differs: {$name}");
         }
+
+        // A typed price prints as charged, never the list price it replaced.
+        $text = implode("\n", array_column((new ReceiptLayout($receipts->shop()))->sale($sales['typed prices']), 'text'));
+        $this->assertStringContainsString('2 pcs x 1,200.00', $text);
+        $this->assertStringContainsString('1 pcs x 800.00', $text);
+        $this->assertStringNotContainsString('512.34', $text);
+        $this->assertStringNotContainsString('1,023.45', $text);
     }
 
     /**
