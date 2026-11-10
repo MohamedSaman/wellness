@@ -3,6 +3,7 @@ import type { EntityTable } from 'dexie';
 import type {
     BillType,
     OpdReceiptMedicines,
+    PatientOnSale,
     PaymentMethod,
     PosItem,
     ReceiptPrintOptions,
@@ -93,6 +94,25 @@ export type OfflineShop = {
     opdBelowListWarningPercent?: number;
     /** Branch 9: how receipts print. Default 80 mm, batch and expiry printed, no prescriber. */
     receipt?: ReceiptPrintOptions;
+    /** Branch 13: when a sale needs the patient. Default 'ask'. */
+    patientOnSale?: PatientOnSale;
+};
+
+/**
+ * A patient in the till's own copy (branch 13): name and age only, never the
+ * notes. Filled by the catalog sync; a patient added here offline is kept
+ * (pending) until the server sends them back. Wiped when the till loses its
+ * access (revoked, reset, token refused).
+ */
+export type OfflinePatient = {
+    uuid: string;
+    name: string;
+    age_months: number | null;
+    age_on: string;
+    /** Lowercase name, what the search matches. */
+    search: string;
+    /** Added at this till and not yet confirmed by a catalog sync. */
+    pending?: boolean;
 };
 
 /** The till the catalog was synced for. Location and OPD keys are missing on older catalogs. */
@@ -156,6 +176,8 @@ export type SyncSalePayload = {
     medicines_amount?: number | null;
     customer_name?: string | null;
     customer_phone?: string | null;
+    /** Branch 13: the patient found or added (their uuid made here), with name and age as printed. */
+    patient?: { uuid: string; name: string; age_months: number | null };
 };
 
 /** Everything a printed receipt needs, captured when the sale was made. */
@@ -204,6 +226,8 @@ export type OfflineReceipt = {
     billType?: BillType;
     opdReceiptMedicines?: OpdReceiptMedicines;
     medicinesTotal?: number | null;
+    /** Branch 13: the patient as printed ("34 y"). */
+    patient?: { name: string | null; age: string | null } | null;
 };
 
 export type OutboxStatus = 'pending' | 'synced' | 'rejected';
@@ -232,6 +256,7 @@ export type OfflineDb = Dexie & {
     items: EntityTable<CatalogItem, 'variant_id'>;
     outbox: EntityTable<OutboxSale, 'seq'>;
     meta: EntityTable<MetaRow, 'key'>;
+    patients: EntityTable<OfflinePatient, 'uuid'>;
 };
 
 export const db = new Dexie('pos-offline') as OfflineDb;
@@ -258,6 +283,14 @@ db.version(2)
                 item.barcodes = barcodesOf(item);
             }),
     );
+
+// v3 (branch 13): the shop's patients, name and age only, found by name offline.
+db.version(3).stores({
+    items: '&variant_id, barcode, sku, *barcodes',
+    outbox: '++seq, &uuid, status, [tillUuid+status]',
+    meta: '&key',
+    patients: '&uuid',
+});
 
 export async function getMeta<T>(key: string): Promise<T | null> {
     return ((await db.meta.get(key))?.value as T | undefined) ?? null;

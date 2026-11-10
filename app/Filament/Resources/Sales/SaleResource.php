@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Sales;
 use App\Enums\BillType;
 use App\Enums\DrugSchedule;
 use App\Enums\SaleStatus;
+use App\Filament\Resources\Patients\PatientResource;
 use App\Filament\Resources\PermissionResource;
 use App\Filament\Resources\Sales\Pages\ListSales;
 use App\Filament\Resources\Sales\Pages\ViewSale;
@@ -16,6 +17,7 @@ use App\Models\SaleItemBatch;
 use App\Models\SaleReturn;
 use App\Models\SaleReturnItem;
 use App\Support\CurrentShop;
+use App\Support\PatientAge;
 use App\Support\Quantity;
 use BackedEnum;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -169,6 +171,11 @@ class SaleResource extends PermissionResource
                         ->visible(fn (Sale $record): bool => $record->bill_type === BillType::Opd && $record->opd_medicines_list_value !== null),
                     TextEntry::make('customer_name')
                         ->label(fn (): string => app(CurrentShop::class)->getOrFail()->hasModule('pharmacy') ? 'Patient' : 'Customer')
+                        // Branch 13: the age at the visit, and the patient's page for whoever may see it.
+                        ->suffix(fn (Sale $record): string => $record->patient_age_months === null ? '' : ' · '.PatientAge::format($record->patient_age_months))
+                        ->url(fn (Sale $record): ?string => $record->patient_id !== null && $record->patient !== null && PatientResource::canAccess()
+                            ? PatientResource::getUrl('view', ['record' => $record->patient])
+                            : null)
                         ->visible(fn (Sale $record): bool => filled($record->customer_name)),
                     // An offline till whose clock was out (docs/PHARMACY.md §7.5): reports count the sale at reported_at.
                     TextEntry::make('clock_offset_seconds')

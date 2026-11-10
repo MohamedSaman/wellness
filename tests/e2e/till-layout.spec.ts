@@ -85,16 +85,65 @@ for (const viewport of viewports) {
                 await expect(discount).toBeHidden();
             });
 
-            await test.step('Prescription dialog', async () => {
+            await test.step('Patient & prescription dialog', async () => {
                 await page.locator('[data-test=prescription-button]').click();
                 const rx = page.locator('[data-test=prescription-dialog]');
-                await expectInside(rx, 'Prescription dialog');
+                await expectInside(rx, 'Patient & prescription dialog');
+
+                // Matches by name, and "New patient" for a name typed.
+                await rx.locator('[data-test=patient-name]').fill('perera');
+                await expect(
+                    rx.locator('[data-test=patient-result]'),
+                ).toHaveCount(2);
+                await expect(
+                    rx.locator('[data-test=patient-add]'),
+                ).toBeVisible();
+                await expectInside(rx, 'Patient & prescription, matches');
+
+                // A long new name and an age: the row still fits.
+                await rx
+                    .locator('[data-test=patient-name]')
+                    .fill(
+                        'Wijesinghe Mudiyanselage Ralahamillage Nimalasiri Bandara',
+                    );
+                await rx.locator('[data-test=patient-age]').fill('8m');
+                await page.keyboard.press('Enter');
+                await expect(
+                    rx.locator('[data-test=patient-chosen]'),
+                ).toBeVisible();
+                await expectInside(rx, 'Patient & prescription, new patient');
+                await rx.locator('[data-test=patient-change]').click();
+
                 await page.keyboard.press('Escape');
                 await expect(rx).toBeHidden();
             });
 
             await test.step('Pay dialog', async () => {
+                // F9: the patient step first; a patient found by name.
                 await page.keyboard.press('F9');
+                const rx = page.locator('[data-test=prescription-dialog]');
+                await expect(rx).toBeVisible();
+                await expect(
+                    rx.locator('[data-test=patient-skip]'),
+                ).toBeVisible();
+                await rx.locator('[data-test=patient-name]').fill('nimal');
+                await expect(
+                    rx.locator('[data-test=patient-result]'),
+                ).toHaveCount(1);
+                await page.keyboard.press('ArrowDown');
+                await page.keyboard.press('Enter');
+                await expect(
+                    rx.locator('[data-test=patient-chosen]'),
+                ).toContainText('Nimal Perera');
+                await expectInside(
+                    rx,
+                    'Patient & prescription, patient chosen',
+                );
+                await rx.locator('[data-test=prescription-continue]').click();
+                await expect(
+                    page.locator('[data-test=patient-chip]'),
+                ).toContainText('Nimal Perera');
+
                 const pay = dialog(page, 'Payment');
                 await expect(pay).toBeVisible();
                 await expectInside(pay, 'Pay dialog');

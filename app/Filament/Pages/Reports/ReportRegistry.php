@@ -30,6 +30,7 @@ final class ReportRegistry
         StockAdjustmentsReport::class,
         TransfersReport::class,
         ControlledDrugRegisterReport::class,
+        DispensingRegisterReport::class,
         PurchasesReport::class,
         SupplierAgingReport::class,
     ];

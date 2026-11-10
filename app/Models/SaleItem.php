@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Enums\TaxCategory;
 use Illuminate\Database\Eloquent\Model;
@@ -56,6 +57,7 @@ class SaleItem extends Model
             'list_price' => 'integer',
             'is_opd_medicine' => 'boolean',
             'drug_schedule' => DrugSchedule::class,
+            'dosage_form' => DosageForm::class, // null on lines sold before branch 13 and on non-medicines
             'prescription_id' => 'integer',
         ];
     }

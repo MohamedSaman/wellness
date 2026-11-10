@@ -34,7 +34,7 @@ class ReceiptSettingsTest extends BatchTestCase
     public function test_a_pharmacy_starts_with_the_batch_and_prescriber_printed_and_the_expiry_hidden(): void
     {
         $this->assertSame(
-            ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true],
+            ['paperWidth' => 80, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true, 'showPatientName' => false, 'showPatientAge' => false],
             ReceiptService::printOptions($this->shop),
         );
         $this->assertSame('names', $this->shop->setting('opd_receipt_medicines'));
@@ -68,7 +68,7 @@ class ReceiptSettingsTest extends BatchTestCase
             ->assertNotified('Receipt settings saved');
 
         $shop = $this->shop->fresh();
-        $this->assertSame(['paperWidth' => 58, 'showBatch' => false, 'showExpiry' => true, 'showPrescriber' => false, 'largePrint' => true], ReceiptService::printOptions($shop));
+        $this->assertSame(['paperWidth' => 58, 'showBatch' => false, 'showExpiry' => true, 'showPrescriber' => false, 'largePrint' => true, 'showPatientName' => false, 'showPatientAge' => false], ReceiptService::printOptions($shop));
         $this->assertSame('totals', $shop->setting('opd_receipt_medicines'));
         $this->assertSame("Reg. no. PH 1234\nOpen 8 am to 8 pm", $shop->receipt_header);
         $this->assertSame('Thank you', $shop->receipt_footer);
@@ -118,7 +118,7 @@ class ReceiptSettingsTest extends BatchTestCase
         $this->setShopSetting('receipt_paper_width', 58);
 
         $this->assertSame(
-            ['paperWidth' => 58, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true],
+            ['paperWidth' => 58, 'showBatch' => true, 'showExpiry' => false, 'showPrescriber' => true, 'largePrint' => true, 'showPatientName' => false, 'showPatientAge' => false],
             app(CatalogSyncService::class)->shopSettings($this->shop->fresh())['receipt'],
         );
     }

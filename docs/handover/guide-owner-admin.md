@@ -220,7 +220,9 @@ Sales carry on while the count is open. What is sold between counting a line and
 
 **Find a bill:** **Sales**. Search by invoice number. Filters: status, **Needs review** (section 14) and **OPD medicines below list** (OPD bills charged below the medicines' list value).
 
-The sale page shows every line with its batch and expiry, the prescriber, the payments and references, and for an OPD bill each medicine's share of the Medicines amount.
+The sale page shows every line with its batch and expiry, the prescriber, the patient with their age at that visit (click the name for their page), the payments and references, and for an OPD bill each medicine's share of the Medicines amount.
+
+**Patients:** **Sales → Patients** lists every patient added at the tills. Search by name and open one to see their age, date of birth (estimated from the age when only the age was given) and every bill they had, OPD and pharmacy, at both counters, with the medicines. **Edit patient** changes the name, the date of birth or age, and private notes (never printed or sent to the tills). Old bills keep the name and age they were made with. Patients are never deleted.
 
 **Return items (refund):**
 
@@ -255,18 +257,19 @@ When a till sells offline, the server checks each sale when it arrives. It never
 
 Useful reports:
 
-| Report                                                          | Use it for                                                                                                     |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| **Daily summary (end of day)**                                  | Each counter's bills, consultations, medicines, payments, cashiers and each shift's cash, expected and counted |
-| **Monthly sales**                                               | The month by counter, day, category, schedule, OPD consultations and medicine                                  |
-| **Profit**                                                      | Revenue, cost and gross profit by counter, category and medicine                                               |
-| **Payment methods**                                             | Cash, card and bank transfer totals                                                                            |
-| **Voids and returns**                                           | Every refund and cancelled bill                                                                                |
-| **Shift history**                                               | Every shift's float, expected and counted cash                                                                 |
-| **Stock valuation**, **Stock by batch**                         | What the stock is worth at cost                                                                                |
-| **Expiry**, **Slow-moving and dead stock**                      | Stock to act on                                                                                                |
-| **Adjustments and write-offs**, **Transfers between locations** | Stock that moved for reasons other than sales                                                                  |
-| **Purchases**, **Supplier aging**                               | What was bought and what is owed, by age                                                                       |
+| Report                                                          | Use it for                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Daily summary (end of day)**                                  | Each counter's bills, consultations, medicines, payments, cashiers and each shift's cash, expected and counted                                                                                                                                        |
+| **Monthly sales**                                               | The month by counter, day, category, schedule, OPD consultations and medicine                                                                                                                                                                         |
+| **Profit**                                                      | Revenue, cost and gross profit by counter, category and medicine                                                                                                                                                                                      |
+| **Payment methods**                                             | Cash, card and bank transfer totals                                                                                                                                                                                                                   |
+| **Voids and returns**                                           | Every refund and cancelled bill                                                                                                                                                                                                                       |
+| **Shift history**                                               | Every shift's float, expected and counted cash                                                                                                                                                                                                        |
+| **Stock valuation**, **Stock by batch**                         | What the stock is worth at cost                                                                                                                                                                                                                       |
+| **Expiry**, **Slow-moving and dead stock**                      | Stock to act on                                                                                                                                                                                                                                       |
+| **Adjustments and write-offs**, **Transfers between locations** | Stock that moved for reasons other than sales                                                                                                                                                                                                         |
+| **Purchases**, **Supplier aging**                               | What was bought and what is owed, by age                                                                                                                                                                                                              |
+| **Dispensing register**                                         | Which patient received which medicine: each batch, expiry, quantity, prescriber and cashier; bills without a patient say "No patient recorded". Filter by patient, medicine, schedule and location. Opening and exporting it is kept in the audit log |
 
 Cashiers cannot see reports.
 
@@ -311,6 +314,8 @@ The top bar tells you where a till stands:
 
 **Chrome was reset, reinstalled or its data cleared, or the PC was replaced:** **Administration → Tills**, **Reset offline on this till**. That is the only step: the next time the till is opened it sets itself up again. A till gets ready on one browser only, so it needs this before another browser can take over.
 
+A till keeps the patients' names and ages so the cashier can find a patient offline; a reset or a revoke wipes that copy from the PC the next time it tries to sync, and a reset till fetches it again once it is set up.
+
 **Administration → Tills** shows **Offline sales allowed**, **Offline devices** and **Last synced** for each till. **Revoke offline access** stops a browser syncing (for example a stolen PC) and takes the till's permission away, so it cannot set itself up again until you allow it. Its unsent sales stay on that PC until it is registered again. Resets and revokes are kept in the audit log.
 
 **First print test on the real printer** (each till, after setting up the printer):
@@ -330,10 +335,10 @@ If Chrome ignores the page length (shrunk text, a long blank tail, or a cut mid-
 - **Till**: **Sell only with an open shift** (on for the clinic: no "Sell without a shift").
 - **Money and tax**: **Cashier discount limit (%)** (0 for the clinic: cashiers then see no Discount button), **Tax rate (%)** (the clinic charges no VAT on sales).
 - **Batches and expiry**: **Stop selling days before expiry** (0: sell until expiry), **Short expiry: within (days)** (90).
-- **Pharmacy checkout**: **Default prescriber**, **Prescriber on prescription-only medicines** (Required), **OPD consultation item**, **Warn when the OPD Medicines amount is below (% of list value)** (100; 0 turns the warning off), **Bank transfer needs a reference**, **Controlled-drug register** (off).
+- **Pharmacy checkout**: **Default prescriber**, **Prescriber on prescription-only medicines** (Required), **OPD consultation item**, **Warn when the OPD Medicines amount is below (% of list value)** (100; 0 turns the warning off), **Bank transfer needs a reference**, **Controlled-drug register** (off), **Patient on sale** (**Ask, can skip**; or required for prescription and controlled medicines, required for every sale, or off).
 - **Offline tills**: **Till clock tolerance (minutes)**.
 
-**Administration → Receipt settings:** **Header lines**, **Footer**, **Paper width** (80 mm), the logo, and **Medicines on receipts**: **Print the batch number** (on), **Print the expiry date** (off), **Print the prescriber on prescription lines** (on), **Medicines on the OPD bill** (names without prices, or totals only). The **Preview** shows a sample bill before you save.
+**Administration → Receipt settings:** **Header lines**, **Footer**, **Paper width** (80 mm), the logo, and **Medicines on receipts**: **Print the batch number** (on), **Print the expiry date** (off), **Print the prescriber on prescription lines** (on), **Medicines on the OPD bill** (names without prices, or totals only), and **Patient on receipts**: **Print the patient's name** and **Print the patient's age** (both off; the bill and the dispensing register keep them either way). The **Preview** shows a sample bill before you save.
 
 Press **Save settings** after a change.
 

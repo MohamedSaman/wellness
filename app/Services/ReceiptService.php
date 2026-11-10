@@ -20,6 +20,7 @@ use App\Observers\AuditObserver;
 use App\Services\Receipts\EscPos;
 use App\Services\Receipts\ReceiptLayout;
 use App\Support\CurrentShop;
+use App\Support\PatientAge;
 use App\Support\Quantity;
 use App\Support\ReportPeriod;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,7 +42,7 @@ use Illuminate\Support\Facades\Storage;
  * A retail shop's sale receipt is the HTML receipt it always had
  * (ReceiptView.vue); its refund and void slips use the thermal layout.
  *
- * @phpstan-type PrintOptions array{paperWidth: int, showBatch: bool, showExpiry: bool, showPrescriber: bool, largePrint?: bool}
+ * @phpstan-type PrintOptions array{paperWidth: int, showBatch: bool, showExpiry: bool, showPrescriber: bool, largePrint?: bool, showPatientName?: bool, showPatientAge?: bool}
  * @phpstan-type ReceiptShop array{name: string, address: ?string, phone: ?string, taxNumber: ?string, logoUrl: ?string, header: ?string, footer: ?string, currency: string, decimals: int, receipt: PrintOptions}
  */
 class ReceiptService
@@ -229,9 +230,29 @@ class ReceiptService
             'showBatch' => (bool) $shop->setting('receipt_show_batch', true),
             'showExpiry' => (bool) $shop->setting('receipt_show_expiry', true),
             'showPrescriber' => (bool) $shop->setting('receipt_show_prescriber', false),
-            // A pharmacy's receipts are set larger for the thermal head (ReceiptLayout); retail's stay as they were.
-            ...($shop->hasModule('pharmacy') ? ['largePrint' => true] : []),
+            // A pharmacy's receipts are set larger for the thermal head (ReceiptLayout), and print the
+            // patient's name and age when the shop says so (branch 13); retail's stay as they were.
+            ...($shop->hasModule('pharmacy') ? [
+                'largePrint' => true,
+                'showPatientName' => (bool) $shop->setting('receipt_show_patient_name', false),
+                'showPatientAge' => (bool) $shop->setting('receipt_show_patient_age', false),
+            ] : []),
         ];
+    }
+
+    /**
+     * The patient as the sale keeps them (branch 13): their name as sold
+     * (customer_name, also the controlled-drug register's patient) and their
+     * age at the visit, "8 m" or "34 y"; null when the sale has neither.
+     *
+     * @return array{name: string|null, age: string|null}|null
+     */
+    public static function patient(Sale $sale): ?array
+    {
+        $name = filled($sale->customer_name) ? trim((string) $sale->customer_name) : null;
+        $age = PatientAge::format($sale->patient_age_months);
+
+        return $name === null && $age === null ? null : ['name' => $name, 'age' => $age];
     }
 
     /**
@@ -272,6 +293,8 @@ class ReceiptService
             'till' => $this->till($sale),
             'customerName' => $sale->customer_name,
             'customerPhone' => $sale->customer_phone,
+            // A pharmacy bill's patient as sold (branch 13): printed per Receipt settings.
+            ...($shop->hasModule('pharmacy') ? ['patient' => self::patient($sale)] : []),
             'subtotal' => $sale->subtotal,
             'discountTotal' => $sale->discount_total,
             'taxTotal' => $sale->tax_total,

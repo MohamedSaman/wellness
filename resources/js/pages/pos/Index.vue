@@ -9,6 +9,7 @@ import {
     LogOut,
     MapPin,
     Receipt,
+    UserRound,
     Repeat,
     Wallet,
 } from '@lucide/vue';
@@ -42,6 +43,8 @@ import { useOfflinePos } from '@/composables/useOfflinePos';
 import { usePosCart } from '@/composables/usePosCart';
 import { ApiError, postJson } from '@/lib/http';
 import type { OfflineReceipt, OfflineShop } from '@/lib/offline/db';
+import { rememberPatient } from '@/lib/offline/patients';
+import { formatAge, today } from '@/lib/patientAge';
 import { encodeEscPos } from '@/lib/receipt/escpos';
 import { columns, forPrinter, saleLayout } from '@/lib/receipt/layout';
 import { loadReceiptFont, printReceiptPage } from '@/lib/receipt/printPage';
@@ -134,6 +137,20 @@ const rxPromptedFor = ref<string | null>(null);
 const payWhenQuoted = ref(false);
 
 const pharmacyOn = computed(() => !!props.features.pharmacy);
+/** The F7 button: the sale's patient at a glance ("Nimal Perera · 34 y"). */
+const patientChip = computed(() => {
+    if (!showPatient.value) {
+        return 'Prescription';
+    }
+
+    if (state.patient === null) {
+        return state.patientSkipped ? 'No patient' : 'Patient';
+    }
+
+    const age = formatAge(state.patient.ageMonths);
+
+    return age === null ? state.patient.name : `${state.patient.name} · ${age}`;
+});
 // A cashier whose discount limit is 0 sees no Discount button (the server refuses one anyway).
 const canDiscount = computed(() => props.cashier.canDiscount ?? true);
 /** The till rings up OPD bills and this cashier may: every new cart starts as one. */
@@ -150,14 +167,36 @@ const patientLine = computed(() =>
         : null,
 );
 const patientError = computed(() =>
-    patientLine.value && state.customerName.trim() === ''
+    patientLine.value &&
+    state.patient === null &&
+    state.customerName.trim() === ''
         ? `Enter the patient's name for ${patientLine.value.sku} (controlled drug).`
         : null,
 );
-/** What stops payment for the prescription: a required prescriber, a controlled drug's patient. */
-const rxBlocking = computed(
-    () => cart.prescriptionError.value ?? patientError.value,
+/** Branch 13: when the shop needs the patient ('ask' by default: shown, may be skipped). */
+const patientMode = computed(() => props.pharmacy?.patientOnSale ?? 'ask');
+/** The Patient & prescription step shows the patient: the shop asks, or the register needs one. */
+const showPatient = computed(
+    () =>
+        pharmacyOn.value &&
+        (patientMode.value !== 'off' || patientLine.value !== null),
 );
+/** This sale cannot be paid for without a patient (the server refuses it too). */
+const patientRequired = computed(
+    () =>
+        patientLine.value !== null ||
+        patientMode.value === 'always' ||
+        (patientMode.value === 'rx' && cart.hasRxLines.value),
+);
+/** What stops payment: a required prescriber, a controlled drug's patient, the shop's patient rule. */
+const rxBlocking = computed(
+    () =>
+        cart.prescriptionError.value ??
+        patientError.value ??
+        cart.patientRequirement(),
+);
+/** The sale (cart uuid) already shown the patient step before payment. */
+const patientPromptedFor = ref<string | null>(null);
 
 const needsShift = computed(
     () =>
@@ -217,17 +256,32 @@ function askForPrescription(): boolean {
     const unfilled = state.lines.find(
         (line) => cart.isRxLine(line) && cart.prescriberFor(line) === null,
     );
-
-    if (
+    const rxPrompt =
         props.pharmacy?.rxPrescriber === 'prompt' &&
-        unfilled &&
+        unfilled !== undefined &&
         rxPromptedFor.value !== state.uuid
+            ? `${unfilled.sku} is prescription only. Enter the prescriber if you have one, or continue without.`
+            : null;
+
+    // Once per sale: the patient step (and the prescriber prompt with it).
+    if (
+        showPatient.value &&
+        state.patient === null &&
+        !state.patientSkipped &&
+        patientPromptedFor.value !== state.uuid
     ) {
+        if (rxPrompt !== null) {
+            rxPromptedFor.value = state.uuid;
+        }
+
+        openPrescription(rxPrompt, true);
+
+        return true;
+    }
+
+    if (rxPrompt !== null) {
         rxPromptedFor.value = state.uuid;
-        openPrescription(
-            `${unfilled.sku} is prescription only. Enter the prescriber if you have one, or continue without.`,
-            true,
-        );
+        openPrescription(rxPrompt, true);
 
         return true;
     }
@@ -241,12 +295,21 @@ function openPrescription(message: string | null, toPayment: boolean): void {
     rxOpen.value = true;
 }
 
+/** Skip patient (Esc), when the shop allows it: on to payment without one. */
+function skipPatient(): void {
+    cart.skipPatient();
+    continueFromPrescription();
+}
+
 function continueFromPrescription(): void {
     rxOpen.value = false;
 
     if (!rxToPayment.value) {
         return;
     }
+
+    // The patient step was answered (a patient, or continue without one): not asked again for this sale.
+    patientPromptedFor.value = state.uuid;
 
     // What was typed re-prices the cart (prescribers go with the lines): pay on the fresh quote.
     if (state.stale) {
@@ -304,6 +367,7 @@ async function completeSale(): Promise<void> {
             CheckoutController.url(),
             cart.checkoutBody(props.till.uuid),
         );
+        rememberNewPatient();
 
         offlinePos.reportConnection(true);
         offlineReceipt.value = null;
@@ -356,6 +420,7 @@ async function completeOffline(): Promise<void> {
 
     const { build } = await cart.offlineSale();
     const sale = await offlinePos.recordSale(build, shop.invoicePadding);
+    rememberNewPatient();
 
     // The till and its location for the receipt's header (not kept in the outbox).
     offlineReceipt.value = {
@@ -380,6 +445,20 @@ async function completeOffline(): Promise<void> {
         receipt_url: null,
     };
     paymentOpen.value = false;
+}
+
+/** A patient added for this sale: the next sale at this till finds them, online or not. */
+function rememberNewPatient(): void {
+    const patient = state.patient;
+
+    if (patient?.isNew) {
+        void rememberPatient({
+            uuid: patient.uuid,
+            name: patient.name,
+            age_months: patient.ageMonths,
+            age_on: today(),
+        }).catch(() => undefined);
+    }
 }
 
 /** A pharmacy's offline receipt prints as the online one does (lib/receipt/printPage.ts). */
@@ -526,6 +605,7 @@ watch(
         defaultPrescriber: props.pharmacy?.defaultPrescriber ?? null,
         rxPrescriber: props.pharmacy?.rxPrescriber ?? 'prompt',
         opdConsultation: props.pharmacy?.opdConsultation ?? null,
+        patientOnSale: patientMode.value,
     }),
     (context) => cart.configure(context),
     { immediate: true, deep: true },
@@ -792,13 +872,22 @@ onBeforeUnmount(() => {
                             <kbd class="text-xs text-muted-foreground">F3</kbd>
                         </Button>
                         <Button
-                            v-if="pharmacyOn && cart.hasRxLines.value"
+                            v-if="
+                                pharmacyOn &&
+                                (cart.hasRxLines.value || showPatient)
+                            "
                             :variant="rxBlocking ? 'destructive' : 'outline'"
-                            class="h-10"
+                            class="h-10 max-w-64"
                             data-test="prescription-button"
                             @click="openPrescription(null, false)"
                         >
-                            <FileText class="size-4" /> Prescription
+                            <UserRound v-if="showPatient" class="size-4" />
+                            <FileText v-else class="size-4" />
+                            <span
+                                class="min-w-0 truncate"
+                                data-test="patient-chip"
+                                >{{ patientChip }}</span
+                            >
                             <kbd class="text-xs opacity-80">F7</kbd>
                         </Button>
                         <span class="text-sm text-muted-foreground"
@@ -862,8 +951,11 @@ onBeforeUnmount(() => {
             :message="rxMessage"
             :blocking="rxBlocking"
             :needs-patient="patientLine !== null"
+            :show-patient="showPatient"
+            :patient-required="patientRequired"
             :to-payment="rxToPayment"
             @continue="continueFromPrescription"
+            @skip="skipPatient"
         />
         <SaleDoneDialog
             :sale="completed"

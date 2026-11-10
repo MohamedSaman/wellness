@@ -4,7 +4,7 @@ import SaleSyncController from '@/actions/App/Http/Controllers/Pos/Sync/SaleSync
 import TillController from '@/actions/App/Http/Controllers/Pos/TillController';
 import { ApiError, postJson, queryString } from '@/lib/http';
 import { blackLogo } from '@/lib/receipt/logo';
-import type { VehicleMake } from '@/types/pos';
+import type { PosPatient, VehicleMake } from '@/types/pos';
 import { db, getMeta, metaKeys, setMeta, withBarcodes } from './db';
 import type {
     CatalogItem,
@@ -13,6 +13,7 @@ import type {
     OfflineTill,
     OutboxSale,
 } from './db';
+import { storePatients, wipePatients } from './patients';
 import { forgetSearchCache } from './search';
 
 /**
@@ -38,6 +39,8 @@ type CatalogPage = {
     items: CatalogItem[];
     deleted: number[];
     vehicles: VehicleMake[] | null;
+    /** Branch 13 (pharmacy), on the first page: every patient (full) or who changed. */
+    patients?: PosPatient[] | null;
 };
 
 type SyncResult = {
@@ -182,6 +185,7 @@ export async function setDenied(
 
 export async function forgetTill(tillUuid: string): Promise<void> {
     await db.meta.delete(metaKeys.token(tillUuid));
+    await wipePatients();
 }
 
 /**
@@ -252,6 +256,10 @@ export async function syncCatalog(
                 await setMeta(metaKeys.vehicles, page.vehicles);
             }
         });
+
+        if (page.patients !== undefined && page.patients !== null) {
+            await storePatients(page.patients, full);
+        }
 
         page.items.forEach((item) => seen.add(item.variant_id));
         after = page.has_more ? page.next_after : null;

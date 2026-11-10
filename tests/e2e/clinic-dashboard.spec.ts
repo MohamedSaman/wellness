@@ -25,6 +25,12 @@ const screenshots = 'storage/app/screenshots';
 async function payExact(page: Page): Promise<void> {
     await page.locator('[data-test=pay-button]').click();
     const pay = dialog(page, 'Payment');
+    // A clinic's till asks for the patient first (branch 13): skipped here.
+    const step = page.locator('[data-test=prescription-dialog]');
+    await expect(pay.or(step)).toBeVisible();
+    if (await step.isVisible()) {
+        await page.keyboard.press('Escape');
+    }
     await expect(pay).toBeVisible();
     await pay.getByRole('button', { name: 'Exact' }).click();
     await pay.locator('[data-test=complete-sale]').click();

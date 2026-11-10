@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\Shift;
 use App\Models\Shop;
 use App\Models\User;
+use App\Services\CatalogSyncService;
 use App\Services\ItemSearchService;
 use App\Support\CurrentShop;
 use App\Support\ShiftPresenter;
@@ -127,6 +128,8 @@ class PosController extends Controller
             'rxPrescriber' => (string) $shop->setting('rx_prescriber', 'prompt'),
             'defaultPrescriber' => $shop->setting('default_prescriber'),
             'controlledRegister' => (bool) $shop->setting('controlled_register'),
+            // Patients (branch 13): when the Patient & prescription step needs one.
+            'patientOnSale' => CatalogSyncService::patientOnSale($shop),
             'bankTransferReferenceRequired' => (bool) $shop->setting('bank_transfer_reference_required'),
             'opdReceiptMedicines' => (string) $shop->setting('opd_receipt_medicines', 'names'),
             'opdBelowListWarningPercent' => max(0, min(100, (int) $shop->setting('opd_below_list_warning_percent', 100))),

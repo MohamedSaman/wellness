@@ -1,26 +1,26 @@
 # Quick reference: T2 OPD (Doctor's Medicines)
 
-| Task                            | Steps                                                                                                                                                                               |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start of day                    | Sign in. Count the drawer. **Opening cash (LKR)**, **Open shift**. Check: **T2**, **Doctor's Medicines**, **Shift open**, **Online**.                                               |
-| New OPD bill                    | Starts by itself as **OPD bill** with the **Consultation** line.                                                                                                                    |
-| Consultation fee                | Already filled in. Different fee: type it in the **Price** box.                                                                                                                     |
-| Medicines                       | Scan or search (F2) every medicine given. Set unit and quantity (loose ml of syrup is fine here). Lines say **In Medicines**.                                                       |
-| Medicines amount                | F8, type the one amount for all medicines, Enter.                                                                                                                                   |
-| Below-list warning              | Amber **Below the medicines' list value...**: check with the doctor. Only a warning; you can still pay.                                                                             |
-| Prescription                    | **Prescription** (F7): **Prescriber** (required), **Rx reference (optional)**, **Done**.                                                                                            |
-| Pay                             | **Pay** (F9). Cash: type it / **Exact**. Card: **Add card**. Bank transfer: **Add bank transfer** + reference (required).                                                           |
-| Finish                          | **Complete sale** (Ctrl + Enter), **Print receipt**, **New sale**.                                                                                                                  |
-| Itemised bill                   | F3 or **Itemised bill** to price items one by one. F3 again for **OPD bill**.                                                                                                       |
-| Ask GEN for stock               | **Stock requests** (online only): add items or **From low stock**, unit + quantity, **Send request to General Pharmacy**. **Back to the till**.                                     |
-| Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                |
-| Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                      |
-| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                          |
-| End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**. |
+| Task                            | Steps                                                                                                                                                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start of day                    | Sign in. Count the drawer. **Opening cash (LKR)**, **Open shift**. Check: **T2**, **Doctor's Medicines**, **Shift open**, **Online**.                                                                                       |
+| New OPD bill                    | Starts by itself as **OPD bill** with the **Consultation** line.                                                                                                                                                            |
+| Consultation fee                | Already filled in. Different fee: type it in the **Price** box.                                                                                                                                                             |
+| Medicines                       | Scan or search (F2) every medicine given. Set unit and quantity (loose ml of syrup is fine here). Lines say **In Medicines**.                                                                                               |
+| Medicines amount                | F8, type the one amount for all medicines, Enter.                                                                                                                                                                           |
+| Below-list warning              | Amber **Below the medicines' list value...**: check with the doctor. Only a warning; you can still pay.                                                                                                                     |
+| Patient and prescription        | **Pay** opens it (or F7): type the patient's name and choose them, or name **Enter** age (**34** / **8m**) **Enter** for a new one; **Skip patient** (Esc) if none. **Prescriber** (required), **Rx reference (optional)**. |
+| Pay                             | **Pay** (F9). Cash: type it / **Exact**. Card: **Add card**. Bank transfer: **Add bank transfer** + reference (required).                                                                                                   |
+| Finish                          | **Complete sale** (Ctrl + Enter), **Print receipt**, **New sale**.                                                                                                                                                          |
+| Itemised bill                   | F3 or **Itemised bill** to price items one by one. F3 again for **OPD bill**.                                                                                                                                               |
+| Ask GEN for stock               | **Stock requests** (online only): add items or **From low stock**, unit + quantity, **Send request to General Pharmacy**. **Back to the till**.                                                                             |
+| Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                                                        |
+| Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                                                              |
+| Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                                                                  |
+| End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**.                                         |
 
 ## Keys
 
-F2 search · F3 OPD / itemised · F6 recent sales · F7 prescription · F8 Medicines amount · F9 pay · Ctrl + Enter complete sale
+F2 search · F3 OPD / itemised · F6 recent sales · F7 patient and prescription · F8 Medicines amount · F9 pay · Ctrl + Enter complete sale
 
 ## If something goes wrong
 

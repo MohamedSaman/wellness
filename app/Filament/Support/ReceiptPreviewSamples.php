@@ -27,8 +27,10 @@ final class ReceiptPreviewSamples
             'soldAt' => now()->timezone($shop->timezone)->format('Y-m-d H:i'),
             'cashier' => 'Cashier',
             'till' => $till,
-            'customerName' => null,
+            'customerName' => 'Nimal Perera',
             'customerPhone' => null,
+            // Printed only with the shop's patient settings (branch 13).
+            'patient' => ['name' => 'Nimal Perera', 'age' => '34 y'],
             'discountTotal' => 0,
             'taxTotal' => 0,
             'taxRate' => $shop->tax_enabled ? (float) $shop->tax_rate : 0.0,

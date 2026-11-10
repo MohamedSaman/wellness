@@ -694,3 +694,34 @@ export function checkPrescribers(
         }
     });
 }
+
+/**
+ * The patient rule (branch 13) before payment, as CheckoutService::checkPatient()
+ * refuses online: patient_on_sale 'always' needs a patient on every sale,
+ * 'rx' on a sale with a prescription-only or controlled line.
+ */
+export function checkPatient(
+    lines: Pick<OfflineQuoteLine, 'sku' | 'drug_schedule'>[],
+    hasPatient: boolean,
+    shop: OfflineShop,
+): void {
+    if (hasPatient || shop.pharmacy !== true) {
+        return;
+    }
+
+    const mode = shop.patientOnSale ?? 'ask';
+
+    if (mode === 'always') {
+        throw new OfflinePricingError(
+            'Choose or add the patient for this sale.',
+        );
+    }
+
+    const rxLine = lines.find((line) => isRxSchedule(line.drug_schedule));
+
+    if (mode === 'rx' && rxLine !== undefined) {
+        throw new OfflinePricingError(
+            `${rxLine.sku} is a prescription medicine: choose or add the patient.`,
+        );
+    }
+}

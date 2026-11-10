@@ -22,6 +22,9 @@ export type PrintOptions = {
     showPrescriber: boolean;
     /** Sent for a pharmacy only (ReceiptService::printOptions()). */
     largePrint?: boolean;
+    /** The patient's name and age under the cashier (pharmacy only, branch 13). */
+    showPatientName?: boolean;
+    showPatientAge?: boolean;
 };
 
 export type LayoutShop = {
@@ -84,6 +87,8 @@ export type LayoutSale = {
     items: LayoutItem[];
     payments: { method: string; amount: number; reference?: string | null }[];
     reprint?: { printedAt: string | null; printedBy: string } | null;
+    /** The patient as sold: name, and age at the visit as printed ("8 m", "34 y"). */
+    patient?: { name: string | null; age: string | null } | null;
 };
 
 export const COLUMNS: Record<number, number> = { 80: 48, 58: 32 };
@@ -173,6 +178,8 @@ export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
     const showBatch = options?.showBatch ?? true;
     const showExpiry = options?.showExpiry ?? true;
     const showPrescriber = options?.showPrescriber ?? false;
+    const showPatientName = options?.showPatientName ?? false;
+    const showPatientAge = options?.showPatientAge ?? false;
     const decimals = shop.decimals ?? 2;
     const taxOn = (sale.taxRate ?? 0) > 0;
     const lines: ThermalLine[] = [];
@@ -243,7 +250,16 @@ export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
         const left = ascii(leftText);
         const right = ascii(rightText);
 
-        // A value (not an amount) that is too long for one line goes under its label.
+        // A value (not an amount) that is too long for one line goes under its label;
+        // one longer than a whole line (a long patient's name) is wrapped there, right-aligned.
+        if (!isAmount && right !== '' && left === '' && right.length >= width) {
+            wrap(right, width).forEach((line) =>
+                push(line.trim().padStart(width), bold, tall),
+            );
+
+            return;
+        }
+
         if (
             !isAmount &&
             right !== '' &&
@@ -433,6 +449,25 @@ export function saleLayout(shop: LayoutShop, sale: LayoutSale): ThermalLine[] {
     }
 
     rows.push(['Cashier', sale.cashier]);
+
+    // The patient, as the shop prints it (ReceiptLayout::patientRow()).
+    const patientName =
+        showPatientName && filled(sale.patient?.name)
+            ? String(sale.patient?.name).trim()
+            : null;
+    const patientAge =
+        showPatientAge && filled(sale.patient?.age)
+            ? String(sale.patient?.age)
+            : null;
+
+    if (patientName !== null && patientAge !== null) {
+        rows.push(['Patient', `${patientName} (${patientAge})`]);
+    } else if (patientName !== null) {
+        rows.push(['Patient', patientName]);
+    } else if (patientAge !== null) {
+        rows.push(['Age', patientAge]);
+    }
+
     rows.forEach(([label, value]) => row(label, value, 0, 0, false, false));
     rule();
 

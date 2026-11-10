@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Pos\CheckoutController;
 use App\Http\Controllers\Pos\ItemSearchController;
+use App\Http\Controllers\Pos\PatientSearchController;
 use App\Http\Controllers\Pos\PosController;
 use App\Http\Controllers\Pos\QuoteController;
 use App\Http\Controllers\Pos\ReceiptController;
@@ -33,6 +34,8 @@ Route::middleware(['auth', 'can:pos.checkout'])->prefix('pos')->name('pos.')->gr
     Route::get('shifts/{shift}/summary', [ShiftController::class, 'summary'])->name('shift.summary');
 
     Route::get('search', ItemSearchController::class)->middleware('throttle:pos-search')->name('search');
+    // Patients on clinic sales (docs/PHARMACY.md, branch 13).
+    Route::get('patients', PatientSearchController::class)->middleware(['module:pharmacy', 'throttle:pos-search'])->name('patients');
     Route::get('vehicles', VehicleController::class)->middleware('module:vehicle_fitment')->name('vehicles');
 
     Route::post('quote', QuoteController::class)->name('quote');

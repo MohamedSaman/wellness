@@ -50,7 +50,7 @@ Always open a shift: the till does not sell without one. It asks for the opening
 | ------------------ | ------------------------------------- |
 | F2                 | Go to the search box                  |
 | F6                 | Recent sales (reprint a receipt)      |
-| F7                 | Prescription details                  |
+| F7                 | Patient and prescription              |
 | F9 or Ctrl + Enter | Pay                                   |
 | Ctrl + Enter       | In the payment box: **Complete sale** |
 | Arrow up / down    | Move through the search results       |
@@ -113,18 +113,30 @@ Under every medicine line the till shows which batch it will sell, for example *
 
 The printed receipt shows the batch number but not the expiry date. This is the clinic's choice.
 
-## 8. Prescription details
+## 8. Patient and prescription details
 
-When the bill has a **prescription-only** or **controlled** medicine, a **Prescription** button (F7) appears above the bill.
+On every bill, **Pay** (F9) first opens the **Patient & prescription** box. You can open it any time with the **Patient** button above the bill (or F7); the button then shows the patient's name and age.
 
-1. Press **Prescription** (or F7).
-2. **Prescriber**: the doctor's name. It may already be filled in with the clinic's usual doctor. Change it if the prescription is from someone else.
-3. **Rx reference (optional)**: the prescription number, if there is one.
-4. Press **Done**.
+**The patient:**
+
+1. Type the patient's name. Patients already on file appear under it, with their age.
+2. To choose one, click them, or press the down arrow and **Enter**.
+3. A new patient: type the full name, press **Enter**, type the age (**34**, or **8m** for a baby of 8 months), press **Enter**.
+4. No patient (a walk-in customer): press **Skip patient** (or Esc). If the box says the patient is **Required**, the bill cannot be paid without one.
+
+If a patient's age is wrong, change it next to their name before you continue.
+
+**The prescription**, when the bill has a **prescription-only** or **controlled** medicine:
+
+1. **Prescriber**: the doctor's name. It may already be filled in with the clinic's usual doctor. Change it if the prescription is from someone else.
+2. **Rx reference (optional)**: the prescription number, if there is one.
+3. Press **Continue to payment** (or **Done** when you opened it with F7).
+
+For a **controlled** drug the patient is always needed, and the box also asks for the patient's phone.
 
 The details apply to every prescription line on the bill. If one line has a different prescriber, press **No prescriber entered** (or the prescriber shown) under that line and type it there. **Same as sale** puts it back.
 
-**The prescriber is required.** If you press **Pay** before entering it, the **Prescription** box opens instead, in red. Fill in the prescriber and press **Continue to payment**.
+**The prescriber is required.** If you press **Pay** before entering it, the box says so in red. Fill in the prescriber and press **Continue to payment**.
 
 ## 9. Discounts
 
@@ -239,7 +251,7 @@ Stock requests are made at the OPD counter, to ask General Pharmacy for stock; T
 | An item scans but shows **Not sold here** or **No price** | Do not sell it. Tell the Admin.                                                                                                |
 | **Only 3 in stock.** but the shelf has more               | Sell what the system shows. Tell the Admin to check the stock.                                                                 |
 | **Pay** is greyed out                                     | Wait a moment for the total to update. Read any red message above the button.                                                  |
-| Pay opens the **Prescription** box                        | Enter the prescriber, then **Continue to payment**.                                                                            |
+| Pay opens the **Patient & prescription** box              | Choose or add the patient (or **Skip patient**), enter the prescriber if asked, then **Continue to payment**.                  |
 | **Enter the bank transfer reference.**                    | Type the reference in the bank transfer line.                                                                                  |
 | The receipt does not print                                | Check the printer has paper and is switched on. Reprint from **Recent sales**. If a print box appears on screen, call support. |
 | The till says **Offline**                                 | Keep selling. See section 14.                                                                                                  |

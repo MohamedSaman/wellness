@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\AdjustmentReason;
 use App\Enums\BillType;
+use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Enums\GoodsReceiptStatus;
 use App\Enums\PaymentMethod;
@@ -29,6 +30,7 @@ use App\Models\SupplierReturn;
 use App\Models\VariantUnit;
 use App\Services\Reports\SalesFact;
 use App\Support\CurrentShop;
+use App\Support\PatientAge;
 use App\Support\Quantity;
 use App\Support\ReportPeriod;
 use App\Support\UnitCost;
@@ -1042,6 +1044,130 @@ class ReportService
     }
 
     /** Whether the controlled-drug register is switched on for the shop (pharmacy, shop setting controlled_register). */
+    /**
+     * The dispensing register (docs/PHARMACY.md, branch 13): who received
+     * which medicine. One row per batch of every medicine line (a line with
+     * a schedule snapshot) of the bills reported in the period, voided bills
+     * left out, oldest first: when, bill, till, the location it was
+     * dispensed from, the patient and their age as sold (or none), the
+     * medicine with its strength, form and schedule as sold, batch, expiry,
+     * quantity in base units and what came back, prescriber and cashier.
+     * Filters: a patient (or 'none': bills without one), a medicine, a
+     * schedule, the location dispensed from (sale_items.location_id).
+     *
+     * @param  array{patient?: int|string|null, variant_id?: int|null, schedule?: string|null, location_id?: int|null}  $filters
+     */
+    private function dispensing(ReportPeriod $period, array $filters): Builder
+    {
+        $patient = $filters['patient'] ?? null;
+        $variantId = $filters['variant_id'] ?? null;
+        $schedule = $filters['schedule'] ?? null;
+        $locationId = $filters['location_id'] ?? null;
+
+        return $this->sales($period)
+            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
+            ->leftJoin('sale_item_batches', 'sale_item_batches.sale_item_id', '=', 'sale_items.id')
+            ->whereNotNull('sale_items.drug_schedule')
+            ->when($patient === 'none', fn (Builder $query) => $query->whereNull('sales.patient_id'))
+            ->when(is_int($patient), fn (Builder $query) => $query->where('sales.patient_id', $patient))
+            ->when($variantId !== null, fn (Builder $query) => $query->where('sale_items.product_variant_id', $variantId))
+            ->when($schedule !== null, fn (Builder $query) => $query->where('sale_items.drug_schedule', $schedule))
+            ->when($locationId !== null, fn (Builder $query) => $query->where('sale_items.location_id', $locationId));
+    }
+
+    /**
+     * @param  array{patient?: int|string|null, variant_id?: int|null, schedule?: string|null, location_id?: int|null}  $filters
+     */
+    private function dispensingRowsQuery(ReportPeriod $period, array $filters): Builder
+    {
+        return $this->dispensing($period, $filters)
+            ->leftJoin('devices', 'devices.id', '=', 'sales.device_id')
+            ->leftJoin('locations as line_location', 'line_location.id', '=', 'sale_items.location_id')
+            ->leftJoin('users as cashiers', 'cashiers.id', '=', 'sales.user_id')
+            ->leftJoin('patients', 'patients.id', '=', 'sales.patient_id')
+            ->leftJoin('product_variants as dispensed_variant', 'dispensed_variant.id', '=', 'sale_items.product_variant_id')
+            ->leftJoin('drug_details as dispensed_drug', 'dispensed_drug.product_id', '=', 'dispensed_variant.product_id')
+            ->select([
+                'sales.reported_at', 'sales.invoice_no', 'sales.uuid as sale_uuid', 'sales.customer_name', 'sales.patient_id', 'patients.uuid as patient_uuid', 'sales.patient_age_months',
+                'devices.code as till', 'line_location.name as location', 'cashiers.name as cashier',
+                'sale_items.description', 'sale_items.strength', 'sale_items.drug_schedule', 'sale_items.base_unit_name',
+                'sale_items.base_quantity', 'sale_items.prescriber', 'sale_items.prescription_ref',
+                DB::raw('COALESCE(sale_items.dosage_form, dispensed_drug.dosage_form) as dosage_form'),
+                'sale_item_batches.batch_no', 'sale_item_batches.expiry_date', 'sale_item_batches.is_unallocated',
+                'sale_item_batches.quantity as batch_quantity', 'sale_item_batches.returned_quantity as batch_returned',
+                'sale_items.returned_quantity', 'sale_items.unit_factor',
+            ])
+            ->orderBy('sales.reported_at')
+            ->orderBy('sales.id')
+            ->orderBy('sale_items.id')
+            ->orderBy('sale_item_batches.id');
+    }
+
+    /**
+     * One page of the register, for the screen.
+     *
+     * @param  array{patient?: int|string|null, variant_id?: int|null, schedule?: string|null, location_id?: int|null}  $filters
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    public function dispensingRegister(ReportPeriod $period, array $filters, int $page, int $perPage): LengthAwarePaginator
+    {
+        $total = $this->dispensing($period, $filters)->count();
+        $rows = $this->dispensingRowsQuery($period, $filters)->forPage($page, $perPage)->get();
+
+        return new LengthAwarePaginator(
+            array_values($rows->map(fn (\stdClass $row): array => $this->presentDispensing($row, $period))->all()),
+            $total,
+            $perPage,
+            $page,
+        );
+    }
+
+    /**
+     * Every row of the register, for the exports, a thousand at a time.
+     *
+     * @param  array{patient?: int|string|null, variant_id?: int|null, schedule?: string|null, location_id?: int|null}  $filters
+     * @return \Generator<int, array<string, mixed>>
+     */
+    public function dispensingRegisterRows(ReportPeriod $period, array $filters): \Generator
+    {
+        foreach ($this->dispensingRowsQuery($period, $filters)->lazy(1000) as $row) {
+            /** @var \stdClass $row */
+            yield $this->presentDispensing($row, $period);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function presentDispensing(\stdClass $row, ReportPeriod $period): array
+    {
+        $strength = trim((string) $row->strength);
+        $description = (string) $row->description;
+        $hasBatch = $row->batch_no !== null || (bool) $row->is_unallocated;
+        $returnedBase = round((float) $row->returned_quantity * (float) ($row->unit_factor ?: 1), 3);
+
+        return [
+            'when' => $period->local((string) $row->reported_at),
+            'invoice' => (string) $row->invoice_no,
+            'sale_uuid' => (string) $row->sale_uuid,
+            'till' => $row->till === null ? null : (string) $row->till,
+            'location' => $row->location === null ? null : (string) $row->location,
+            'patient' => filled($row->customer_name) ? (string) $row->customer_name : 'No patient recorded',
+            'patient_id' => $row->patient_id === null ? null : (int) $row->patient_id,
+            'patient_uuid' => $row->patient_uuid === null ? null : (string) $row->patient_uuid,
+            'age' => PatientAge::format($row->patient_age_months === null ? null : (int) $row->patient_age_months),
+            'medicine' => $strength === '' || str_contains($description, $strength) ? $description : "{$description} {$strength}",
+            'form' => DosageForm::tryFrom((string) $row->dosage_form)?->label(),
+            'schedule' => DrugSchedule::tryFrom((string) $row->drug_schedule)?->label(),
+            'batch' => (bool) $row->is_unallocated ? 'Unallocated' : ($row->batch_no === null ? null : (string) $row->batch_no),
+            'expiry' => $row->expiry_date === null ? null : CarbonImmutable::parse((string) $row->expiry_date)->format('m/Y'),
+            'quantity' => round((float) ($hasBatch ? $row->batch_quantity : $row->base_quantity), 3),
+            'unit' => $row->base_unit_name === null ? null : (string) $row->base_unit_name,
+            'returned' => round((float) ($hasBatch ? $row->batch_returned : $returnedBase), 3),
+            'prescriber' => $row->prescriber === null ? null : (string) $row->prescriber,
+            'rx_ref' => $row->prescription_ref === null ? null : (string) $row->prescription_ref,
+            'cashier' => $row->cashier === null ? null : (string) $row->cashier,
+        ];
+    }
+
     public function controlledRegisterEnabled(): bool
     {
         $shop = $this->currentShop->get();

@@ -22,6 +22,7 @@ Clinic: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ Web address: https://\_\_\_\_\_\_\_\_\_
 - [ ] Administration → Security: admin panel signs out after 30 minutes idle; tills never sign out by themselves (0).
 - [ ] Short expiry 90 days; stop selling days before expiry 0.
 - [ ] Default prescriber, prescriber required, OPD consultation item and its fee set.
+- [ ] Patient on sale chosen (Ask, can skip by default); patient's name and age on receipts on or off as the clinic wants (off by default).
 - [ ] Bank transfer needs a reference: on.
 - [ ] Receipt: batch printed, expiry not printed, prescriber printed; OPD medicines listed without prices (or totals only, as the owner chose).
 - [ ] OPD below-list warning percentage agreed with the owner.

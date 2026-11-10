@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Device;
 use App\Models\GoodsReceipt;
+use App\Models\Patient;
 use App\Models\PurchaseOrder;
 use App\Models\Sale;
 use App\Models\SaleReturn;
@@ -27,7 +28,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Clears the rehearsal out of a shop on go-live morning (pos:go-live-reset,
  * docs/deploy/GO-LIVE.md): the test sales with their items, payments and
- * batches, returns, voids, shifts and their stock movements, and the
+ * batches, returns, voids, shifts and their stock movements, the patients
+ * added with them (branch 13), and the
  * invoice numbering (every till starts again at 000001, its offline number
  * blocks dropped and its sync token revoked, so it is registered again with
  * a clean slate). With $stock, also everything else that moved stock or
@@ -133,6 +135,8 @@ class GoLiveResetService
             'payments' => DB::table('payments')->whereIn('sale_id', $sales()),
             'sale_items' => DB::table('sale_items')->whereIn('sale_id', $sales()),
             'sales' => DB::table('sales')->where('shop_id', $shopId),
+            // The rehearsal's patients (branch 13): added at the tills with its sales.
+            'patients' => DB::table('patients')->where('shop_id', $shopId),
             'shifts' => DB::table('shifts')->where('shop_id', $shopId),
             'invoice_number_blocks' => DB::table('invoice_number_blocks')->where('shop_id', $shopId),
         ];
@@ -166,8 +170,8 @@ class GoLiveResetService
         $targets['audit_logs'] = DB::table('audit_logs')->where('shop_id', $shopId)->whereIn('auditable_type', array_map(
             fn (string $model): string => (new $model)->getMorphClass(),
             $stock
-                ? [Sale::class, SaleReturn::class, Shift::class, GoodsReceipt::class, PurchaseOrder::class, SupplierReturn::class, SupplierPayment::class, SupplierOpeningBalance::class, SupplierAllocation::class, StockTransfer::class, StockRequest::class, StockWriteOff::class, StockCount::class]
-                : [Sale::class, SaleReturn::class, Shift::class],
+                ? [Sale::class, SaleReturn::class, Shift::class, Patient::class, GoodsReceipt::class, PurchaseOrder::class, SupplierReturn::class, SupplierPayment::class, SupplierOpeningBalance::class, SupplierAllocation::class, StockTransfer::class, StockRequest::class, StockWriteOff::class, StockCount::class]
+                : [Sale::class, SaleReturn::class, Shift::class, Patient::class],
         ));
 
         return $targets;

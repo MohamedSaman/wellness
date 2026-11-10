@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\Device;
 use App\Models\GoodsReceipt;
 use App\Models\InvoiceNumberBlock;
+use App\Models\Patient;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleReturn;
@@ -21,10 +22,14 @@ use App\Services\Backup\BackupException;
 use App\Services\Backup\BackupService;
 use App\Services\CheckoutService;
 use App\Services\Data\CartLine;
+use App\Services\Data\CheckoutData;
+use App\Services\Data\PatientInput;
+use App\Services\Data\PaymentInput;
 use App\Services\Data\ReceiptLine;
 use App\Services\Data\ReturnLine;
 use App\Services\ReturnService;
 use App\Services\ShiftService;
+use Illuminate\Support\Str;
 use Illuminate\Testing\PendingCommand;
 use Mockery\MockInterface;
 use Tests\Feature\Pos\Concerns\WorksWithPurchasing;
@@ -57,6 +62,15 @@ class GoLiveResetTest extends BatchTestCase
         app(ReturnService::class)->processLines($returned, [new ReturnLine((int) $returned->items()->value('id'), 2)], ReturnReason::ChangedMind, PaymentMethod::Cash, $this->owner);
         $voided = $this->sell([new CartLine($panadol->getKey(), 3)]);
         app(CheckoutService::class)->void($voided, $this->owner, 'Rehearsal');
+        // A patient added at the till with a sale (branch 13).
+        app(CheckoutService::class)->checkout(new CheckoutData(
+            device: $this->till,
+            cashier: $this->cashier,
+            lines: [new CartLine($panadol->getKey(), 1)],
+            payments: [new PaymentInput(PaymentMethod::Cash, 100_000)],
+            uuid: (string) Str::uuid(),
+            patient: new PatientInput((string) Str::uuid(), 'Rehearsal Patient', 400),
+        ));
         $this->till->issueSyncToken('rehearsal');
 
         return [$panadol, $kept];
@@ -79,11 +93,12 @@ class GoLiveResetTest extends BatchTestCase
         $suppliers = Supplier::query()->count();
         $users = User::query()->count();
         $settings = $this->shop->fresh()?->settings;
-        $this->assertSame(92.0, $panadol->stockAt($this->general));
+        $this->assertSame(91.0, $panadol->stockAt($this->general));
+        $this->assertSame(1, Patient::query()->count());
 
         $this->reset()->assertSuccessful();
 
-        foreach ([Sale::class, SaleReturn::class, Shift::class, InvoiceNumberBlock::class] as $model) {
+        foreach ([Sale::class, SaleReturn::class, Shift::class, InvoiceNumberBlock::class, Patient::class] as $model) {
             $this->assertSame(0, $model::query()->count(), $model);
         }
 
@@ -107,6 +122,7 @@ class GoLiveResetTest extends BatchTestCase
 
         $this->assertDatabaseHas('audit_logs', ['event' => 'go_live_reset', 'user_id' => $this->owner->getKey()]);
         $this->assertSame(0, AuditLog::query()->where('auditable_type', (new Sale)->getMorphClass())->where('event', '!=', 'go_live_reset')->count());
+        $this->assertSame(0, AuditLog::query()->where('auditable_type', (new Patient)->getMorphClass())->count());
     }
 
     public function test_include_stock_removes_all_stock_and_supplier_documents_too(): void

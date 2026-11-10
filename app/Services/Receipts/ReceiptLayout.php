@@ -48,6 +48,11 @@ final class ReceiptLayout
 
     private bool $showPrescriber;
 
+    /** The patient's name and age under the cashier (branch 13; a pharmacy, off by default). */
+    private bool $showPatientName;
+
+    private bool $showPatientAge;
+
     private int $decimals;
 
     /** Tax on for the document being laid out: amounts keep two columns for " E". */
@@ -68,6 +73,8 @@ final class ReceiptLayout
         $this->showBatch = (bool) ($options['showBatch'] ?? true);
         $this->showExpiry = (bool) ($options['showExpiry'] ?? true);
         $this->showPrescriber = (bool) ($options['showPrescriber'] ?? false);
+        $this->showPatientName = (bool) ($options['showPatientName'] ?? false);
+        $this->showPatientAge = (bool) ($options['showPatientAge'] ?? false);
         $this->decimals = (int) ($shop['decimals'] ?? 2);
     }
 
@@ -120,7 +127,7 @@ final class ReceiptLayout
         $this->billDetails($sale, [
             ['Bill no.', (string) $sale['invoiceNo']],
             ['Date', self::date((string) $sale['soldAt'])],
-        ]);
+        ], patient: $this->patientRow($sale['patient'] ?? null));
         $this->rule();
         $this->items($sale, fn (array $item): ?int => $item['lineTotal'] ?? null, withReturns: true);
         $this->rule();
@@ -375,8 +382,9 @@ final class ReceiptLayout
      * @param  array<string, mixed>  $sale
      * @param  list<array{0: string, 1: string}>  $rows
      * @param  array{0: string, 1: string}|null  $cashier
+     * @param  array{0: string, 1: string}|null  $patient
      */
-    private function billDetails(array $sale, array $rows, ?array $cashier = null): void
+    private function billDetails(array $sale, array $rows, ?array $cashier = null, ?array $patient = null): void
     {
         /** @var array{code: string, name?: string|null, location?: string|null}|null $till */
         $till = $sale['till'] ?? null;
@@ -396,9 +404,33 @@ final class ReceiptLayout
             $rows[] = $cashier;
         }
 
+        if ($patient !== null) {
+            $rows[] = $patient;
+        }
+
         foreach ($rows as [$label, $value]) {
             $this->row($label, $value, amount: false);
         }
+    }
+
+    /**
+     * The patient's row (branch 13), as the shop prints it: "Patient  Nimal
+     * Perera (34 y)", the name or the age alone ("Age  34 y"), or nothing.
+     *
+     * @param  array{name?: string|null, age?: string|null}|null  $patient
+     * @return array{0: string, 1: string}|null
+     */
+    private function patientRow(?array $patient): ?array
+    {
+        $name = $this->showPatientName && filled($patient['name'] ?? null) ? trim((string) $patient['name']) : null;
+        $age = $this->showPatientAge && filled($patient['age'] ?? null) ? (string) $patient['age'] : null;
+
+        return match (true) {
+            $name !== null && $age !== null => ['Patient', "{$name} ({$age})"],
+            $name !== null => ['Patient', $name],
+            $age !== null => ['Age', $age],
+            default => null,
+        };
     }
 
     /**
@@ -702,7 +734,16 @@ final class ReceiptLayout
         $left = self::ascii($left);
         $right = self::ascii($right);
 
-        // A value (not an amount) that is too long for one line goes under its label.
+        // A value (not an amount) that is too long for one line goes under its label;
+        // one longer than a whole line (a long patient's name) is wrapped there, right-aligned.
+        if (! $amount && $right !== '' && $left === '' && strlen($right) >= $this->width) {
+            foreach ($this->wrap($right, $this->width) as $line) {
+                $this->push(str_pad(trim($line), $this->width, ' ', STR_PAD_LEFT), $bold, $tall);
+            }
+
+            return;
+        }
+
         if (! $amount && $right !== '' && strlen($left) + 1 + strlen($right) > $this->width) {
             $this->row($left, '', $indent, $hang, $bold, false);
             $this->row('', $right, $indent, $hang, $bold, false);

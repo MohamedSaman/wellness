@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Data\BatchPick;
 use App\Services\Data\CartLine;
 use App\Services\Data\CheckoutData;
+use App\Services\Data\PatientInput;
 use App\Services\Data\PaymentInput;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
@@ -132,6 +133,9 @@ class OfflineSaleSyncService
             'customer_name' => ['nullable', 'string', 'max:255'],
             'customer_phone' => ['nullable', 'string', 'max:50'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            // The patient (branch 13): one the till found, or added offline with its own uuid,
+            // created once however many of their sales are sent.
+            ...PatientInput::rules(),
         ];
     }
 
@@ -226,6 +230,7 @@ class OfflineSaleSyncService
             billType: isset($sale['bill_type']) ? BillType::from($sale['bill_type']) : BillType::Standard,
             opdMedicinesAmount: isset($sale['medicines_amount']) ? (int) $sale['medicines_amount'] : null,
             clockOffsetSeconds: $clockOffset,
+            patient: PatientInput::fromArray($sale['patient'] ?? null),
         );
     }
 
