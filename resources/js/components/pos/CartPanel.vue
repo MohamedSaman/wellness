@@ -236,16 +236,19 @@ function onPriceInput(line: CartLineState, event: Event): void {
 }
 
 /**
- * Confirms what the price box holds: blank or the list price = the list
- * price; anything else must be within the item's limits (the server's
- * message, typedPriceProblem()). Returns false when it can't be confirmed;
- * the message shows under the line and the box keeps what was typed.
+ * Confirms what the price box holds (Enter; F9 or leaving the box when
+ * something was typed): blank or the list price = the list price; anything
+ * else must be within the item's limits (the server's message,
+ * typedPriceProblem()). Returns false when it can't be confirmed; the
+ * message shows under the line and the box keeps what was typed.
  */
-function confirmPrice(line: CartLineState): boolean {
+function confirmPrice(line: CartLineState, byEnter: boolean): boolean {
     const draft = priceDraft[line.key];
 
-    if (draft === undefined && !line.awaitingPrice) {
-        return true;
+    // Nothing typed: nothing to confirm, except Enter on a price asked for (keeps the
+    // selling price). F9 or leaving an untouched box that asked for a price keeps it waiting.
+    if (draft === undefined && (!line.awaitingPrice || !byEnter)) {
+        return !line.awaitingPrice;
     }
 
     const text = (draft ?? line.price).trim();
@@ -298,12 +301,12 @@ function onPriceKey(line: CartLineState, event: KeyboardEvent): void {
         event.preventDefault();
 
         // Ctrl+Enter pays (the page's shortcut): confirm first, then let it through.
-        if (confirmPrice(line) && !(event.ctrlKey || event.metaKey)) {
+        if (confirmPrice(line, true) && !(event.ctrlKey || event.metaKey)) {
             emit('priceDone');
         }
     } else if (event.key === 'F9') {
-        // Pay: confirm first; payment still waits if the price can't be confirmed.
-        confirmPrice(line);
+        // Pay: confirm what was typed first; payment still waits if it can't be confirmed.
+        confirmPrice(line, false);
     } else if (event.key === 'Escape' && priceDraft[line.key] !== undefined) {
         event.preventDefault();
         delete priceDraft[line.key];
@@ -490,7 +493,7 @@ function sameAsSale(line: CartLineState): void {
                         data-test="line-price"
                         @input="onPriceInput(line, $event)"
                         @keydown="onPriceKey(line, $event)"
-                        @blur="confirmPrice(line)"
+                        @blur="confirmPrice(line, false)"
                     />
                 </label>
                 <span

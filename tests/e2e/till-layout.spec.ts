@@ -79,8 +79,13 @@ for (const viewport of viewports) {
                     window: 'width',
                 });
 
-                // Payment waits for it.
+                // Payment waits for it, the cart priced or not.
+                await expect(
+                    page.locator('[data-test=pay-button]'),
+                ).toBeEnabled();
                 await page.keyboard.press('F9');
+                await expect(note).toContainText('up to 3,000.00');
+                await expect(prices.last()).toBeFocused();
                 await expect(
                     page.locator('[data-test=payment-total]'),
                 ).toHaveCount(0);
