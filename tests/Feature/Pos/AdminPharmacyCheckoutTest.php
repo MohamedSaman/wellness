@@ -185,7 +185,7 @@ class AdminPharmacyCheckoutTest extends BatchTestCase
     {
         Livewire::test(CreateProduct::class)
             ->set('data.is_medicine', false)
-            ->fillForm(['name' => 'Consultation', 'unit' => 'Visit', 'track_stock' => false, 'allow_price_override' => true, 'variants' => [['price' => '1500']]])
+            ->fillForm(['name' => 'Consultation', 'unit' => 'Visit', 'track_stock' => false, 'allow_price_override' => true, 'variants' => [['price' => '1500', 'till_price_max' => '5000']]])
             ->assertFormFieldIsVisible('allow_price_override')
             ->call('create')
             ->assertHasNoFormErrors();
@@ -195,7 +195,7 @@ class AdminPharmacyCheckoutTest extends BatchTestCase
         $this->assertTrue($fee->allow_price_override);
         $this->assertTrue($fee->allowsPriceOverride());
 
-        // A stock item never offers it.
+        // A medicine never offers it (branch 14: a non-medicine stock item does, TillPriceLimitsAdminTest).
         Livewire::test(CreateProduct::class)
             ->fillForm(['track_stock' => true])
             ->assertFormFieldIsHidden('allow_price_override');

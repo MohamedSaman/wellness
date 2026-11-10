@@ -101,6 +101,20 @@ trait WorksWithCheckout
         return $variant;
     }
 
+    /**
+     * A non-medicine whose price can be changed at the till within its limits
+     * (branch 14): a service by default (a lab test), a stock item without
+     * batches when $tracksStock (a dressing). Prices in minor units.
+     */
+    protected function openPriceItem(string $name, int $price, int $max, ?int $min = null, bool $tracksStock = false, bool $ask = false): ProductVariant
+    {
+        return app(ProductCatalogService::class)->create(
+            ['name' => $name, 'unit' => 'pcs', 'track_stock' => $tracksStock, 'track_batches' => false, 'allow_price_override' => true, 'ask_price_at_till' => $ask],
+            [['price' => $price, 'cost' => $tracksStock ? 10_000 : 0, 'till_price_min' => $min, 'till_price_max' => $max]],
+            user: $this->owner,
+        )->variants()->firstOrFail();
+    }
+
     /** Save one shop setting (over pos.shop_defaults), as Shop settings would. */
     protected function setShopSetting(string $key, mixed $value): void
     {

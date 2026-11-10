@@ -46,6 +46,7 @@ class ProductFormSummary
             $pharmacy && $tracksStock && (bool) $get('track_batches') ? 'Batches and expiry' : null,
             $pharmacy && (bool) $get('whole_units_only') ? 'Whole units only' : null,
             $pharmacy ? (TaxCategory::options()[$get('tax_category')] ?? null) : null,
+            $pharmacy && ! (bool) $get('is_medicine') && (bool) $get('allow_price_override') ? 'Price can be changed at the till' : null,
         ]);
     }
 

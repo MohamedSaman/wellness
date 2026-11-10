@@ -50,6 +50,8 @@ class ProductCatalogService
      *     barcode?: string|null,
      *     price?: int|null,
      *     cost?: int,
+     *     till_price_min?: int|null,
+     *     till_price_max?: int|null,
      *     opening_stock?: float,
      *     opening_location_id?: int|null,
      *     opening_batch?: BatchInput|null,
@@ -92,7 +94,8 @@ class ProductCatalogService
             $canCost = $user->can('cost.view');
 
             $variants = array_map(fn (array $data): array => [
-                ...$data,
+                // The till's price limits are prices too (branch 14).
+                ...($canPrice ? $data : Arr::except($data, ['till_price_min', 'till_price_max'])),
                 'price' => $this->noPrice($data) ? null : ($canPrice ? ($data['price'] ?? 0) : 0),
                 'cost' => $canCost ? ($data['cost'] ?? 0) : 0,
                 'packs' => $canPrice ? ($data['packs'] ?? []) : $this->withoutPrices($data['packs'] ?? []),
@@ -181,6 +184,7 @@ class ProductCatalogService
                     $data['price'] = $canPrice ? ($data['price'] ?? 0) : 0;
                     $data['cost'] = $canCost ? ($data['cost'] ?? 0) : 0;
                     $data['packs'] = $canPrice ? ($data['packs'] ?? []) : $this->withoutPrices($data['packs'] ?? []);
+                    $data = $canPrice ? $data : Arr::except($data, ['till_price_min', 'till_price_max']);
                     $this->createVariant($product, $data, $priceList, $location, $user);
 
                     continue;
@@ -196,6 +200,13 @@ class ProductCatalogService
                     'bin_location' => $data['bin_location'] ?? null,
                     'is_active' => (bool) ($data['is_active'] ?? true),
                 ];
+
+                // The till's price limits (branch 14): only someone who may set prices changes them.
+                foreach (['till_price_min', 'till_price_max'] as $limit) {
+                    if ($canPrice && array_key_exists($limit, $data)) {
+                        $changes[$limit] = $data[$limit];
+                    }
+                }
 
                 // Existing variants' cost is the weighted average: it changes only
                 // through Stock In or revalueCost(), never from the product form.
@@ -621,6 +632,8 @@ class ProductCatalogService
             'last_cost_price' => ($data['cost'] ?? 0) > 0 ? (int) $data['cost'] : null,
             'reorder_level' => $data['reorder_level'] ?? 0,
             'bin_location' => $data['bin_location'] ?? null,
+            'till_price_min' => $data['till_price_min'] ?? null,
+            'till_price_max' => $data['till_price_max'] ?? null,
         ]);
 
         // In-store barcode when the item has no manufacturer barcode (200 + its id, free across items and packs).

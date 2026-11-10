@@ -61,6 +61,8 @@ class ProductFormData
                 'sku' => $variant->sku,
                 'barcode' => $variant->barcode,
                 'price' => $price === null ? null : Money::toInputString((int) $price->price, $decimals),
+                'till_price_min' => $variant->till_price_min === null ? null : Money::toInputString($variant->till_price_min, $decimals),
+                'till_price_max' => $variant->till_price_max === null ? null : Money::toInputString($variant->till_price_max, $decimals),
                 'reorder_level' => $variant->reorder_level,
                 'bin_location' => $variant->bin_location,
                 'is_active' => (bool) $variant->is_active,
@@ -104,6 +106,7 @@ class ProductFormData
             'unit' => $product->unit,
             'track_stock' => (bool) $product->track_stock,
             'allow_price_override' => (bool) $product->allow_price_override,
+            'ask_price_at_till' => (bool) $product->ask_price_at_till,
             'track_batches' => (bool) $product->track_batches,
             'whole_units_only' => (bool) $product->whole_units_only,
             'tax_category' => $product->tax_category->value,
@@ -190,7 +193,7 @@ class ProductFormData
      * details are left alone), false when the product is not a medicine.
      *
      * @param  array<string, mixed>  $data  Validated form state
-     * @return array{product: array<string, mixed>, variants: list<array{id: mixed, sku: string|null, barcode: string|null, price?: int, cost?: int, opening_stock: float, opening_location_id: int|null, opening_batch?: BatchInput, reorder_level: float, bin_location: string|null, is_active: bool, options: list<AttributeOption>, allow_unit_sale?: bool, loose_at?: array<int, bool|null>, packs?: list<array<string, mixed>>}>, productAttributes: array<int, int|string|null>, fitmentIds: list<int>|null, drug: DrugData|false|null}
+     * @return array{product: array<string, mixed>, variants: list<array{id: mixed, sku: string|null, barcode: string|null, price?: int, cost?: int, till_price_min?: int|null, till_price_max?: int|null, opening_stock: float, opening_location_id: int|null, opening_batch?: BatchInput, reorder_level: float, bin_location: string|null, is_active: bool, options: list<AttributeOption>, allow_unit_sale?: bool, loose_at?: array<int, bool|null>, packs?: list<array<string, mixed>>}>, productAttributes: array<int, int|string|null>, fitmentIds: list<int>|null, drug: DrugData|false|null}
      */
     public static function toServiceInput(array $data): array
     {
@@ -206,9 +209,18 @@ class ProductFormData
             'is_active' => (bool) ($data['is_active'] ?? true),
         ];
 
-        // Shown for services only (a stock item's flag is never honoured): hidden, what is stored stays.
-        if (array_key_exists('allow_price_override', $data)) {
-            $product['allow_price_override'] = (bool) ($data['allow_price_override'] ?? false) && ! $product['track_stock'];
+        // A pharmacy: shown for non-medicines only, and saved off for a medicine (branch 14).
+        // Elsewhere shown for services only (a stock item's flag is never honoured). Hidden:
+        // what is stored stays.
+        $isMedicine = (bool) ($data['is_medicine'] ?? false);
+
+        if (array_key_exists('allow_price_override', $data) || $isMedicine) {
+            $product['allow_price_override'] = (bool) ($data['allow_price_override'] ?? false)
+                && (array_key_exists('is_medicine', $data) ? ! $isMedicine : ! $product['track_stock']);
+        }
+
+        if (array_key_exists('ask_price_at_till', $data) || $isMedicine) {
+            $product['ask_price_at_till'] = (bool) ($data['ask_price_at_till'] ?? false) && ($product['allow_price_override'] ?? false);
         }
 
         // Spare-part fields are hidden on a pharmacy: then they are not sent, and what is stored stays.
@@ -259,6 +271,14 @@ class ProductFormData
 
             if (filled($row['cost'] ?? null)) {
                 $variant['cost'] = Money::toMinor($row['cost'], $decimals);
+            }
+
+            // The till's price limits (branch 14): shown only while the price can be changed. Hidden,
+            // what is stored stays; cleared, the limit goes.
+            foreach (['till_price_min', 'till_price_max'] as $limit) {
+                if (array_key_exists($limit, $row)) {
+                    $variant[$limit] = filled($row[$limit]) ? Money::toMinor($row[$limit], $decimals) : null;
+                }
             }
 
             if (array_key_exists('allow_unit_sale', $row)) {
