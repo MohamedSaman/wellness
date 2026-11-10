@@ -432,6 +432,54 @@ test.describe('opening stock fields', () => {
     });
 });
 
+test.describe('price changed at the till (branch 14)', () => {
+    for (const viewport of [
+        { width: 1366, height: 768 },
+        { width: 390, height: 844 },
+    ]) {
+        test(`a non-medicine asks for its max till price at ${viewport.width}px`, async ({
+            page,
+        }) => {
+            await page.setViewportSize(viewport);
+            await page.goto('/admin/products/create');
+
+            const max = field(row(page, 0), 'till_price_max');
+            const allow = page.locator('[id="form.allow_price_override"]');
+
+            // A medicine never offers it.
+            await expect(allow).toBeHidden();
+            await page.locator('[id="form.is_medicine"]').click();
+            await expect(allow).toBeVisible();
+            await expect(max).toBeHidden();
+
+            await allow.click();
+            await expect(max).toBeVisible();
+            await expect(field(row(page, 0), 'till_price_min')).toBeVisible();
+            await expect(
+                page.locator('[id="form.ask_price_at_till"]'),
+            ).toBeVisible();
+
+            await page.locator('[id="form.name"]').fill('E2E lab test');
+            await field(row(page, 0), 'price').fill('1000');
+            await page
+                .getByRole('button', { name: 'Save', exact: true })
+                .click();
+
+            await expect(
+                page.getByText('Enter the highest price the cashier may type.'),
+            ).toBeVisible();
+            await expect(max).toBeInViewport({ ratio: 0.1 });
+
+            const sideways = await page.evaluate(
+                () =>
+                    document.documentElement.scrollWidth -
+                    document.documentElement.clientWidth,
+            );
+            expect(sideways).toBeLessThanOrEqual(1);
+        });
+    }
+});
+
 test.describe('a failed save', () => {
     const footer = (page: Page): Locator =>
         page.getByRole('button', { name: /Jump to first error/ });
