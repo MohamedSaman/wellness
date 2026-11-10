@@ -118,14 +118,13 @@ class PriceChangesReport extends ReportPage
             ->all();
     }
 
-    /** @return array<string, string> */
+    /** @return array<int, string> user id => name, the shop's users */
     private function cashiers(): array
     {
         return User::query()
             ->where('shop_id', app(CurrentShop::class)->getOrFail()->getKey())
             ->orderBy('name')
             ->pluck('name', 'id')
-            ->mapWithKeys(fn (string $name, int $id): array => [(string) $id => $name])
             ->all();
     }
 
@@ -135,7 +134,7 @@ class PriceChangesReport extends ReportPage
 
         return [
             ['Item', $filters['variant_id'] === null ? 'Every item' : ($this->items(null, $filters['variant_id'])[$filters['variant_id']] ?? '')],
-            ['Cashier', $filters['cashier_id'] === null ? 'Every cashier' : ($this->cashiers()[(string) $filters['cashier_id']] ?? '')],
+            ['Cashier', $filters['cashier_id'] === null ? 'Every cashier' : ($this->cashiers()[$filters['cashier_id']] ?? '')],
         ];
     }
 
