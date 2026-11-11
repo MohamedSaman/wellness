@@ -141,8 +141,13 @@ export type PosItem = {
     sellable?: boolean;
     whole_units_only?: boolean;
     track_batches?: boolean;
-    /** The till may type this item's price (non-stock products only). */
+    /** The till may type this item's price (a pharmacy's non-medicines, else services only). */
     allow_price_override?: boolean;
+    /** Branch 14: the lowest and highest typed price, base unit, minor units; null = no limit. */
+    price_min?: number | null;
+    price_max?: number | null;
+    /** Branch 14: the price box opens as soon as the item is added. */
+    ask_price?: boolean;
     /** The medicine's own "stop selling days before expiry"; null = the shop setting. */
     min_days_to_expiry?: number | null;
     /** Batch-tracked items: batches at this till's location, first expiry first. */

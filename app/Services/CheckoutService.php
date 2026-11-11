@@ -134,7 +134,7 @@ class CheckoutService
                 'review_reasons' => $review === [] ? null : $review,
             ]);
 
-            $items = $sale->items()->createMany($totals['lines'])->values();
+            $items = $sale->items()->createMany($this->withPriceChangedBy($data, $totals['lines']))->values();
 
             foreach ($data->payments as $payment) {
                 $sale->payments()->create([
@@ -947,10 +947,14 @@ class CheckoutService
     }
 
     /**
-     * A typed price (docs/PHARMACY.md §4.3) is only for a product that allows
-     * it and holds no stock (the consultation fee), only for whoever may
-     * (pos.price_override), and above zero. Online anything else is refused;
-     * offline the till's price is kept and the line listed for the owner.
+     * A typed price (docs/PHARMACY.md §4.3, branch 14) is only for a product
+     * that allows it (Product::allowsPriceOverride(): a pharmacy's
+     * non-medicine, elsewhere a service), only for whoever may
+     * (pos.price_override), on the item's base unit, above zero and within
+     * the variant's limits (ProductVariant::tillPriceProblem()). On an OPD bill
+     * a stock line is priced by the Medicines amount, so its price can't be
+     * typed. Online anything else is refused; offline the till's price is
+     * kept and the line listed for the owner.
      *
      * @param  list<CartLine>  $lines
      * @param  Collection<int, ProductVariant>  $variants
@@ -964,24 +968,38 @@ class CheckoutService
             $typed = $this->typedPrice($line, $isOfflineSync);
             /** @var ProductVariant $variant */
             $variant = $variants->get($line->variantId);
+            $isOpdMedicine = $billType === BillType::Opd && $variant->product->track_stock;
 
             // An OPD bill's medicine lines are priced by the Medicines amount, whatever the till sent.
-            if ($typed === null || ($billType === BillType::Opd && $variant->product->track_stock && $isOfflineSync)) {
+            if ($typed === null || ($isOpdMedicine && $isOfflineSync)) {
                 continue;
             }
+
+            $sold = $shop->formatMoney($typed);
+            // A unit the server doesn't know (offline) is recorded as the base unit (unknownUnits()).
+            $unit = $line->unitId === null ? null : $variant->units->firstWhere('id', $line->unitId);
+            $limit = $variant->tillPriceProblem($typed, $shop);
 
             [$refusal, $flag] = match (true) {
                 ! $variant->product->allowsPriceOverride() => [
                     "{$variant->sku}'s price can't be changed at the till.",
-                    "{$variant->sku} was sold at a typed price of {$shop->formatMoney($typed)}, but its price can't be changed at the till.",
+                    "{$variant->sku} was sold at a typed price of {$sold}, but its price can't be changed at the till.",
                 ],
                 ! $cashier->can('pos.price_override') => [
                     'You are not allowed to change prices.',
-                    "{$cashier->name} typed {$variant->sku}'s price ({$shop->formatMoney($typed)}) but is not allowed to change prices.",
+                    "{$cashier->name} typed {$variant->sku}'s price ({$sold}) but is not allowed to change prices.",
                 ],
-                $typed <= 0 => [
-                    "The price of {$variant->sku} must be more than zero.",
-                    "{$variant->sku} was sold at a typed price of {$shop->formatMoney($typed)}.",
+                $isOpdMedicine => [
+                    "{$variant->sku} is in the Medicines amount on an OPD bill: its price can't be typed.",
+                    null,
+                ],
+                $unit !== null && ! $unit->is_base => [
+                    "{$variant->sku}'s price can only be changed for a single {$variant->product->unit}, not a {$unit->name}.",
+                    "{$variant->sku} was sold by the {$unit->name} at a typed price of {$sold}; only a single {$variant->product->unit}'s price can be changed.",
+                ],
+                $limit !== null => [
+                    $limit,
+                    "{$variant->sku} was sold at a typed price of {$sold}. {$limit}",
                 ],
                 default => [null, null],
             };
@@ -998,6 +1016,24 @@ class CheckoutService
         }
 
         return $review;
+    }
+
+    /**
+     * Who typed each typed line's price (branch 14): the sale's cashier, also
+     * offline and when the line was flagged. Null on every other line, an OPD
+     * bill's medicine lines included.
+     *
+     * @param  list<array<string, mixed>>  $lines  calculate()'s lines, keyed like $data->lines
+     * @return list<array<string, mixed>>
+     */
+    private function withPriceChangedBy(CheckoutData $data, array $lines): array
+    {
+        foreach ($data->lines as $i => $line) {
+            $typed = ! $lines[$i]['is_opd_medicine'] && $this->typedPrice($line, $data->isOfflineSync) !== null;
+            $lines[$i]['price_changed_by'] = $typed ? (int) $data->cashier->getKey() : null;
+        }
+
+        return $lines;
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\TaxCategory;
 use App\Models\Concerns\BelongsToShop;
 use App\Models\Concerns\HasPublicUuid;
+use App\Support\CurrentShop;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,7 +21,8 @@ use Illuminate\Support\Carbon;
  * @property bool $needs_review created while receiving by someone who may not manage products: not sellable until reviewed
  * @property bool $created_while_receiving
  * @property Carbon|null $reviewed_at
- * @property bool $allow_price_override the till may type its price (honoured only when it does not track stock: a service such as the consultation fee)
+ * @property bool $allow_price_override the till may type its price (allowsPriceOverride(): a pharmacy shop's non-medicine, else a service)
+ * @property bool $ask_price_at_till the till opens the price box as soon as the item is added (pharmacy)
  *
  * The thing customers recognise ("Vega Off-Road Helmet", "Brake Pad Set").
  * What is actually sold and stocked is a ProductVariant (size/colour/etc).
@@ -39,6 +41,7 @@ class Product extends Model
      */
     protected $attributes = [
         'allow_price_override' => false,
+        'ask_price_at_till' => false,
     ];
 
     protected function casts(): array
@@ -54,19 +57,45 @@ class Product extends Model
             'created_while_receiving' => 'boolean',
             'reviewed_at' => 'datetime',
             'allow_price_override' => 'boolean',
+            'ask_price_at_till' => 'boolean',
         ];
     }
 
     /**
-     * Whether the till may type this product's price (docs/PHARMACY.md §4.3): the
-     * product allows it and holds no stock (a service such as the consultation fee).
+     * Whether the till may type this product's price (docs/PHARMACY.md §4.3 and
+     * branch 14): the product allows it and, in a pharmacy shop, is not a
+     * medicine (a dressing, a lab test, a procedure, the consultation fee);
+     * in any other shop it holds no stock (a service such as fitting), as
+     * before. The variant's till_price_min / till_price_max bound the price.
      */
     public function allowsPriceOverride(): bool
     {
-        // Raw attributes: a product created without track_stock (default true) has none loaded yet.
-        $tracksStock = (bool) ($this->getAttributes()['track_stock'] ?? true);
+        if (! $this->allow_price_override) {
+            return false;
+        }
 
-        return (bool) $this->allow_price_override && ! $tracksStock;
+        if (self::pharmacyRules()) {
+            return ! $this->isMedicine();
+        }
+
+        // Raw attributes: a product created without track_stock (default true) has none loaded yet.
+        return ! (bool) ($this->getAttributes()['track_stock'] ?? true);
+    }
+
+    /** Whether the till asks for this product's price as soon as it is added (pharmacy, branch 14). */
+    public function asksPriceAtTill(): bool
+    {
+        return self::pharmacyRules() && (bool) $this->ask_price_at_till && $this->allowsPriceOverride();
+    }
+
+    /**
+     * The pharmacy's rules for prices typed at the till (branch 14): any
+     * non-medicine, with limits. A shop without the module keeps the rules it
+     * had (services only, no limits required).
+     */
+    public static function pharmacyRules(): bool
+    {
+        return app(CurrentShop::class)->get()?->hasModule('pharmacy') ?? false;
     }
 
     /** @return BelongsTo<Category, $this> */
@@ -190,9 +219,10 @@ class Product extends Model
         return $this->track_stock && $this->track_batches;
     }
 
+    /** A medicine: it has drug details (pharmacy shops only). Loads nothing when they are loaded. */
     public function isMedicine(): bool
     {
-        return $this->drugDetail !== null;
+        return $this->relationLoaded('drugDetail') ? $this->drugDetail !== null : $this->drugDetail()->exists();
     }
 
     /**

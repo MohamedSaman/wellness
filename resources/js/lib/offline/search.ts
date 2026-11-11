@@ -95,6 +95,9 @@ function toPosItem(
         whole_units_only: item.whole_units_only,
         track_batches: item.track_batches,
         allow_price_override: item.allow_price_override,
+        price_min: item.price_min ?? null,
+        price_max: item.price_max ?? null,
+        ask_price: item.ask_price ?? false,
         min_days_to_expiry: item.min_days_to_expiry,
         batches: item.batches,
         nearest_expiry:

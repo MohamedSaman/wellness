@@ -430,7 +430,7 @@ return [
         'stock.count' => 'Start stock counts and enter counted quantities; posting a count needs stock.adjust',
         'batches.manage' => 'Accept stock close to expiry and settle unallocated stock (batches)',
         'pos.batch_override' => 'Pick a batch at checkout instead of first expiry first out (batches)',
-        'pos.price_override' => 'Type the price of a service at the till, e.g. the consultation fee (products that allow it)',
+        'pos.price_override' => 'Change the price at the till of items that allow it, within their limits: the consultation fee, a dressing, a lab test (a pharmacy\'s non-medicines; elsewhere services)',
         'pos.opd_bill' => 'Ring up OPD bills: consultation plus one Medicines amount (OPD tills)',
         'locations.manage' => 'Create and edit stock locations (multi_location)',
         'locations.all' => 'Sell and use tills at every location when no allowed locations are set (multi_location)',
@@ -471,6 +471,7 @@ return [
         'cashier' => [
             'pos.checkout',
             // Do nothing in a shop without OPD tills or products that allow a typed price.
+            // Every cashier may change the price of an item that allows it (branch 14).
             'pos.price_override',
             'pos.opd_bill',
             // Asks General Pharmacy for stock from the OPD; does nothing without multi_location.

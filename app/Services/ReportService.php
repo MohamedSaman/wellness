@@ -30,6 +30,7 @@ use App\Models\SupplierReturn;
 use App\Models\VariantUnit;
 use App\Services\Reports\SalesFact;
 use App\Support\CurrentShop;
+use App\Support\Money;
 use App\Support\PatientAge;
 use App\Support\Quantity;
 use App\Support\ReportPeriod;
@@ -1134,6 +1135,143 @@ class ReportService
             /** @var \stdClass $row */
             yield $this->presentDispensing($row, $period);
         }
+    }
+
+    /**
+     * Price changes at the till (docs/PHARMACY.md, branch 14): every line of
+     * a bill in the period whose price was typed (sale_items.price_changed_by)
+     * and differs from the list price (or the item had none), from the sale
+     * lines themselves: no audit rows needed. A voided bill isn't counted,
+     * like everywhere in reports. Filters: an item, the cashier who typed it
+     * and the counter (sales.location_id).
+     *
+     * @param  array{variant_id?: int|null, cashier_id?: int|null, location_id?: int|null}  $filters
+     */
+    private function priceChangeLines(ReportPeriod $period, array $filters): Builder
+    {
+        $variantId = $filters['variant_id'] ?? null;
+        $cashierId = $filters['cashier_id'] ?? null;
+
+        return $this->sales($period, $filters['location_id'] ?? null)
+            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
+            ->whereNotNull('sale_items.price_changed_by')
+            ->where(fn (Builder $changed) => $changed
+                ->whereNull('sale_items.list_price')
+                ->orWhereColumn('sale_items.unit_price', '!=', 'sale_items.list_price'))
+            ->when($variantId !== null, fn (Builder $query) => $query->where('sale_items.product_variant_id', $variantId))
+            ->when($cashierId !== null, fn (Builder $query) => $query->where('sale_items.price_changed_by', $cashierId));
+    }
+
+    /** @param  array{variant_id?: int|null, cashier_id?: int|null, location_id?: int|null}  $filters */
+    private function priceChangeRowsQuery(ReportPeriod $period, array $filters): Builder
+    {
+        return $this->priceChangeLines($period, $filters)
+            ->leftJoin('devices', 'devices.id', '=', 'sales.device_id')
+            ->leftJoin('locations as counters', 'counters.id', '=', 'sales.location_id')
+            ->leftJoin('users as typed_by', 'typed_by.id', '=', 'sale_items.price_changed_by')
+            ->select([
+                'sale_items.id', 'sales.reported_at', 'sales.invoice_no', 'sales.uuid as sale_uuid',
+                'devices.code as till', 'counters.name as location', 'typed_by.name as cashier',
+                'sale_items.description', 'sale_items.sku', 'sale_items.quantity', 'sale_items.unit_name',
+                'sale_items.list_price', 'sale_items.unit_price',
+            ])
+            ->orderByDesc('sales.reported_at')
+            ->orderByDesc('sales.id')
+            ->orderBy('sale_items.id');
+    }
+
+    /**
+     * One page of price changes, newest first, for the screen.
+     *
+     * @param  array{variant_id?: int|null, cashier_id?: int|null, location_id?: int|null}  $filters
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    public function priceChanges(ReportPeriod $period, array $filters, int $page, int $perPage): LengthAwarePaginator
+    {
+        $total = $this->priceChangeLines($period, $filters)->count();
+        $rows = $this->priceChangeRowsQuery($period, $filters)->forPage($page, $perPage)->get();
+
+        return new LengthAwarePaginator(
+            array_values($rows->map(fn (\stdClass $row): array => $this->presentPriceChange($row, $period))->all()),
+            $total,
+            $perPage,
+            $page,
+        );
+    }
+
+    /**
+     * Every price change, for the exports and the totals, a thousand at a time.
+     *
+     * @param  array{variant_id?: int|null, cashier_id?: int|null, location_id?: int|null}  $filters
+     * @return \Generator<int, array<string, mixed>>
+     */
+    public function priceChangeRows(ReportPeriod $period, array $filters): \Generator
+    {
+        foreach ($this->priceChangeRowsQuery($period, $filters)->lazy(1000) as $row) {
+            /** @var \stdClass $row */
+            yield $this->presentPriceChange($row, $period);
+        }
+    }
+
+    /**
+     * How many lines and their total difference from the list price (each
+     * line's difference as the report shows it, added up).
+     *
+     * @param  array{variant_id?: int|null, cashier_id?: int|null, location_id?: int|null}  $filters
+     * @return array{count: int, difference: int}
+     */
+    public function priceChangeTotals(ReportPeriod $period, array $filters): array
+    {
+        $count = 0;
+        $difference = 0;
+
+        foreach ($this->priceChangeLines($period, $filters)->select(['sale_items.id', 'sale_items.quantity', 'sale_items.list_price', 'sale_items.unit_price'])->lazyById(1000, 'sale_items.id', 'id') as $row) {
+            /** @var \stdClass $row */
+            $count++;
+            $difference += $this->priceDifference($row)[1] ?? 0;
+        }
+
+        return ['count' => $count, 'difference' => $difference];
+    }
+
+    /** @return array<string, mixed> */
+    private function presentPriceChange(\stdClass $row, ReportPeriod $period): array
+    {
+        [$perUnit, $line] = $this->priceDifference($row);
+
+        return [
+            'when' => $period->local((string) $row->reported_at),
+            'invoice' => (string) $row->invoice_no,
+            'sale_uuid' => (string) $row->sale_uuid,
+            'till' => $row->till === null ? null : (string) $row->till,
+            'location' => $row->location === null ? null : (string) $row->location,
+            'item' => (string) $row->description,
+            'sku' => (string) $row->sku,
+            'quantity' => round((float) $row->quantity, 3),
+            'unit' => $row->unit_name === null ? null : (string) $row->unit_name,
+            'list_price' => $row->list_price === null ? null : (int) $row->list_price,
+            'charged_price' => (int) $row->unit_price,
+            'difference' => $perUnit,
+            'line_difference' => $line,
+            'cashier' => $row->cashier === null ? null : (string) $row->cashier,
+        ];
+    }
+
+    /**
+     * A line's charged price less its list price: per unit, and for the line
+     * (× quantity, Money::multiply). Null when the item had no list price.
+     *
+     * @return array{0: int|null, 1: int|null}
+     */
+    private function priceDifference(\stdClass $row): array
+    {
+        if ($row->list_price === null) {
+            return [null, null];
+        }
+
+        $perUnit = (int) $row->unit_price - (int) $row->list_price;
+
+        return [$perUnit, Money::multiply($perUnit, (float) $row->quantity)];
     }
 
     /** @return array<string, mixed> */

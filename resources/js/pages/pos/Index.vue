@@ -118,6 +118,7 @@ const offlinePrint = ref<HTMLElement | null>(null);
 
 const search = ref<InstanceType<typeof ItemSearch> | null>(null);
 const totals = ref<InstanceType<typeof TotalsPanel> | null>(null);
+const cartPanel = ref<InstanceType<typeof CartPanel> | null>(null);
 const paymentOpen = ref(false);
 const discountOpen = ref(false);
 const closeShiftOpen = ref(false);
@@ -225,6 +226,18 @@ watch(dialogOpen, (open) => {
 });
 
 function openPayment(): void {
+    // Branch 14: a price asked for (or typed and not confirmed) comes first.
+    const pending = cart.pricePending.value;
+
+    if (pending !== null && !dialogOpen.value) {
+        search.value?.showNotice(
+            `Enter the price of ${pending.sku}, then press Enter.`,
+        );
+        cartPanel.value?.focusPrice(pending.key);
+
+        return;
+    }
+
     if (
         state.lines.length > 0 &&
         state.quote &&
@@ -337,6 +350,16 @@ function addItem(item: PosItem): void {
 
     if (refused !== null) {
         search.value?.showNotice(refused);
+
+        return;
+    }
+
+    // Branch 14: an item that asks for its price opens its line's price box (after the search
+    // box has taken the focus back); Enter confirms it and returns here.
+    const added = state.lines[state.lines.length - 1];
+
+    if (added?.awaitingPrice) {
+        void nextTick(() => cartPanel.value?.focusPrice(added.key));
     }
 }
 
@@ -606,6 +629,7 @@ watch(
         rxPrescriber: props.pharmacy?.rxPrescriber ?? 'prompt',
         opdConsultation: props.pharmacy?.opdConsultation ?? null,
         patientOnSale: patientMode.value,
+        canOverridePrice: props.cashier.canOverridePrice ?? false,
     }),
     (context) => cart.configure(context),
     { immediate: true, deep: true },
@@ -897,6 +921,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <CartPanel
+                    ref="cartPanel"
                     :lines="state.lines"
                     :quote="state.quote"
                     :stale="state.stale"
@@ -911,6 +936,7 @@ onBeforeUnmount(() => {
                     @quantity="cart.setQuantity"
                     @discount="(line, value) => (line.lineDiscount = value)"
                     @remove="cart.removeLine"
+                    @price-done="focusSearch"
                 />
 
                 <TotalsPanel

@@ -143,6 +143,7 @@ class ProductForm
                                 ->minValue(0)
                                 ->required(fn (Get $get): bool => blank($get('id')))
                                 ->visible(fn (): bool => auth()->user()?->can('prices.manage') ?? false),
+                            ...self::tillPriceFields(),
                             // A new variant starts at the cost it is bought at; after that the
                             // average comes from Stock In (or the owner's Revalue), never from here.
                             TextInput::make('cost')
@@ -314,12 +315,21 @@ class ProductForm
                 Toggle::make('track_stock')->default(true)->live()->hintIcon(self::INFO, tooltip: fn (): string => self::pharmacy()
                     ? 'Turn off for services such as a consultation fee.'
                     : 'Turn off for services such as fitting or labour.'),
-                // Services only: a stock item is always sold at its list price (docs/PHARMACY.md §4.3).
+                // A pharmacy: any non-medicine (a dressing, a lab test, the consultation fee), within the
+                // limits on each variant (branch 14). Elsewhere services only, as before (§4.3).
                 Toggle::make('allow_price_override')
                     ->label('Price can be changed at the till')
                     ->default(false)
-                    ->visible(fn (Get $get): bool => ! (bool) $get('track_stock'))
-                    ->hintIcon(self::INFO, tooltip: 'The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
+                    ->live()
+                    ->visible(fn (Get $get): bool => self::pharmacy() ? ! (bool) $get('is_medicine') : ! (bool) $get('track_stock'))
+                    ->hintIcon(self::INFO, tooltip: fn (): string => self::pharmacy()
+                        ? 'The till starts from the selling price and the cashier may type another, up to the variant\'s max till price (and down to its min). Not for medicines.'
+                        : 'The till starts from this price and the cashier may type another, e.g. the consultation fee.'),
+                Toggle::make('ask_price_at_till')
+                    ->label('Ask for price when added')
+                    ->default(false)
+                    ->visible(fn (Get $get): bool => self::changesPriceAtTill($get))
+                    ->hintIcon(self::INFO, tooltip: 'The price box opens as soon as the item is added, e.g. a lab test or a procedure. Enter keeps the selling price.'),
                 // Pharmacy: stock in batches with expiry dates, sold first expiry first out.
                 Toggle::make('track_batches')
                     ->label('Batches and expiry')
@@ -649,6 +659,64 @@ class ProductForm
                         ->live()
                         ->hintIcon(self::INFO, tooltip: $location->name),
                 )->all())),
+        ];
+    }
+
+    /**
+     * A pharmacy item whose price can be changed at the till (branch 14). In
+     * a variant row, the product's fields are two levels up.
+     */
+    private static function changesPriceAtTill(Get $get, string $path = ''): bool
+    {
+        return self::pharmacy() && ! (bool) $get($path.'is_medicine') && (bool) $get($path.'allow_price_override');
+    }
+
+    /**
+     * The variant's limits for a price typed at the till (branch 14): the
+     * highest is required, the lowest optional, and the selling price lies
+     * between them, so the till's starting price is always one it may charge.
+     *
+     * @return list<TextInput>
+     */
+    private static function tillPriceFields(): array
+    {
+        $shown = fn (Get $get): bool => self::changesPriceAtTill($get, '../../') && (auth()->user()?->can('prices.manage') ?? false);
+        $amount = fn (mixed $value): ?float => is_numeric($value) ? (float) $value : null;
+
+        return [
+            TextInput::make('till_price_min')
+                ->label(fn (): string => 'Min till price ('.self::currency().')')
+                ->numeric()
+                ->minValue(0)
+                ->visible($shown)
+                ->hintIcon(self::INFO, tooltip: 'Optional: the lowest price the cashier may type.')
+                ->rule(fn (Get $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get, $amount): void {
+                    $price = $amount($get('price'));
+
+                    if ($amount($value) !== null && $price !== null && $amount($value) > $price) {
+                        $fail('The min till price can\'t be more than the selling price.');
+                    }
+                }),
+            TextInput::make('till_price_max')
+                ->label(fn (): string => 'Max till price ('.self::currency().')')
+                ->numeric()
+                ->visible($shown)
+                ->required($shown)
+                ->validationMessages(['required' => 'Enter the highest price the cashier may type.'])
+                ->hintIcon(self::INFO, tooltip: 'The highest price the cashier may type. Required when the price can be changed at the till.')
+                ->rule(fn (Get $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get, $amount): void {
+                    $max = $amount($value);
+                    $price = $amount($get('price'));
+                    $min = $amount($get('till_price_min'));
+
+                    match (true) {
+                        $max === null => null,
+                        $max <= 0 => $fail('The max till price must be more than zero.'),
+                        $price !== null && $max < $price => $fail('The max till price can\'t be less than the selling price.'),
+                        $min !== null && $max < $min => $fail('The max till price can\'t be less than the min till price.'),
+                        default => null,
+                    };
+                }),
         ];
     }
 

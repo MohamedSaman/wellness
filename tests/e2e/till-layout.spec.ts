@@ -5,7 +5,8 @@ import { addItem, dialog, expectInside, useTill } from './helpers';
  * Till layout smoke test: every till dialog and panel at laptop and desktop
  * widths, checked for content that sticks out past its edges (or makes it
  * scroll sideways). Walks one sale through the demo clinic: an OPD bill on
- * T2, then on T1 a batch pick, discount, prescription, payment, the sale
+ * T2, then on T1 a price typed at the till (asked for, outside its limits,
+ * then confirmed), a batch pick, discount, prescription, payment, the sale
  * done, recent sales, closing the shift and its printed summary, and back on
  * T2 a stock request.
  */
@@ -65,6 +66,67 @@ for (const viewport of viewports) {
             });
 
             await useTill(page, 'T1');
+
+            await test.step('Price changed at the till (T1)', async () => {
+                const prices = page.locator('[data-test=line-price]');
+                const note = page.locator('[data-test=line-price-note]');
+
+                // A lab test asks for its price: its box opens as it is added.
+                await addItem(page, 'CBS');
+                await expect(prices.last()).toBeFocused();
+                await expect(note).toContainText('up to 3,000.00');
+                await expectInside(cart, 'cart waiting for a price', {
+                    window: 'width',
+                });
+
+                // Payment waits for it, the cart priced or not.
+                await expect(
+                    page.locator('[data-test=pay-button]'),
+                ).toBeEnabled();
+                await page.keyboard.press('F9');
+                await expect(note).toContainText('up to 3,000.00');
+                await expect(prices.last()).toBeFocused();
+                await expect(
+                    page.locator('[data-test=payment-total]'),
+                ).toHaveCount(0);
+
+                // Above its maximum: said under the line, and not taken.
+                await page.keyboard.type('3500');
+                await page.keyboard.press('Enter');
+                await expect(note).toContainText(
+                    "can't be more than LKR 3,000.00",
+                );
+                await expect(prices.last()).toBeFocused();
+                await expectInside(
+                    cart,
+                    'cart with a price outside its limits',
+                    {
+                        window: 'width',
+                    },
+                );
+
+                await prices.last().fill('850');
+                await page.keyboard.press('Enter');
+                await expect(note).toHaveCount(0);
+                await expect(
+                    page.locator('[data-test=pos-search]'),
+                ).toBeFocused();
+                await expect(
+                    page.locator('[data-test=line-list-price]'),
+                ).toContainText('1,200.00');
+
+                // A dressing (stock, not a medicine) keeps its list price until one is typed.
+                await addItem(page, 'Wound dressing');
+                await expect(prices.last()).not.toBeFocused();
+                await expect(prices.last()).toHaveAttribute(
+                    'placeholder',
+                    '500.00',
+                );
+                await expectInside(cart, 'cart with changed prices', {
+                    window: 'width',
+                });
+                await page.getByRole('button', { name: 'Clear cart' }).click();
+            });
 
             await test.step('Batch pick on a cart line', async () => {
                 await addItem(page, 'Panadol');

@@ -78,6 +78,13 @@ export type CartLineState = {
     allowPriceOverride: boolean;
     /** A typed unit price, like lineDiscount; '' = the price list's. Sent as lines.*.price. */
     price: string;
+    /** Branch 14: the lowest and highest price that may be typed (base unit, minor units); null = no limit. */
+    priceMin: number | null;
+    priceMax: number | null;
+    /** Branch 14: the item asks for its price when added; each add is a line of its own. */
+    askPrice: boolean;
+    /** Branch 14: an ask-for-price line whose price is not confirmed yet: payment waits for it. */
+    awaitingPrice: boolean;
     /** The price list's price of one `unit` when added (to pre-fill the price box); null = none. */
     listPrice: number | null;
     drug: DrugInfo | null;
@@ -137,6 +144,8 @@ export type CartContext = {
     opdConsultation: PosItem | null;
     /** Branch 13: when a sale needs the patient. */
     patientOnSale: PatientOnSale;
+    /** pos.price_override: the cashier may type the price of an item that allows it (branch 14: asks for it). */
+    canOverridePrice: boolean;
 };
 
 type SavedCart = Pick<
@@ -165,7 +174,11 @@ const context = reactive<CartContext>({
     rxPrescriber: 'prompt',
     opdConsultation: null,
     patientOnSale: 'ask',
+    canOverridePrice: false,
 });
+
+/** Makes each ask-for-price line's key its own (two procedures, two prices). */
+let askSequence = 0;
 
 const state = reactive<CartState>({
     uuid: newUuid(),
@@ -197,6 +210,20 @@ function roundQuantity(value: number): number {
 
 export function lineKey(variantId: number, unitId: number | null): string {
     return `${variantId}:${unitId ?? 'base'}`;
+}
+
+/**
+ * The line's price may be typed here (CheckoutService::checkPriceOverrides()):
+ * the item allows it, in its base unit, and it is not a stock line of an OPD
+ * bill (those are priced by the Medicines amount). Whether the cashier may
+ * is the page's (cashier.canOverridePrice).
+ */
+export function typesPrice(line: CartLineState, billType: BillType): boolean {
+    return (
+        line.allowPriceOverride &&
+        line.unitId === null &&
+        !(billType === 'opd' && line.trackStock)
+    );
 }
 
 /** The line's quantity in base units (what stock and batches count). */
@@ -360,7 +387,9 @@ async function priceLocally(
             quantity: line.quantity,
             lineDiscount: toMinor(line.lineDiscount || '0', decimals),
             priceOverride:
-                line.price.trim() === '' ? null : toMinor(line.price, decimals),
+                line.price.trim() === '' || !typesPrice(line, state.billType)
+                    ? null
+                    : toMinor(line.price, decimals),
         })),
         saleDiscount,
         items,
@@ -495,7 +524,9 @@ function lineBody(line: CartLineState) {
                       { batch_id: line.batchId, quantity: baseQuantity(line) },
                   ],
               }),
-        ...(line.price.trim() === '' ? {} : { price: line.price }),
+        ...(line.price.trim() === '' || !typesPrice(line, state.billType)
+            ? {}
+            : { price: line.price }),
         ...(prescriber === null ? {} : { prescriber }),
         ...(prescriptionRef === null
             ? {}
@@ -602,6 +633,10 @@ function normalizeLine(saved: Partial<CartLineState>): CartLineState {
         wholeUnitsOnly: false,
         allowPriceOverride: false,
         price: '',
+        priceMin: null,
+        priceMax: null,
+        askPrice: false,
+        awaitingPrice: false,
         listPrice: null,
         drug: null,
         batches: [],
@@ -612,7 +647,11 @@ function normalizeLine(saved: Partial<CartLineState>): CartLineState {
         ...saved,
     } as CartLineState;
 
-    line.key = lineKey(line.variantId, line.unitId);
+    // An ask-for-price line keeps its own key (another line may hold the same item).
+    line.key =
+        line.askPrice && saved.key
+            ? saved.key
+            : lineKey(line.variantId, line.unitId);
 
     return line;
 }
@@ -721,8 +760,20 @@ export function usePosCart() {
         }
 
         const id = unit.is_base ? null : unit.id;
-        const key = lineKey(item.variant_id, id);
-        const existing = state.lines.find((line) => line.key === key);
+        // Branch 14: an item that asks for its price gets a line of its own each time, with its
+        // price box open (CartPanel); payment waits until the price is confirmed.
+        const asks =
+            (item.ask_price ?? false) &&
+            (item.allow_price_override ?? false) &&
+            context.canOverridePrice &&
+            id === null &&
+            !(state.billType === 'opd' && item.track_stock);
+        const key = asks
+            ? `${lineKey(item.variant_id, id)}:ask-${++askSequence}`
+            : lineKey(item.variant_id, id);
+        const existing = asks
+            ? undefined
+            : state.lines.find((line) => line.key === key);
 
         if (existing) {
             existing.quantity = roundQuantity(existing.quantity + 1);
@@ -748,6 +799,10 @@ export function usePosCart() {
             wholeUnitsOnly: item.whole_units_only ?? false,
             allowPriceOverride: item.allow_price_override ?? false,
             price: '',
+            priceMin: item.price_min ?? null,
+            priceMax: item.price_max ?? null,
+            askPrice: item.ask_price ?? false,
+            awaitingPrice: asks,
             listPrice: unit.price,
             drug: item.drug ?? null,
             batches: item.batches ?? [],
@@ -816,6 +871,11 @@ export function usePosCart() {
         line.listPrice = unit.price;
         // The pick was for the old quantity in base units.
         line.batchId = null;
+        // Only a single base unit's price can be typed (branch 14).
+        if (id !== null) {
+            line.price = '';
+            line.awaitingPrice = false;
+        }
 
         return null;
     }
@@ -825,10 +885,20 @@ export function usePosCart() {
         line.batchId = batchId;
     }
 
-    /** A typed unit price on an allow_price_override line ('' = the price list's). */
+    /**
+     * A confirmed typed unit price on an allow_price_override line ('' = the
+     * price list's). The line's price box checks the limits first
+     * (typedPriceProblem()); the server checks them again.
+     */
     function setPrice(line: CartLineState, price: string): void {
         line.price = price;
+        line.awaitingPrice = false;
     }
+
+    /** The first line whose price was asked for and not confirmed yet (branch 14): payment waits. */
+    const pricePending = computed(
+        () => state.lines.find((line) => line.awaitingPrice) ?? null,
+    );
 
     /** This line's own prescriber; null = follow the sale's prescription. */
     function setPrescriber(line: CartLineState, value: string | null): void {
@@ -857,6 +927,13 @@ export function usePosCart() {
         if (type === 'opd') {
             state.saleDiscount = '';
             state.lines.forEach((line) => (line.lineDiscount = ''));
+            // A stock line is in the Medicines amount: its typed price goes (branch 14).
+            state.lines
+                .filter((line) => line.trackStock)
+                .forEach((line) => {
+                    line.price = '';
+                    line.awaitingPrice = false;
+                });
 
             const consultation = context.opdConsultation;
 
@@ -1164,6 +1241,7 @@ export function usePosCart() {
         setUnit,
         pickBatch,
         setPrice,
+        pricePending,
         setPrescriber,
         setPrescriptionRef,
         setBillType,

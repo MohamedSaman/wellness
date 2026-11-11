@@ -35,7 +35,7 @@ class ItemSearchService
     /** Product columns present() reads; also used by the offline catalog. */
     public const PRODUCT_COLUMNS = [
         'id', 'name', 'part_number', 'oem_numbers', 'unit', 'track_stock', 'track_batches', 'whole_units_only',
-        'allow_price_override', 'tax_category', 'is_active', 'needs_review',
+        'allow_price_override', 'ask_price_at_till', 'tax_category', 'is_active', 'needs_review',
     ];
 
     /** The relation loadBatches() sets: the till location's sellable batches. */
@@ -266,7 +266,12 @@ class ItemSearchService
             'sellable' => collect($units)->contains(fn (array $unit): bool => $unit['sellable'] && $unit['price'] !== null),
             'whole_units_only' => (bool) $product->whole_units_only,
             'track_batches' => $product->tracksBatches(),
-            'allow_price_override' => $product->allowsPriceOverride(),
+            'allow_price_override' => $allowsTypedPrice = $product->allowsPriceOverride(),
+            // Branch 14: the limits of a typed price (base unit, minor units; null = none) and
+            // whether the till opens the price box as soon as the item is added.
+            'price_min' => $allowsTypedPrice ? $variant->till_price_min : null,
+            'price_max' => $allowsTypedPrice ? $variant->till_price_max : null,
+            'ask_price' => $product->asksPriceAtTill(),
             'min_days_to_expiry' => $this->ownMinDays($product),
             'batches' => $batches,
             'nearest_expiry' => $nearestExpiry,
