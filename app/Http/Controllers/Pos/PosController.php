@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Pos;
 
 use App\Http\Controllers\Controller;
 use App\Models\Device;
+use App\Models\Location;
 use App\Models\Shift;
 use App\Models\Shop;
 use App\Models\User;
@@ -53,6 +54,9 @@ class PosController extends Controller
         $till?->loadMissing('location:id,code,name');
 
         $currency = (string) $shop->currency;
+        // Search by location (docs/PHARMACY.md, "Till search by location"): with two or more
+        // selling locations the till shows its own stock first and can look at the others'.
+        $locationSearch = $till !== null && $items->locationSearch();
         $quickCash = config("pos.quick_cash.{$currency}") ?? config('pos.quick_cash.default');
 
         return Inertia::render('pos/Index', [
@@ -83,7 +87,14 @@ class PosController extends Controller
             'features' => [
                 'vehicleFitment' => $shop->hasModule('vehicle_fitment'),
                 'pharmacy' => $pharmacy,
+                'locationSearch' => $locationSearch,
             ],
+            // The selling locations the search can look at (never Quarantine), in order.
+            'searchLocations' => $locationSearch ? $items->sellableLocations()->map(fn (Location $location): array => [
+                'id' => (int) $location->getKey(),
+                'code' => $location->code,
+                'name' => $location->name,
+            ])->values()->all() : [],
             'offline' => [
                 'enabled' => $shop->hasModule('offline_sync'),
                 'canRegister' => $user->can('tills.manage'),

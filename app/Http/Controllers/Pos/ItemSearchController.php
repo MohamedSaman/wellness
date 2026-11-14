@@ -19,6 +19,7 @@ class ItemSearchController extends Controller
             isset($input['make_id']) ? (int) $input['make_id'] : null,
             isset($input['model_id']) ? (int) $input['model_id'] : null,
             isset($input['year']) ? (int) $input['year'] : null,
+            isset($input['scope']) ? (string) $input['scope'] : null,
         ));
     }
 }
