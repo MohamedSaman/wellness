@@ -13,6 +13,8 @@ class SearchItemsRequest extends PosRequest
             'make_id' => ['nullable', 'integer'],
             'model_id' => ['nullable', 'integer'],
             'year' => ['nullable', 'integer', 'between:1900,2100'],
+            // Search by location: 'here', 'all' or a sellable location's id (ItemSearchService).
+            'scope' => ['nullable', 'string', 'max:20'],
         ];
     }
 }

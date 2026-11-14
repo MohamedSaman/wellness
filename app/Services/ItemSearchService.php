@@ -5,16 +5,20 @@ namespace App\Services;
 use App\Models\Device;
 use App\Models\DrugDetail;
 use App\Models\Generic;
+use App\Models\Location;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Shop;
 use App\Models\StockBatch;
+use App\Models\StockLevel;
 use App\Models\VariantUnit;
 use App\Support\CurrentShop;
 use App\Support\Quantity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Collection as BaseCollection;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The checkout screen's item lookup (GET /pos/search). Returns plain arrays
@@ -27,6 +31,15 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
  * at that location in first expiry first out order (docs/PHARMACY.md §9,
  * branch 8). Everything is eager loaded: a search runs the same number of
  * queries however many items it finds.
+ *
+ * Search by location (docs/PHARMACY.md, decision "Till search by
+ * location"): in a shop with multi_location and two or more active, sellable
+ * locations, results are scoped. `here` (the default) lists what the till's
+ * own location holds (stock above 0) and every item that does not track
+ * stock (services); a location id lists what that location holds; `all`
+ * lists every match, as before. The exact barcode/SKU match is found
+ * whatever the scope, so the till can say where a scanned item is. Outside
+ * those shops (retail) there is no scope and the payload is unchanged.
  */
 class ItemSearchService
 {
@@ -41,15 +54,30 @@ class ItemSearchService
     /** The relation loadBatches() sets: the till location's sellable batches. */
     private const BATCHES = 'tillBatches';
 
+    /** Scopes of a location search: the till's own location, or every location. A location id is the third. */
+    public const SCOPE_HERE = 'here';
+
+    public const SCOPE_ALL = 'all';
+
+    /** Attribute loadBatches() sets when stock here is all held back: 'expired' or 'blocked'. */
+    private const HELD_BACK = 'till_held_back';
+
+    /** Attribute loadStockByLocation() sets: stock at each sellable location. */
+    private const BY_LOCATION = 'till_stock_by_location';
+
+    /** @var Collection<int, Location>|null */
+    private ?Collection $sellableLocations = null;
+
     public function __construct(
         private readonly CurrentShop $currentShop,
         private readonly BatchService $batchService,
     ) {}
 
     /**
+     * @param  string|null  $scope  'here' (default), 'all' or a sellable location's id; ignored without location search
      * @return array{exact: array<string, mixed>|null, results: list<array<string, mixed>>}
      */
-    public function search(Device $device, ?string $term, ?int $makeId = null, ?int $modelId = null, ?int $year = null): array
+    public function search(Device $device, ?string $term, ?int $makeId = null, ?int $modelId = null, ?int $year = null, ?string $scope = null): array
     {
         $term = trim((string) $term);
 
@@ -59,6 +87,8 @@ class ItemSearchService
         }
 
         $hasVehicle = $makeId !== null || $modelId !== null;
+        $byLocation = $this->locationSearch();
+        $scope = $byLocation ? $this->scope($scope) : self::SCOPE_ALL;
 
         if ($term === '' && ! $hasVehicle) {
             return ['exact' => null, 'results' => []];
@@ -76,16 +106,126 @@ class ItemSearchService
                     $product->search($term, $drugNames);
                 }
             })
+            ->when($byLocation, fn (Builder $query) => $this->applyScope($query, $device, $scope))
             ->orderBy('sku')
             ->limit(self::LIMIT);
 
         $variants = $query->get();
         $this->loadBatches($exact === null ? $variants : $variants->concat([$exact]), $device);
 
+        if ($byLocation) {
+            // The exact match always says where it is held; results do outside "this location".
+            $this->loadStockByLocation($scope === self::SCOPE_HERE ? array_filter([$exact]) : ($exact === null ? $variants : $variants->concat([$exact])));
+        }
+
         return [
             'exact' => $exact === null ? null : $this->present($exact, $device, $this->scannedUnitId($exact, $term)),
             'results' => array_values($variants->map(fn (ProductVariant $variant): array => $this->present($variant, $device))->all()),
         ];
+    }
+
+    /**
+     * Whether the till's search is scoped by location: multi_location and two
+     * or more active, sellable locations (General Pharmacy and the doctor's;
+     * Quarantine does not sell). A retail shop with one location: no.
+     */
+    public function locationSearch(): bool
+    {
+        return $this->currentShop->getOrFail()->hasModule('multi_location') && $this->sellableLocations()->count() >= 2;
+    }
+
+    /**
+     * The active, sellable locations, in order: what the till's location
+     * picker and stock_by_location list. Never Quarantine / Expired.
+     *
+     * @return Collection<int, Location>
+     */
+    public function sellableLocations(): Collection
+    {
+        return $this->sellableLocations ??= Location::query()
+            ->where('is_active', true)
+            ->where('is_sellable', true)
+            ->ordered()
+            ->get(['id', 'code', 'name', 'sort_order']);
+    }
+
+    /** The scope asked for: 'here' when none, 'all', or the id of a sellable location (as a string). */
+    private function scope(?string $scope): string
+    {
+        $scope = trim((string) $scope);
+
+        if ($scope === '' || $scope === self::SCOPE_HERE) {
+            return self::SCOPE_HERE;
+        }
+
+        if ($scope === self::SCOPE_ALL) {
+            return self::SCOPE_ALL;
+        }
+
+        if (ctype_digit($scope) && $this->sellableLocations()->contains(fn (Location $location): bool => (int) $location->getKey() === (int) $scope)) {
+            return (string) (int) $scope;
+        }
+
+        throw ValidationException::withMessages(['scope' => 'Choose a location that sells stock.']);
+    }
+
+    /**
+     * Narrows the results to a scope: 'here' = stock above 0 at the till's
+     * location, or no stock tracking (services); a location = stock above 0
+     * there; 'all' = no change.
+     *
+     * @param  Builder<ProductVariant>  $query
+     */
+    private function applyScope(Builder $query, Device $device, string $scope): void
+    {
+        if ($scope === self::SCOPE_ALL) {
+            return;
+        }
+
+        $locationId = $scope === self::SCOPE_HERE ? (int) $device->location_id : (int) $scope;
+        $holds = fn (Builder $stock) => $stock->where('location_id', $locationId)->where('quantity', '>', 0);
+
+        if ($scope === self::SCOPE_HERE) {
+            $query->where(fn (Builder $here) => $here
+                ->whereHas('product', fn (Builder $product) => $product->where('track_stock', false))
+                ->orWhereHas('stockLevels', $holds));
+
+            return;
+        }
+
+        $query->whereHas('product', fn (Builder $product) => $product->where('track_stock', true))
+            ->whereHas('stockLevels', $holds);
+    }
+
+    /**
+     * Sets each variant's stock at every sellable location (present() lists
+     * it as stock_by_location): one query, none for an empty list.
+     *
+     * @param  iterable<ProductVariant>  $variants
+     */
+    private function loadStockByLocation(iterable $variants): void
+    {
+        $variants = collect($variants);
+
+        if ($variants->isEmpty()) {
+            return;
+        }
+
+        $locations = $this->sellableLocations();
+        $levels = StockLevel::query()
+            ->whereIn('product_variant_id', $variants->map(fn (ProductVariant $variant): int => (int) $variant->getKey())->unique()->values()->all())
+            ->whereIn('location_id', $locations->modelKeys())
+            ->get(['product_variant_id', 'location_id', 'quantity'])
+            ->groupBy('product_variant_id');
+
+        foreach ($variants as $variant) {
+            $held = $levels->get($variant->getKey()) ?? collect();
+            $variant->setAttribute(self::BY_LOCATION, array_values($locations->map(fn (Location $location): array => [
+                'id' => (int) $location->getKey(),
+                'code' => $location->code,
+                'stock' => Quantity::normalize((float) ($held->firstWhere('location_id', $location->getKey())->quantity ?? 0)),
+            ])->all()));
+        }
     }
 
     /**
@@ -211,6 +351,43 @@ class ItemSearchService
         foreach ($variants as $variant) {
             $variant->setRelation(self::BATCHES, $batches->get($variant->getKey()) ?? new Collection);
         }
+
+        $this->loadHeldBack($tracked->filter(fn (ProductVariant $variant): bool => ! $batches->has($variant->getKey())), $device);
+    }
+
+    /**
+     * For batch-tracked items with stock here but no batch the till may sell
+     * from today, why: 'expired' when any of it is past its expiry, else
+     * 'blocked' (quarantined or recalled). One query, none when every item
+     * has a sellable batch or no stock (the usual case).
+     *
+     * @param  BaseCollection<int, ProductVariant>  $variants  with stockLevels at the till's location loaded
+     */
+    private function loadHeldBack(BaseCollection $variants, Device $device): void
+    {
+        $holding = $variants->filter(fn (ProductVariant $variant): bool => (float) $variant->stockLevels->sum('quantity') > 0);
+
+        if ($holding->isEmpty()) {
+            return;
+        }
+
+        $today = $this->batchService->today()->toDateString();
+        $heldBack = StockBatch::query()
+            ->whereIn('product_variant_id', $holding->map(fn (ProductVariant $variant): int => (int) $variant->getKey())->unique()->values()->all())
+            ->where('location_id', $device->location_id)
+            ->inStock()
+            ->get(['id', 'product_variant_id', 'expiry_date', 'status'])
+            ->groupBy('product_variant_id');
+
+        foreach ($holding as $variant) {
+            /** @var Collection<int, StockBatch> $held */
+            $held = $heldBack->get($variant->getKey()) ?? new Collection;
+
+            if ($held->isNotEmpty()) {
+                $expired = $held->contains(fn (StockBatch $batch): bool => $batch->expiry_date !== null && $batch->expiry_date->toDateString() < $today);
+                $variant->setAttribute(self::HELD_BACK, $expired ? 'expired' : 'blocked');
+            }
+        }
     }
 
     /**
@@ -275,8 +452,35 @@ class ItemSearchService
             'min_days_to_expiry' => $this->ownMinDays($product),
             'batches' => $batches,
             'nearest_expiry' => $nearestExpiry,
+            'held_back' => $this->heldBack($variant, $product, $stock, $batches, $nearestExpiry),
             'scanned_unit_id' => $scannedUnitId,
+            ...($variant->hasAttribute(self::BY_LOCATION) ? ['stock_by_location' => $variant->getAttribute(self::BY_LOCATION)] : []),
         ];
+    }
+
+    /**
+     * Why a batch-tracked item with stock here can't be sold from it today,
+     * by the batch rules (no change to what sells): 'expired' (only expired
+     * stock), 'blocked' (only quarantined or recalled stock), 'near_expiry'
+     * (only stock past its stop-selling date, the minimum days to expiry),
+     * or null. The till shows it on the row and when the item is picked;
+     * resources/js/lib/offline/searchCatalog.ts heldBack() mirrors it.
+     *
+     * @param  list<array<string, mixed>>  $batches
+     */
+    private function heldBack(ProductVariant $variant, Product $product, float $stock, array $batches, ?string $nearestExpiry): ?string
+    {
+        if (! $product->track_stock || ! $product->tracksBatches() || $stock <= 0) {
+            return null;
+        }
+
+        if ($batches === []) {
+            $reason = $variant->getAttribute(self::HELD_BACK);
+
+            return is_string($reason) ? $reason : null;
+        }
+
+        return $nearestExpiry === null ? 'near_expiry' : null;
     }
 
     /**

@@ -8,7 +8,8 @@ import { addItem, dialog, expectInside, useTill } from './helpers';
  * T2, then on T1 a price typed at the till (asked for, outside its limits,
  * then confirmed), a batch pick, discount, prescription, payment, the sale
  * done, recent sales, closing the shift and its printed summary, and back on
- * T2 a stock request.
+ * T2 the search looking at General Pharmacy's stock, the Request dialog and
+ * the Stock requests page.
  */
 
 const viewports = [
@@ -292,6 +293,28 @@ for (const viewport of viewports) {
                     page.locator('[data-test=stock-requests-link]'),
                 ).toHaveCount(0);
                 await useTill(page, 'T2');
+
+                // Search by location: General Pharmacy's stock, view only, and the Request dialog.
+                await page.keyboard.press('Alt+KeyL');
+                await page.locator('[data-test=pos-search]').fill('Amoxil');
+                const amoxil = page.locator('[data-test=search-results] li', {
+                    hasText: 'Amoxil',
+                });
+                await expect(
+                    amoxil.locator('[data-test=result-view-only]'),
+                ).toBeVisible();
+                await expectInside(
+                    page.getByRole('region', { name: 'Find items' }),
+                    'search looking at General Pharmacy',
+                    { window: 'width' },
+                );
+                await amoxil.locator('[data-test=result-request]').click();
+                const request = dialog(page, "Request to Doctor's Medicines");
+                await expectInside(request, 'Request dialog');
+                await request.getByRole('button', { name: 'Cancel' }).click();
+                await expect(request).toBeHidden();
+                await page.locator('[data-test=search-scope-reset]').click();
+
                 await page.locator('[data-test=stock-requests-link]').click();
                 await page
                     .locator('[data-test=request-search]')
