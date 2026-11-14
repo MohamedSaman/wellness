@@ -110,17 +110,22 @@ class PatientListService
      * The bills with a patient rung up in a shift, oldest first, voided ones
      * included (marked), with the patient and the location.
      *
-     * @return Collection<int, Sale>
+     * @return Builder<Sale>
      */
-    public function shiftBills(Shift $shift): Collection
+    public function shiftBillsQuery(Shift $shift): Builder
     {
         return Sale::query()
             ->with(['patient', 'location'])
             ->where('shift_id', $shift->getKey())
             ->whereNotNull('patient_id')
             ->orderBy('sold_at')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
+    }
+
+    /** @return Collection<int, Sale> shiftBillsQuery(), every row */
+    public function shiftBills(Shift $shift): Collection
+    {
+        return $this->shiftBillsQuery($shift)->get();
     }
 
     /** Bills of the shift with no patient recorded (said under the list). */
