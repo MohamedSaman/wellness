@@ -42,9 +42,10 @@ class PharmacySearchPayloadTest extends BatchTestCase
         return $item;
     }
 
+    /** Every location's items ('all'): these tests are about the payload, not where stock is (TillSearchLocationTest). */
     private function search(string $term, ?Device $till = null): TestResponse
     {
-        return $this->actingAs($this->cashier)->getJson(route('pos.search', ['device' => ($till ?? $this->genTill())->uuid, 'q' => $term]));
+        return $this->actingAs($this->cashier)->getJson(route('pos.search', ['device' => ($till ?? $this->genTill())->uuid, 'q' => $term, 'scope' => 'all']));
     }
 
     /** Stock out first expiry first out at General Pharmacy, as a sale would take it. */

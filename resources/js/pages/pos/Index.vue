@@ -36,6 +36,7 @@ import ThermalReceipt from '@/components/pos/ThermalReceipt.vue';
 import RecentSalesDialog from '@/components/pos/RecentSalesDialog.vue';
 import SaleDoneDialog from '@/components/pos/SaleDoneDialog.vue';
 import ShiftOpenPanel from '@/components/pos/ShiftOpenPanel.vue';
+import StockRequestDialog from '@/components/pos/StockRequestDialog.vue';
 import TillPicker from '@/components/pos/TillPicker.vue';
 import TotalsPanel from '@/components/pos/TotalsPanel.vue';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,7 @@ import type {
     PosCashier,
     PosFeatures,
     PosItem,
+    PosLocation,
     PosPharmacy,
     PosShift,
     PosShop,
@@ -73,8 +75,10 @@ const props = withDefaults(
         shift: PosShift | null;
         /** Null when the pharmacy module is off. */
         pharmacy?: PosPharmacy;
+        /** Search by location: the selling locations, in order (empty when it is off). */
+        searchLocations?: PosLocation[];
     }>(),
-    { pharmacy: null },
+    { pharmacy: null, searchLocations: () => [] },
 );
 
 const cart = usePosCart();
@@ -127,6 +131,24 @@ const completed = ref<CompletedSale | null>(null);
 const submitting = ref(false);
 const checkoutError = ref<string | null>(null);
 const sellWithoutShift = ref(false);
+
+/** The Request dialog: an item from the search to ask another location for. */
+const requestItem = ref<PosItem | null>(null);
+const requestFrom = ref<number | null>(null);
+
+function openRequest(item: PosItem, fromId: number | null): void {
+    requestFrom.value = fromId;
+    requestItem.value = item;
+}
+
+function requested(number: string, from: string): void {
+    requestItem.value = null;
+    void nextTick(() =>
+        search.value?.showInfo(
+            `Requested ${number} from ${from}. Follow it in Stock requests.`,
+        ),
+    );
+}
 
 /** The Prescription dialog (F7), and why the till opened it. */
 const rxOpen = ref(false);
@@ -211,6 +233,7 @@ const dialogOpen = computed(
         closeShiftOpen.value ||
         recentSalesOpen.value ||
         rxOpen.value ||
+        requestItem.value !== null ||
         completed.value !== null,
 );
 
@@ -547,6 +570,12 @@ async function signOut(): Promise<void> {
     router.post(logout().url);
 }
 
+// Every new sale searches this till's own location again.
+watch(
+    () => state.uuid,
+    () => search.value?.resetScope(),
+);
+
 function startNewSale(): void {
     completed.value = null;
     cart.newCart();
@@ -567,6 +596,17 @@ function onKeydown(event: KeyboardEvent): void {
     if (event.key === 'F2') {
         event.preventDefault();
         search.value?.focus();
+    } else if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.code === 'KeyL'
+    ) {
+        // Search by location: this location, the others, all of them.
+        event.preventDefault();
+        if (!dialogOpen.value) {
+            search.value?.cycleScope();
+        }
     } else if (event.key === 'F4') {
         event.preventDefault();
         if (
@@ -865,7 +905,12 @@ onBeforeUnmount(() => {
                     :vehicle-fitment="features.vehicleFitment"
                     :pharmacy="pharmacyOn"
                     :opd-bill="opdBill"
+                    :location-search="!!features.locationSearch"
+                    :locations="searchLocations"
+                    :till-location="till.location ?? null"
+                    :can-request-stock="!!cashier.canRequestStock"
                     @add="addItem"
+                    @request="openRequest"
                 />
             </section>
 
@@ -961,6 +1006,15 @@ onBeforeUnmount(() => {
         </main>
 
         <DiscountDialog v-model:open="discountOpen" :shop="shop" />
+        <StockRequestDialog
+            v-if="till?.location && features.locationSearch"
+            :item="requestItem"
+            :preferred-from="requestFrom"
+            :till-location="till.location"
+            :locations="searchLocations"
+            @close="requestItem = null"
+            @requested="requested"
+        />
         <PaymentDialog
             v-model:open="paymentOpen"
             :shop="shop"

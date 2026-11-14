@@ -51,7 +51,12 @@ export type PosCashier = {
     canDiscount?: boolean;
 };
 
-export type PosFeatures = { vehicleFitment: boolean; pharmacy?: boolean };
+export type PosFeatures = {
+    vehicleFitment: boolean;
+    pharmacy?: boolean;
+    /** Search by location: two or more selling locations (multi_location). Missing on older pages. */
+    locationSearch?: boolean;
+};
 
 export type RxPrescriberRule = 'required' | 'prompt';
 
@@ -153,9 +158,22 @@ export type PosItem = {
     /** Batch-tracked items: batches at this till's location, first expiry first. */
     batches?: PosBatch[];
     nearest_expiry?: string | null;
+    /** Batch-tracked items with stock here none of which may be sold today: why. */
+    held_back?: HeldBack | null;
     /** Exact match on a pack's barcode: that pack. Null otherwise. */
     scanned_unit_id?: number | null;
+    /**
+     * Search by location: stock at each selling location (never Quarantine),
+     * on the exact match and outside "this location". Online only.
+     */
+    stock_by_location?: PosStockAt[];
 };
+
+/** Why stock here can't be sold: only expired, quarantined or recalled, or past its stop-selling date. */
+export type HeldBack = 'expired' | 'blocked' | 'near_expiry';
+
+/** Stock of an item at one selling location, base units. */
+export type PosStockAt = { id: number; code: string; stock: number };
 
 /** A unit an item is sold in: the base unit (factor 1) or a pack of base units. */
 export type PosUnit = {

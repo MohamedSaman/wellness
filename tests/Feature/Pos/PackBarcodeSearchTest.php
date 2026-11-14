@@ -16,9 +16,10 @@ class PackBarcodeSearchTest extends BatchTestCase
 {
     use WorksWithCheckout;
 
+    /** Every location's items ('all'): these items have no stock (TillSearchLocationTest covers the scope). */
     private function search(string $term, ?Device $till = null): TestResponse
     {
-        return $this->actingAs($this->cashier)->getJson(route('pos.search', ['device' => ($till ?? $this->till)->uuid, 'q' => $term]));
+        return $this->actingAs($this->cashier)->getJson(route('pos.search', ['device' => ($till ?? $this->till)->uuid, 'q' => $term, 'scope' => 'all']));
     }
 
     private function boxed(): ProductVariant

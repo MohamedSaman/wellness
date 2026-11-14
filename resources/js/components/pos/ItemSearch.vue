@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Car, Search, X } from '@lucide/vue';
+import { Car, MapPin, Search, X } from '@lucide/vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import ItemSearchController from '@/actions/App/Http/Controllers/Pos/ItemSearchController';
 import VehicleController from '@/actions/App/Http/Controllers/Pos/VehicleController';
@@ -12,13 +12,14 @@ import { formatMoney, formatQuantity } from '@/lib/money';
 import { getMeta, metaKeys } from '@/lib/offline/db';
 import { unitsOf } from '@/lib/offline/pricing';
 import { searchOffline } from '@/lib/offline/search';
+import { inStockHere } from '@/lib/offline/searchCatalog';
 import {
     baseUnitName,
     expiryClasses,
     expiryTone,
     inPacks,
 } from '@/lib/pharmacyDisplay';
-import type { PosItem, VehicleMake } from '@/types/pos';
+import type { HeldBack, PosItem, PosLocation, VehicleMake } from '@/types/pos';
 
 const props = defineProps<{
     deviceUuid: string;
@@ -30,9 +31,24 @@ const props = defineProps<{
     pharmacy?: boolean;
     /** The sale is an OPD bill: a stock item sold here may be added without a price. */
     opdBill?: boolean;
+    /**
+     * Search by location (docs/PHARMACY.md, "Till search by location"): two
+     * or more selling locations. Off (retail): no picker, search as before.
+     */
+    locationSearch?: boolean;
+    /** The selling locations, in order (never Quarantine). */
+    locations?: PosLocation[];
+    /** The till's own location: the only stock it sells from. */
+    tillLocation?: PosLocation | null;
+    /** May ask for stock from here (stock.request, at a till away from the default location). */
+    canRequestStock?: boolean;
 }>();
 
-const emit = defineEmits<{ add: [item: PosItem] }>();
+const emit = defineEmits<{
+    add: [item: PosItem];
+    /** Ask for this item from another location (the Request dialog), `fromId` preferred. */
+    request: [item: PosItem, fromId: number | null];
+}>();
 
 type SearchResponse = { exact: PosItem | null; results: PosItem[] };
 
@@ -40,12 +56,72 @@ const offline = useOfflinePos();
 const searchLocally = () =>
     offline.isOffline.value && offline.state.catalogReady;
 
+/**
+ * Where the search looks: this till's location (the default, again at every
+ * new sale), another selling location, or all of them. Only items in this
+ * location's stock can be added; the others are there to see and ask for.
+ */
+type Scope = 'here' | 'all' | number;
+
+const scope = ref<Scope>('here');
+const byLocation = computed(
+    () => !!props.locationSearch && !!props.tillLocation,
+);
+const otherLocations = computed(() =>
+    (props.locations ?? []).filter(
+        (location) => location.id !== props.tillLocation?.id,
+    ),
+);
+const scopes = computed<{ value: Scope; label: string }[]>(() => [
+    { value: 'here', label: `This location (${props.tillLocation?.name})` },
+    ...otherLocations.value.map((location) => ({
+        value: location.id,
+        label: location.name,
+    })),
+    { value: 'all', label: 'All locations' },
+]);
+/** The cached catalog holds this location only: the others need the server. */
+const scopeDisabled = (value: Scope) =>
+    value !== 'here' && offline.isOffline.value;
+const scopeLabel = computed(
+    () =>
+        scopes.value.find((option) => option.value === scope.value)?.label ??
+        '',
+);
+
+/** Alt+L: the next location this till can look at now. */
+function cycleScope(): void {
+    if (!byLocation.value) {
+        return;
+    }
+
+    const options = scopes.value.filter(
+        (option) => !scopeDisabled(option.value),
+    );
+    const at = options.findIndex((option) => option.value === scope.value);
+    scope.value = options[(at + 1) % options.length]?.value ?? 'here';
+}
+
+function resetScope(): void {
+    scope.value = 'here';
+}
+
+function scopeParam(): string | undefined {
+    return byLocation.value ? String(scope.value) : undefined;
+}
+
 function searchOfflineNow(): Promise<SearchResponse> {
+    // Offline the till knows only its own stock: "this location".
+    if (scope.value !== 'here') {
+        scope.value = 'here';
+    }
+
     return searchOffline({
         term: term.value,
         makeId: makeId.value,
         modelId: modelId.value,
         year: year.value === '' ? null : Number(year.value),
+        scope: byLocation.value ? 'here' : undefined,
     });
 }
 
@@ -64,6 +140,7 @@ async function fetchResults(): Promise<SearchResponse> {
                     make_id: makeId.value,
                     model_id: modelId.value,
                     year: year.value,
+                    scope: scopeParam(),
                 }),
         );
         offline.reportConnection(true);
@@ -88,6 +165,10 @@ const highlighted = ref(-1);
 const message = ref<string | null>(null);
 /** Why the last item picked was not added (kept until the next pick or search). */
 const notice = ref<string | null>(null);
+/** The item the notice offers to ask another location for ("Request transfer"). */
+const noticeRequest = ref<PosItem | null>(null);
+/** Good news (a stock request sent), shown until the next pick or search. */
+const info = ref<string | null>(null);
 const searching = ref(false);
 const input = ref<HTMLInputElement | null>(null);
 
@@ -113,9 +194,18 @@ function focus(): void {
 /** Shows why an item could not be added (the cart's refusal). */
 function showNotice(text: string): void {
     notice.value = text;
+    noticeRequest.value = null;
+    info.value = null;
 }
 
-defineExpose({ focus, showNotice });
+/** Shows that something worked (a stock request was sent). */
+function showInfo(text: string): void {
+    info.value = text;
+    notice.value = null;
+    noticeRequest.value = null;
+}
+
+defineExpose({ focus, showNotice, showInfo, cycleScope, resetScope });
 
 async function run(scan: boolean): Promise<SearchResponse | null> {
     const mine = ++sequence;
@@ -137,7 +227,10 @@ async function run(scan: boolean): Promise<SearchResponse | null> {
             response.results.length === 0 &&
             (term.value.trim() !== '' || vehicleActive.value)
         ) {
-            message.value = 'No items found.';
+            message.value =
+                byLocation.value && scope.value === 'here'
+                    ? `Nothing in ${props.tillLocation?.name} stock matches. Alt+L to look at other locations.`
+                    : 'No items found.';
         }
 
         return response;
@@ -170,10 +263,17 @@ function schedule(): void {
     timer = setTimeout(() => void run(false), 150);
 }
 
-watch([term, makeId, modelId, year], schedule);
+watch([term, makeId, modelId, year, scope], schedule);
 watch(term, (value) => {
     if (value.trim() !== '') {
         notice.value = null;
+        noticeRequest.value = null;
+        info.value = null;
+    }
+});
+watch(offline.isOffline, (isOffline) => {
+    if (isOffline) {
+        resetScope();
     }
 });
 watch(makeId, () => {
@@ -188,6 +288,10 @@ onBeforeUnmount(() => clearTimeout(timer));
  * needs no price of its own.
  */
 function refusal(item: PosItem): string | null {
+    if (viewOnly(item)) {
+        return notHere(item);
+    }
+
     if (item.sellable !== false) {
         return null;
     }
@@ -206,17 +310,101 @@ function pick(item: PosItem): void {
 
     if (reason !== null) {
         notice.value = reason;
+        noticeRequest.value = viewOnly(item) && canRequest(item) ? item : null;
+        info.value = null;
         focus();
 
         return;
     }
 
-    notice.value = null;
+    // Stock here that the batch rules hold back: say so; the cart decides as before.
+    const held = heldBackText(item);
+    notice.value = held === null ? null : `${item.sku}: ${held}.`;
+    noticeRequest.value = null;
+    info.value = null;
     term.value = '';
     results.value = [];
     message.value = null;
     emit('add', item);
     focus();
+}
+
+/**
+ * Search by location: an item that tracks stock and has none at this
+ * till's location can't be added here; it is there to see and ask for.
+ */
+function viewOnly(item: PosItem): boolean {
+    return byLocation.value && !inStockHere(item);
+}
+
+function locationName(id: number): string {
+    return (
+        (props.locations ?? []).find((location) => location.id === id)?.name ??
+        ''
+    );
+}
+
+/** Other selling locations holding the item, most first. Online only. */
+function heldElsewhere(
+    item: PosItem,
+): { id: number; name: string; stock: number }[] {
+    return (item.stock_by_location ?? [])
+        .filter(
+            (level) => level.id !== props.tillLocation?.id && level.stock > 0,
+        )
+        .map((level) => ({ ...level, name: locationName(level.id) }))
+        .sort((a, b) => b.stock - a.stock);
+}
+
+/** "Not in Doctor's Medicines stock · General Pharmacy has 120". */
+function notHere(item: PosItem): string {
+    const here = `Not in ${props.tillLocation?.name} stock`;
+
+    if (item.stock_by_location === undefined) {
+        return `${here} · other locations need a connection`;
+    }
+
+    const elsewhere = heldElsewhere(item);
+
+    return elsewhere.length === 0
+        ? `${here} · no other location has it`
+        : `${here} · ${elsewhere.map((level) => `${level.name} has ${formatQuantity(level.stock)}`).join(' · ')}`;
+}
+
+/** Whether this till may ask another location for the item now. */
+function canRequest(item: PosItem): boolean {
+    return (
+        !!props.canRequestStock &&
+        !offline.isOffline.value &&
+        heldElsewhere(item).length > 0
+    );
+}
+
+function request(item: PosItem): void {
+    const viewed = typeof scope.value === 'number' ? scope.value : null;
+    const from = heldElsewhere(item).some((level) => level.id === viewed)
+        ? viewed
+        : null;
+
+    emit('request', item, from);
+}
+
+const heldBackTexts: Record<HeldBack, string> = {
+    expired: 'Only expired stock here',
+    blocked: 'Only quarantined or recalled stock here',
+    near_expiry: 'Only stock past its stop-selling date here',
+};
+
+/** Why stock here can't be sold today (the batch rules), or null. */
+function heldBackText(item: PosItem): string | null {
+    return item.held_back ? heldBackTexts[item.held_back] : null;
+}
+
+/** "GEN 120 · DOC 0". */
+function stockByLocation(item: PosItem): string {
+    return (item.stock_by_location ?? [])
+        .map((level) => `${level.code} ${formatQuantity(level.stock)}`)
+        .join(' · ');
 }
 
 /** Enter: a scanner types the code and presses Enter, so an exact barcode/SKU adds at once. */
@@ -292,7 +480,7 @@ function stockLabel(item: PosItem): string {
     }
 
     if (item.stock <= 0) {
-        return 'Out of stock';
+        return byLocation.value ? 'None here' : 'Out of stock';
     }
 
     const base = baseUnitName(item.units, item.unit);
@@ -381,6 +569,33 @@ function drugLine(item: PosItem): string {
                     <X class="size-5" />
                 </button>
             </div>
+            <label v-if="byLocation" class="relative shrink-0">
+                <span class="sr-only">Look in</span>
+                <MapPin
+                    class="pointer-events-none absolute top-1/2 left-3 size-5 -translate-y-1/2 text-muted-foreground"
+                />
+                <select
+                    v-model="scope"
+                    class="h-14 w-44 truncate rounded-xl border bg-background pr-2 pl-10 text-base shadow-xs xl:w-56"
+                    title="Whose stock to look at (Alt+L)"
+                    data-test="search-scope"
+                    @change="focus()"
+                >
+                    <option
+                        v-for="option in scopes"
+                        :key="String(option.value)"
+                        :value="option.value"
+                        :disabled="scopeDisabled(option.value)"
+                    >
+                        {{ option.label
+                        }}{{
+                            scopeDisabled(option.value)
+                                ? ' (needs a connection)'
+                                : ''
+                        }}
+                    </option>
+                </select>
+            </label>
             <Button
                 v-if="vehicleFitment"
                 :variant="vehicleActive ? 'default' : 'outline'"
@@ -437,13 +652,74 @@ function drugLine(item: PosItem): string {
             >
         </div>
 
-        <p
+        <div
+            v-if="byLocation"
+            class="flex flex-wrap items-center gap-2 text-sm"
+            data-test="search-scope-chip"
+        >
+            <span
+                class="inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 font-medium"
+                :class="
+                    scope === 'here'
+                        ? 'bg-muted text-muted-foreground'
+                        : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                "
+            >
+                <MapPin class="size-4 shrink-0" />
+                <span class="truncate"
+                    >{{ scope === 'here' ? 'Selling from' : 'Looking at' }}
+                    {{ scope === 'here' ? tillLocation?.name : scopeLabel
+                    }}<template v-if="scope !== 'here'">
+                        · view only, sells from
+                        {{ tillLocation?.name }}</template
+                    ></span
+                >
+                <button
+                    v-if="scope !== 'here'"
+                    type="button"
+                    class="-mr-1 grid size-6 shrink-0 place-items-center rounded-full hover:bg-amber-500/20"
+                    aria-label="Back to this location"
+                    data-test="search-scope-reset"
+                    @click="
+                        resetScope();
+                        focus();
+                    "
+                >
+                    <X class="size-4" />
+                </button>
+            </span>
+            <span class="text-xs text-muted-foreground">
+                <template v-if="offline.isOffline.value"
+                    >Other locations need a connection</template
+                >
+                <template v-else>Alt+L: other locations</template>
+            </span>
+        </div>
+
+        <div
             v-if="notice"
-            class="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+            class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
             role="alert"
             data-test="search-notice"
         >
-            {{ notice }}
+            <span class="min-w-0">{{ notice }}</span>
+            <button
+                v-if="noticeRequest"
+                type="button"
+                class="font-semibold underline"
+                data-test="search-notice-request"
+                @click="request(noticeRequest)"
+            >
+                Request transfer
+            </button>
+        </div>
+        <p
+            v-if="info"
+            class="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-400"
+            role="status"
+            data-test="search-info"
+        >
+            {{ info }}
         </p>
         <p
             v-if="message"
@@ -457,7 +733,11 @@ function drugLine(item: PosItem): string {
             class="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1"
             data-test="search-results"
         >
-            <li v-for="(item, index) in results" :key="item.variant_id">
+            <li
+                v-for="(item, index) in results"
+                :key="item.variant_id"
+                class="grid gap-1"
+            >
                 <button
                     type="button"
                     class="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border bg-card p-3 text-left transition hover:bg-accent active:scale-[0.99]"
@@ -492,6 +772,7 @@ function drugLine(item: PosItem): string {
                         >
                         <span
                             class="block truncate text-sm text-muted-foreground"
+                            data-test="result-codes"
                         >
                             {{ item.sku
                             }}<template v-if="item.part_number">
@@ -527,6 +808,13 @@ function drugLine(item: PosItem): string {
                             {{ stockLabel(item) }}
                         </span>
                         <span
+                            v-if="item.stock_by_location"
+                            class="block text-xs text-muted-foreground tabular-nums"
+                            data-test="result-locations"
+                        >
+                            {{ stockByLocation(item) }}
+                        </span>
+                        <span
                             v-if="isMedicine(item) && item.nearest_expiry"
                             class="block text-xs"
                             :class="
@@ -536,8 +824,34 @@ function drugLine(item: PosItem): string {
                         >
                             Exp {{ item.nearest_expiry }}
                         </span>
+                        <span
+                            v-if="heldBackText(item)"
+                            class="block text-xs font-semibold text-destructive"
+                            data-test="result-held-back"
+                        >
+                            {{ heldBackText(item) }}
+                        </span>
                     </span>
                 </button>
+                <div
+                    v-if="viewOnly(item)"
+                    class="flex flex-wrap items-center justify-between gap-2 px-3 text-sm"
+                    data-test="result-view-only"
+                >
+                    <span class="min-w-0 text-muted-foreground"
+                        >Not in {{ tillLocation?.name }} stock: view only</span
+                    >
+                    <Button
+                        v-if="canRequest(item)"
+                        variant="outline"
+                        size="sm"
+                        class="h-9"
+                        data-test="result-request"
+                        @click="request(item)"
+                    >
+                        Request to {{ tillLocation?.name }}
+                    </Button>
+                </div>
             </li>
         </ul>
     </div>

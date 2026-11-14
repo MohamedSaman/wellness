@@ -41,9 +41,10 @@ class DrugMasterTest extends PharmacyTestCase
         );
     }
 
+    /** Every location's items ('all'): these items have no stock (TillSearchLocationTest covers the scope). */
     private function search(string $term): TestResponse
     {
-        return $this->actingAs($this->cashier)->getJson(route('pos.search', ['device' => $this->till->uuid, 'q' => $term]));
+        return $this->actingAs($this->cashier)->getJson(route('pos.search', ['device' => $this->till->uuid, 'q' => $term, 'scope' => 'all']));
     }
 
     public function test_a_medicine_is_saved_with_its_drug_details_whole_units_and_no_tax(): void
