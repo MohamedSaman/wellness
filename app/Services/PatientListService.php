@@ -62,12 +62,11 @@ class PatientListService
             ->joinSub($this->visits($filters), 'patient_visits', 'patient_visits.patient_id', '=', 'patients.id', $filters->isFiltered() ? 'inner' : 'left')
             ->selectRaw('COALESCE(patient_visits.visits, 0) as visits')
             ->withCount('sales')
-            ->selectSub($this->visitBills()->selectRaw('MIN(sales.reported_at)')->whereColumn('sales.patient_id', 'patients.id'), 'first_visit_at')
-            ->selectSub($this->visitBills()->selectRaw('MAX(sales.reported_at)')->whereColumn('sales.patient_id', 'patients.id'), 'last_visit_at')
-            ->selectSub($this->visitBills()
+            ->selectSub($this->patientBills()->selectRaw('MIN(sales.reported_at)'), 'first_visit_at')
+            ->selectSub($this->patientBills()->selectRaw('MAX(sales.reported_at)'), 'last_visit_at')
+            ->selectSub($this->patientBills()
                 ->join('locations', 'locations.id', '=', 'sales.location_id')
                 ->select('locations.name')
-                ->whereColumn('sales.patient_id', 'patients.id')
                 ->orderByDesc('sales.reported_at')
                 ->orderByDesc('sales.id')
                 ->limit(1), 'last_location');
@@ -152,7 +151,8 @@ class PatientListService
         $local = fn (mixed $utc, string $format): ?string => $utc === null ? null : CarbonImmutable::parse((string) $utc, 'UTC')->setTimezone($timezone)->format($format);
         $rows = [];
 
-        foreach ($query->lazy(500) as $patient) {
+        // One query (the visits are grouped once), not one per chunk.
+        foreach ($query->cursor() as $patient) {
             /** @var Patient $patient */
             $rows[] = [
                 'name' => $patient->name,
@@ -178,6 +178,21 @@ class PatientListService
             'from' => $filters->period?->fromDate(),
             'to' => $filters->period?->toDate(),
         ], (int) $user->getKey());
+    }
+
+    /**
+     * The visits of the outer query's patient (a correlated subquery), read
+     * through sales (patient_id, reported_at). The shop's scope is left off
+     * on purpose: the patient is already the shop's (the outer query is
+     * scoped, and a patient's bills are all in their shop), and with it
+     * MySQL may pick (shop_id, reported_at) and read every bill of the shop
+     * for each patient (a year: minutes instead of milliseconds).
+     */
+    private function patientBills(): QueryBuilder
+    {
+        return Sale::query()->withoutGlobalScope('shop')->toBase()
+            ->whereColumn('sales.patient_id', 'patients.id')
+            ->where('sales.status', '!=', SaleStatus::Voided->value);
     }
 
     /** The shop's bills that count as visits: every bill but a voided one. */
