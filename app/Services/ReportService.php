@@ -624,12 +624,14 @@ class ReportService
             ->when($locationId !== null, fn (Builder $query) => $query->where('devices.location_id', $locationId))
             ->orderByDesc('shifts.opened_at')
             ->get([
-                'shifts.id', 'shifts.uuid', 'devices.code as till', 'users.name as cashier', 'shifts.opened_at', 'shifts.closed_at',
+                'shifts.id', 'shifts.uuid', 'shifts.user_id', 'devices.code as till', 'users.name as cashier', 'shifts.opened_at', 'shifts.closed_at',
                 'shifts.opening_cash', 'shifts.expected_cash', 'shifts.counted_cash', 'shifts.difference',
             ])
             ->map(fn ($row): array => [
                 'shift_id' => (int) $row->id,          // not columns: the row's link (branch 16)
                 'shift_uuid' => (string) $row->uuid,
+                'cashier_id' => (int) $row->user_id,   // not a column: who may reprint its summary (branch 17)
+                'shift_closed' => $row->closed_at !== null,
                 'till' => (string) $row->till,
                 'cashier' => (string) $row->cashier,
                 'opened_at' => $period->local($row->opened_at),

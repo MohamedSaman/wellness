@@ -17,8 +17,17 @@ import { reprintSale } from '@/lib/receipt/reprint';
 import type { PosShop, PosTill, RecentSale } from '@/types/pos';
 
 /** F6: this till's sales from the open shift and today, each with Reprint. */
-const props = defineProps<{ open: boolean; till: PosTill; shop: PosShop }>();
-const emit = defineEmits<{ 'update:open': [value: boolean] }>();
+const props = defineProps<{
+    open: boolean;
+    till: PosTill;
+    shop: PosShop;
+    /** Pharmacy: link to Reprint shift summary (branch 17). */
+    shiftSummaries?: boolean;
+}>();
+const emit = defineEmits<{
+    'update:open': [value: boolean];
+    'shift-summaries': [];
+}>();
 
 const query = ref('');
 const sales = ref<RecentSale[] | null>(null);
@@ -189,6 +198,16 @@ const statusLabel = (status: string) =>
                     </li>
                 </ul>
             </div>
+
+            <button
+                v-if="shiftSummaries"
+                type="button"
+                class="self-start text-sm font-medium underline underline-offset-4"
+                data-test="recent-sales-shift-summaries"
+                @click="emit('shift-summaries')"
+            >
+                Reprint a shift summary
+            </button>
         </DialogContent>
     </Dialog>
 </template>
