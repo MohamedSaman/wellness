@@ -253,13 +253,13 @@ for (const viewport of viewports) {
                 // Alt+P (branch 16): the bill just made, with its patient and Reprint.
                 await page.keyboard.press('Alt+KeyP');
                 const patients = page.locator('[data-test=shift-patients]');
+                const row = patients
+                    .locator('[data-test=shift-patient]')
+                    .filter({ hasText: 'Nimal Perera' })
+                    .first();
+                await expect(row).toBeVisible();
                 await expect(
-                    patients.locator('[data-test=shift-patient]').first(),
-                ).toContainText('Nimal Perera');
-                await expect(
-                    patients
-                        .locator('[data-test=shift-patient-reprint]')
-                        .first(),
+                    row.locator('[data-test=shift-patient-reprint]'),
                 ).toBeEnabled();
                 await expectInside(patients, 'Patients this shift dialog');
                 await page.keyboard.press('Escape');
