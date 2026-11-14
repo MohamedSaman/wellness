@@ -7,7 +7,8 @@ import { addItem, dialog, expectInside, useTill } from './helpers';
  * scroll sideways). Walks one sale through the demo clinic: an OPD bill on
  * T2, then on T1 a price typed at the till (asked for, outside its limits,
  * then confirmed), a batch pick, discount, prescription, payment, the sale
- * done, recent sales, closing the shift and its printed summary, and back on
+ * done, recent sales, closing the shift and its printed summary, reprinting
+ * that summary from Shift summary, and back on
  * T2 the search looking at General Pharmacy's stock, the Request dialog and
  * the Stock requests page.
  */
@@ -244,6 +245,9 @@ for (const viewport of viewports) {
                 await expect(
                     recent.locator('[data-test=recent-sale]').first(),
                 ).toBeVisible();
+                await expect(
+                    recent.locator('[data-test=recent-sales-shift-summaries]'),
+                ).toBeVisible();
                 await expectInside(recent, 'Recent sales dialog');
                 await page.keyboard.press('Escape');
                 await expect(recent).toBeHidden();
@@ -302,6 +306,66 @@ for (const viewport of viewports) {
 
                 await close.getByRole('button', { name: 'Done' }).click();
                 await expect(close).toBeHidden();
+            });
+
+            await test.step('Reprint shift summary dialog and the reprint', async () => {
+                // The shift just closed, from the header (no shift is open now).
+                await page
+                    .locator('[data-test=shift-summaries-button]')
+                    .click();
+                const summaries = page.locator('[data-test=shift-summaries]');
+                const row = summaries
+                    .locator('[data-test=shift-summary-row]')
+                    .first();
+                await expect(row).toBeVisible();
+                await expect(row).toContainText('Net sales');
+                await expectInside(summaries, 'Reprint shift summary dialog');
+
+                // Catch the window the reprint opens, so no print dialog comes up in the test.
+                await page.evaluate(() => {
+                    const opened = { location: { href: '' }, close() {} };
+                    (
+                        window as unknown as { reprintWindow: typeof opened }
+                    ).reprintWindow = opened;
+                    window.open = () => opened as unknown as Window;
+                });
+                await row.locator('[data-test=shift-summary-reprint]').click();
+                await expect
+                    .poll(() =>
+                        page.evaluate(
+                            () =>
+                                (
+                                    window as unknown as {
+                                        reprintWindow: {
+                                            location: { href: string };
+                                        };
+                                    }
+                                ).reprintWindow.location.href,
+                        ),
+                    )
+                    .toMatch(/\/reprints\/\d+\?print=1$/);
+                const href = await page.evaluate(
+                    () =>
+                        (
+                            window as unknown as {
+                                reprintWindow: { location: { href: string } };
+                            }
+                        ).reprintWindow.location.href,
+                );
+                const reprint = await context.newPage();
+                await reprint.goto(href.replace(/\?print=1$/, ''));
+                await expect(
+                    reprint.locator('[data-test=thermal-lines]'),
+                ).toContainText('*** REPRINT ***');
+                await expectInside(
+                    reprint.locator('[data-test=receipt]'),
+                    'reprinted shift summary',
+                    { window: 'width' },
+                );
+                await reprint.close();
+
+                await page.keyboard.press('Escape');
+                await expect(summaries).toBeHidden();
             });
 
             await test.step('Stock requests page', async () => {
