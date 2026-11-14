@@ -11,6 +11,7 @@ import {
     Receipt,
     UserRound,
     Repeat,
+    Users,
     Wallet,
 } from '@lucide/vue';
 import {
@@ -34,6 +35,7 @@ import PrescriptionDialog from '@/components/pos/PrescriptionDialog.vue';
 import ReceiptView from '@/components/pos/ReceiptView.vue';
 import ThermalReceipt from '@/components/pos/ThermalReceipt.vue';
 import RecentSalesDialog from '@/components/pos/RecentSalesDialog.vue';
+import ShiftPatientsDialog from '@/components/pos/ShiftPatientsDialog.vue';
 import SaleDoneDialog from '@/components/pos/SaleDoneDialog.vue';
 import ShiftOpenPanel from '@/components/pos/ShiftOpenPanel.vue';
 import StockRequestDialog from '@/components/pos/StockRequestDialog.vue';
@@ -127,6 +129,8 @@ const paymentOpen = ref(false);
 const discountOpen = ref(false);
 const closeShiftOpen = ref(false);
 const recentSalesOpen = ref(false);
+/** Patients this shift (Alt+P, pharmacy, with an open shift; branch 16). */
+const shiftPatientsOpen = ref(false);
 const completed = ref<CompletedSale | null>(null);
 const submitting = ref(false);
 const checkoutError = ref<string | null>(null);
@@ -232,6 +236,7 @@ const dialogOpen = computed(
         discountOpen.value ||
         closeShiftOpen.value ||
         recentSalesOpen.value ||
+        shiftPatientsOpen.value ||
         rxOpen.value ||
         requestItem.value !== null ||
         completed.value !== null,
@@ -607,6 +612,19 @@ function onKeydown(event: KeyboardEvent): void {
         if (!dialogOpen.value) {
             search.value?.cycleScope();
         }
+    } else if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.code === 'KeyP' &&
+        pharmacyOn.value &&
+        props.shift
+    ) {
+        // Patients this shift: the till's open shift only.
+        event.preventDefault();
+        if (!dialogOpen.value) {
+            shiftPatientsOpen.value = true;
+        }
     } else if (event.key === 'F4') {
         event.preventDefault();
         if (
@@ -805,6 +823,17 @@ onBeforeUnmount(() => {
                 >
                     <History class="size-4" /> Recent sales
                     <kbd class="text-xs text-muted-foreground">F6</kbd>
+                </Button>
+                <Button
+                    v-if="till && shift && pharmacyOn"
+                    variant="outline"
+                    class="h-11"
+                    data-test="shift-patients-button"
+                    title="Patients this shift (Alt+P)"
+                    @click="shiftPatientsOpen = true"
+                >
+                    <Users class="size-4" /> Patients
+                    <kbd class="text-xs text-muted-foreground">Alt+P</kbd>
                 </Button>
                 <Button
                     v-if="till && shift"
@@ -1048,6 +1077,12 @@ onBeforeUnmount(() => {
             v-model:open="recentSalesOpen"
             :till="till"
             :shop="shop"
+        />
+        <ShiftPatientsDialog
+            v-if="till && shift && pharmacyOn"
+            v-model:open="shiftPatientsOpen"
+            :till="till"
+            :shift="shift"
         />
         <CloseShiftDialog
             v-if="till"

@@ -49,6 +49,15 @@ class PatientRetailTest extends PosTestCase
         $this->assertFalse(ShiftPatients::canAccess());
     }
 
+    public function test_the_tills_patients_this_shift_is_not_there(): void
+    {
+        app(ShiftService::class)->open($this->till, $this->cashier, 0);
+
+        $this->actingAs($this->cashier)
+            ->getJson(route('pos.shift.patients', ['device' => $this->till->uuid]))
+            ->assertNotFound();
+    }
+
     public function test_the_patient_settings_default_to_ask_and_nothing_printed(): void
     {
         $this->assertSame('ask', $this->shop->setting('patient_on_sale'));

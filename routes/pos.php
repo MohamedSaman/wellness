@@ -32,6 +32,8 @@ Route::middleware(['auth', 'can:pos.checkout'])->prefix('pos')->name('pos.')->gr
     Route::get('shift/expected', [ShiftController::class, 'expected'])->name('shift.expected');
     Route::post('shift/close', [ShiftController::class, 'close'])->name('shift.close');
     Route::get('shifts/{shift}/summary', [ShiftController::class, 'summary'])->name('shift.summary');
+    // Patients this shift (docs/PHARMACY.md, branch 16): the till's own open shift only.
+    Route::get('shift/patients', [ShiftController::class, 'patients'])->middleware('module:pharmacy')->name('shift.patients');
 
     Route::get('search', ItemSearchController::class)->middleware('throttle:pos-search')->name('search');
     // Patients on clinic sales (docs/PHARMACY.md, branch 13).
