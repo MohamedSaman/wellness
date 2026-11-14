@@ -224,6 +224,7 @@ abstract class ReportPage extends Page implements HasTable
             ->columns(array_map(fn (ReportColumn $column): TextColumn => $this->tableColumn($column), $this->visibleColumns()))
             ->contentFooter(fn (): ?View => $this->tableFooter())
             ->paginated(static::$isPaginated ? [25, 50, 100] : false)
+            ->recordActions($this->recordActions())
             ->emptyStateHeading('Nothing in this period')
             ->headerActions([
                 Action::make('export')
@@ -233,6 +234,18 @@ abstract class ReportPage extends Page implements HasTable
                     ->action(fn (): StreamedResponse => $this->exportCsv()),
                 ...$this->exportActions(),
             ]);
+    }
+
+    /**
+     * Actions on each row of the on-screen table (none by default). Rows are
+     * arrays, so a report with actions gives each row a stable key
+     * (ArrayRecord::getKeyName()), not its position.
+     *
+     * @return list<Action>
+     */
+    protected function recordActions(): array
+    {
+        return [];
     }
 
     private function tableColumn(ReportColumn $column): TextColumn
