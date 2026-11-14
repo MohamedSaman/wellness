@@ -44,6 +44,40 @@ class PatientService
         return $name === '' ? null : mb_substr($name, 0, 255);
     }
 
+    /**
+     * A patient's name as it is saved (decided 2026-11-14, branch 16): each
+     * word, and each part of one between hyphens and apostrophes, typed all
+     * in lower case or all in capitals becomes Title Case, with a capital
+     * after a full stop too ("anne-marie o'brien" → "Anne-Marie O'Brien",
+     * "a.b. perera" → "A.B. Perera"); one typed in mixed case is kept as
+     * typed ("McDonald", "DeSilva").
+     * Spaces as cleanName(). Search does not depend on it: it ignores case.
+     */
+    public static function formatName(?string $name): ?string
+    {
+        $name = self::cleanName($name);
+
+        if ($name === null) {
+            return null;
+        }
+
+        // Each part of a word between hyphens and apostrophes on its own: "FERNANDO-mcdonald" → "Fernando-Mcdonald".
+        $part = function (string $part): string {
+            $lower = mb_strtolower($part);
+
+            if ($part !== $lower && $part !== mb_strtoupper($part)) {
+                return $part;
+            }
+
+            return (string) preg_replace_callback('/(^|\.)(\p{L})/u', fn (array $match): string => $match[1].mb_strtoupper($match[2]), $lower);
+        };
+
+        return implode(' ', array_map(
+            fn (string $word): string => implode('', array_map($part, preg_split("/([-'’])/u", $word, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$word])),
+            explode(' ', $name),
+        ));
+    }
+
     public function find(string $uuid): ?Patient
     {
         return Patient::query()->where('uuid', strtolower($uuid))->first();
@@ -74,7 +108,8 @@ class PatientService
 
             $patient = $this->create([
                 'uuid' => strtolower($input->uuid),
-                'name' => $typedName,
+                // The record in Title Case; an offline sale keeps the name as its receipt printed it.
+                'name' => self::formatName($typedName),
                 'birth_date' => $input->ageMonths === null ? null : PatientAge::birthDate($input->ageMonths, $day)->toDateString(),
                 'birth_date_estimated' => $input->ageMonths !== null,
                 'created_by' => $cashier->getKey(),
@@ -175,7 +210,7 @@ class PatientService
             throw new PosException('You do not have permission to change patients.');
         }
 
-        $name = self::cleanName($data['name']) ?? throw new PosException("Enter the patient's name.");
+        $name = self::formatName($data['name']) ?? throw new PosException("Enter the patient's name.");
 
         $attributes = ['name' => $name, 'notes' => filled($data['notes'] ?? null) ? trim((string) $data['notes']) : null];
 
@@ -197,6 +232,25 @@ class PatientService
 
             return $patient;
         });
+    }
+
+    /**
+     * Puts a saved name in Title Case (pos:patients-title-case), audited as
+     * any change of a patient. Bills keep the name they recorded.
+     *
+     * @return string|null the new name, or null when it was already right
+     */
+    public function retitle(Patient $patient): ?string
+    {
+        $name = self::formatName($patient->name);
+
+        if ($name === null || $name === $patient->name) {
+            return null;
+        }
+
+        $patient->forceFill(['name' => $name])->save();
+
+        return $name;
     }
 
     /**
