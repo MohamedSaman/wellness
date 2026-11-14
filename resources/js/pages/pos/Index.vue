@@ -11,6 +11,7 @@ import {
     Receipt,
     UserRound,
     Repeat,
+    ScrollText,
     Users,
     Wallet,
 } from '@lucide/vue';
@@ -36,6 +37,7 @@ import ReceiptView from '@/components/pos/ReceiptView.vue';
 import ThermalReceipt from '@/components/pos/ThermalReceipt.vue';
 import RecentSalesDialog from '@/components/pos/RecentSalesDialog.vue';
 import ShiftPatientsDialog from '@/components/pos/ShiftPatientsDialog.vue';
+import ShiftSummariesDialog from '@/components/pos/ShiftSummariesDialog.vue';
 import SaleDoneDialog from '@/components/pos/SaleDoneDialog.vue';
 import ShiftOpenPanel from '@/components/pos/ShiftOpenPanel.vue';
 import StockRequestDialog from '@/components/pos/StockRequestDialog.vue';
@@ -131,6 +133,8 @@ const closeShiftOpen = ref(false);
 const recentSalesOpen = ref(false);
 /** Patients this shift (Alt+P, pharmacy, with an open shift; branch 16). */
 const shiftPatientsOpen = ref(false);
+/** Reprint shift summary (pharmacy; branch 17): this till's shifts closed in the last 7 days. */
+const shiftSummariesOpen = ref(false);
 const completed = ref<CompletedSale | null>(null);
 const submitting = ref(false);
 const checkoutError = ref<string | null>(null);
@@ -237,6 +241,7 @@ const dialogOpen = computed(
         closeShiftOpen.value ||
         recentSalesOpen.value ||
         shiftPatientsOpen.value ||
+        shiftSummariesOpen.value ||
         rxOpen.value ||
         requestItem.value !== null ||
         completed.value !== null,
@@ -855,6 +860,16 @@ onBeforeUnmount(() => {
                     <Wallet class="size-4" /> Close shift
                 </Button>
                 <Button
+                    v-if="till && pharmacyOn"
+                    variant="outline"
+                    class="h-11"
+                    data-test="shift-summaries-button"
+                    title="Reprint the summary of a shift closed on this till"
+                    @click="shiftSummariesOpen = true"
+                >
+                    <ScrollText class="size-4" /> Shift summary
+                </Button>
+                <Button
                     v-if="till"
                     variant="ghost"
                     class="h-11"
@@ -1075,6 +1090,17 @@ onBeforeUnmount(() => {
         <RecentSalesDialog
             v-if="till"
             v-model:open="recentSalesOpen"
+            :till="till"
+            :shop="shop"
+            :shift-summaries="pharmacyOn"
+            @shift-summaries="
+                recentSalesOpen = false;
+                shiftSummariesOpen = true;
+            "
+        />
+        <ShiftSummariesDialog
+            v-if="till && pharmacyOn"
+            v-model:open="shiftSummariesOpen"
             :till="till"
             :shop="shop"
         />

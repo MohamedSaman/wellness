@@ -427,6 +427,14 @@ export type RecentSale = {
     status: string;
 };
 
+/** Shift summaries (branch 17): a shift closed on this till in the last 7 days, to reprint its summary. */
+export type ClosedShift = {
+    uuid: string;
+    closed_at: string;
+    cashier: string;
+    net: number;
+};
+
 /** Patients this shift (branch 16): a bill with a patient in the till's open shift. */
 export type ShiftPatientBill = {
     uuid: string;

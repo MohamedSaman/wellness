@@ -1,4 +1,5 @@
 import ReprintController from '@/actions/App/Http/Controllers/Pos/ReprintController';
+import ShiftReprintController from '@/actions/App/Http/Controllers/Pos/ShiftReprintController';
 import { postJson } from '@/lib/http';
 
 /**
@@ -28,6 +29,37 @@ export async function reprintSale(
         }
     } catch (caught) {
         receiptWindow?.close();
+
+        throw caught;
+    }
+}
+
+/**
+ * Reprint a closed shift's summary from the till (Shift summaries, branch
+ * 17): logged by the server first, then its receipt page opens, prints
+ * itself marked REPRINT and closes. As reprintSale(): call it straight
+ * from the click, and online only.
+ */
+export async function reprintShiftSummary(
+    shiftUuid: string,
+    tillUuid: string,
+): Promise<void> {
+    const summaryWindow = window.open('', '_blank', 'width=420,height=720');
+
+    try {
+        const response = await postJson<{ summary_url: string }>(
+            ShiftReprintController.store.url({ shift: shiftUuid }),
+            { device: tillUuid, format: 'thermal' },
+        );
+        const url = `${response.summary_url}?print=1`;
+
+        if (summaryWindow) {
+            summaryWindow.location.href = url;
+        } else {
+            window.open(url, '_blank', 'width=420,height=720');
+        }
+    } catch (caught) {
+        summaryWindow?.close();
 
         throw caught;
     }
