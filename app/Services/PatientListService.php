@@ -4,12 +4,18 @@ namespace App\Services;
 
 use App\Enums\BillType;
 use App\Enums\SaleStatus;
+use App\Exceptions\PosException;
 use App\Models\Device;
+use App\Models\Location;
 use App\Models\Patient;
 use App\Models\Sale;
 use App\Models\Shift;
+use App\Models\User;
+use App\Observers\AuditObserver;
 use App\Services\Data\PatientFilters;
 use App\Support\CurrentShop;
+use App\Support\PatientAge;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -98,6 +104,80 @@ class PatientListService
         }
 
         return $bills;
+    }
+
+    /** The audit log's event for an export of the list. */
+    public const EXPORTED_EVENT = 'patients_exported';
+
+    /** A PDF of more patients than this is refused (Excel takes any number). */
+    public const PDF_MAX_ROWS = 2_000;
+
+    /**
+     * The filters in words, for an export's heading and its audit entry.
+     *
+     * @return array<string, string> label => value, only the filters set
+     */
+    public function describe(PatientFilters $filters, ?string $search = null): array
+    {
+        $shift = is_int($filters->shift) ? Shift::query()->with(['device', 'user'])->find($filters->shift) : null;
+
+        return array_filter([
+            'Visited' => $filters->period?->label(),
+            'Location' => $filters->locationId === null ? null : (string) Location::query()->whereKey($filters->locationId)->value('name'),
+            'Bill type' => $filters->billType === null ? null : PatientFilters::BILL_TYPES[$filters->billType],
+            'Visits at least' => $filters->minVisits === null ? null : (string) $filters->minVisits,
+            'Shift' => match (true) {
+                $filters->shift === PatientFilters::OPEN_SHIFTS => 'Open shifts now',
+                $shift !== null => $this->shiftLabel($shift),
+                default => null,
+            },
+            'Search' => filled($search) ? trim((string) $search) : null,
+        ], fn (?string $value): bool => $value !== null && $value !== '');
+    }
+
+    /**
+     * The rows of an export of the list as filtered (the table's own query:
+     * filters, search and sort), for a user with patients.export only.
+     *
+     * @param  Builder<Patient>  $query  query() as the table filtered and sorted it
+     * @return list<array{name: string, age: string|null, visits: int, bills: int, first_visit: string|null, last_visit: string|null, last_location: string|null}>
+     */
+    public function exportRows(Builder $query, User $user): array
+    {
+        if (! $user->can('patients.export') || ! $user->can('dispensing_register.view')) {
+            throw new PosException('You do not have permission to export patients.');
+        }
+
+        $timezone = $this->currentShop->getOrFail()->timezone ?: config('app.timezone');
+        $local = fn (mixed $utc, string $format): ?string => $utc === null ? null : CarbonImmutable::parse((string) $utc, 'UTC')->setTimezone($timezone)->format($format);
+        $rows = [];
+
+        foreach ($query->lazy(500) as $patient) {
+            /** @var Patient $patient */
+            $rows[] = [
+                'name' => $patient->name,
+                'age' => PatientAge::format($patient->ageMonths()),
+                'visits' => (int) $patient->getAttribute('visits'),
+                'bills' => (int) $patient->getAttribute('sales_count'),
+                'first_visit' => $local($patient->getAttribute('first_visit_at'), 'd/m/Y'),
+                'last_visit' => $local($patient->getAttribute('last_visit_at'), 'd/m/Y H:i'),
+                'last_location' => $patient->getAttribute('last_location') === null ? null : (string) $patient->getAttribute('last_location'),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** Writes an export to the audit log, with its filters, format and number of rows, on the shop. */
+    public function recordExport(User $user, PatientFilters $filters, ?string $search, string $format, int $rows): void
+    {
+        app(AuditObserver::class)->record(self::EXPORTED_EVENT, $this->currentShop->getOrFail(), [], [
+            'format' => $format,
+            'rows' => $rows,
+            'filters' => $this->describe($filters, $search),
+            'from' => $filters->period?->fromDate(),
+            'to' => $filters->period?->toDate(),
+        ], (int) $user->getKey());
     }
 
     /** The shop's bills that count as visits: every bill but a voided one. */
