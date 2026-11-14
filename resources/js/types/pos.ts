@@ -427,6 +427,19 @@ export type RecentSale = {
     status: string;
 };
 
+/** Patients this shift (branch 16): a bill with a patient in the till's open shift. */
+export type ShiftPatientBill = {
+    uuid: string;
+    invoice_no: string;
+    /** Shop time, "2026-10-18 00:10". */
+    sold_at: string;
+    patient: string;
+    /** At the visit: "34 y", "8 m"; null when not known. */
+    age: string | null;
+    bill_type: 'standard' | 'opd';
+    status: string;
+};
+
 /** StockRequestController: an item that can be asked for, with what each side holds (base units). */
 export type StockRequestItemOption = {
     id: number;

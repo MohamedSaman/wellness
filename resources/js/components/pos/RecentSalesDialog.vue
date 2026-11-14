@@ -2,7 +2,6 @@
 import { Printer, Search } from '@lucide/vue';
 import { ref, watch } from 'vue';
 import RecentSalesController from '@/actions/App/Http/Controllers/Pos/RecentSalesController';
-import ReprintController from '@/actions/App/Http/Controllers/Pos/ReprintController';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -12,8 +11,9 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { ApiError, getJson, postJson, queryString } from '@/lib/http';
+import { ApiError, getJson, queryString } from '@/lib/http';
 import { formatMoney } from '@/lib/money';
+import { reprintSale } from '@/lib/receipt/reprint';
 import type { PosShop, PosTill, RecentSale } from '@/types/pos';
 
 /** F6: this till's sales from the open shift and today, each with Reprint. */
@@ -70,11 +70,6 @@ watch(query, () => {
     timer = setTimeout(() => void load(), 250);
 });
 
-/**
- * The reprint is logged first; the server then hands back the duplicate
- * receipt page, which prints itself. The window is opened straight away, in
- * the click, so the browser does not block it as a pop-up.
- */
 async function reprint(sale: RecentSale): Promise<void> {
     if (reprinting.value !== null) {
         return;
@@ -82,22 +77,10 @@ async function reprint(sale: RecentSale): Promise<void> {
 
     reprinting.value = sale.uuid;
     error.value = null;
-    const receiptWindow = window.open('', '_blank', 'width=420,height=720');
 
     try {
-        const response = await postJson<{ receipt_url: string }>(
-            ReprintController.store.url({ sale: sale.uuid }),
-            { device: props.till.uuid },
-        );
-        const url = `${response.receipt_url}?print=1`;
-
-        if (receiptWindow) {
-            receiptWindow.location.href = url;
-        } else {
-            window.open(url, '_blank', 'width=420,height=720');
-        }
+        await reprintSale(sale.uuid, props.till.uuid);
     } catch (caught) {
-        receiptWindow?.close();
         error.value =
             caught instanceof ApiError
                 ? caught.message

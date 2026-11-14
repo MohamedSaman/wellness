@@ -7,13 +7,16 @@ use App\Exceptions\PosException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\OpenShiftRequest;
 use App\Http\Requests\Pos\ShiftCountRequest;
+use App\Http\Requests\Pos\ShiftPatientsRequest;
 use App\Models\Device;
 use App\Models\Sale;
 use App\Models\Shift;
 use App\Models\User;
+use App\Services\PatientListService;
 use App\Services\ReceiptService;
 use App\Services\ShiftService;
 use App\Support\CurrentShop;
+use App\Support\PatientAge;
 use App\Support\ShiftPresenter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -128,6 +131,41 @@ class ShiftController extends Controller
     private function mayReadSummary(?User $user, Shift $shift): bool
     {
         return $user !== null && ((int) $shift->user_id === (int) $user->getKey() || $user->can('shifts.manage'));
+    }
+
+    /**
+     * Patients this shift (docs/PHARMACY.md, branch 16): the bills with a
+     * patient rung up in the till's open shift, oldest first, with the time
+     * in shop time, the patient, their age at the visit and the invoice (to
+     * reprint). Only the open shift of the till asked about, at a location
+     * the user may use (PosRequest): no shift id is taken, so no other
+     * shift or till can be read. Read only. No open shift: no bills.
+     */
+    public function patients(ShiftPatientsRequest $request, PatientListService $patients, CurrentShop $currentShop): JsonResponse
+    {
+        $request->validated();
+
+        $shift = $patients->openShift($request->device() ?? abort(422));
+
+        if ($shift === null) {
+            return response()->json(['shift' => null, 'bills' => [], 'without_patient' => 0]);
+        }
+
+        $timezone = (string) ($currentShop->getOrFail()->timezone ?: config('app.timezone'));
+
+        return response()->json([
+            'shift' => ['uuid' => $shift->uuid, 'opened_at' => $shift->opened_at->setTimezone($timezone)->format('Y-m-d H:i')],
+            'bills' => $patients->shiftBills($shift)->map(fn (Sale $sale): array => [
+                'uuid' => $sale->uuid,
+                'invoice_no' => $sale->invoice_no,
+                'sold_at' => $sale->sold_at->setTimezone($timezone)->format('Y-m-d H:i'),
+                'patient' => (string) ($sale->patient->name ?? $sale->customer_name),
+                'age' => PatientAge::format($sale->patient_age_months),
+                'bill_type' => $sale->bill_type->value,
+                'status' => $sale->status->value,
+            ])->values(),
+            'without_patient' => $patients->shiftBillsWithoutPatient($shift),
+        ]);
     }
 
     public function close(ShiftCountRequest $request, ShiftService $shifts): JsonResponse

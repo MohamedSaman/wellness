@@ -2,9 +2,14 @@
 
 namespace Tests\Feature\Pos;
 
+use App\Filament\Pages\Reports\ShiftHistoryReport;
+use App\Filament\Pages\ShiftPatients;
 use App\Models\Patient;
 use App\Models\Sale;
+use App\Services\ShiftService;
+use Filament\Facades\Filament;
 use Illuminate\Support\Str;
+use Livewire\Livewire;
 
 /**
  * Patients are a pharmacy feature (docs/PHARMACY.md, branch 13): a retail
@@ -29,6 +34,28 @@ class PatientRetailTest extends PosTestCase
         $this->assertNull($sale->patient_age_months);
         $this->assertSame('Walk-in', $sale->customer_name);
         $this->assertSame(0, Patient::query()->count());
+    }
+
+    public function test_shift_history_has_no_patients_column_and_no_shift_patients_page(): void
+    {
+        Filament::setCurrentPanel('admin');
+        $this->actingAs($this->owner);
+        app(ShiftService::class)->open($this->till, $this->cashier, 0);
+
+        $document = Livewire::test(ShiftHistoryReport::class)->instance()->document();
+
+        $this->assertNotContains('Patients', array_map(fn ($column) => $column->label, $document->tables[0]->columns));
+        $this->assertArrayNotHasKey('patients', $document->tables[0]->rows[0]);
+        $this->assertFalse(ShiftPatients::canAccess());
+    }
+
+    public function test_the_tills_patients_this_shift_is_not_there(): void
+    {
+        app(ShiftService::class)->open($this->till, $this->cashier, 0);
+
+        $this->actingAs($this->cashier)
+            ->getJson(route('pos.shift.patients', ['device' => $this->till->uuid]))
+            ->assertNotFound();
     }
 
     public function test_the_patient_settings_default_to_ask_and_nothing_printed(): void

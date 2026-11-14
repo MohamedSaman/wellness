@@ -249,6 +249,23 @@ for (const viewport of viewports) {
                 await expect(recent).toBeHidden();
             });
 
+            await test.step('Patients this shift dialog', async () => {
+                // Alt+P (branch 16): the bill just made, with its patient and Reprint.
+                await page.keyboard.press('Alt+KeyP');
+                const patients = page.locator('[data-test=shift-patients]');
+                const row = patients
+                    .locator('[data-test=shift-patient]')
+                    .filter({ hasText: 'Nimal Perera' })
+                    .first();
+                await expect(row).toBeVisible();
+                await expect(
+                    row.locator('[data-test=shift-patient-reprint]'),
+                ).toBeEnabled();
+                await expectInside(patients, 'Patients this shift dialog');
+                await page.keyboard.press('Escape');
+                await expect(patients).toBeHidden();
+            });
+
             await test.step('Close shift dialog and its summary', async () => {
                 await page.locator('[data-test=close-shift-button]').click();
                 const close = dialog(page, /Close shift|Shift closed/);
