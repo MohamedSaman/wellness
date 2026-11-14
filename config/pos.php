@@ -460,6 +460,8 @@ return [
         // role should get dispensing_register.view when they are defined.
         'dispensing_register.view' => 'See the dispensing register and each patient\'s history (pharmacy)',
         'patients.manage' => 'Edit a patient\'s name, age or date of birth and notes (pharmacy)',
+        // Branch 16: owner only (through '*'); every export is written to the audit log.
+        'patients.export' => 'Export the filtered patients list to Excel or PDF (pharmacy)',
     ],
 
     /*
