@@ -445,8 +445,13 @@ class ReceiptService
         ];
     }
 
-    /** @return array{printedAt: string|null, printedBy: string}|null */
-    private function reprintStamp(?AuditLog $reprint): ?array
+    /**
+     * What a reprint prints at its foot: when (shop time) and by whom. Sale
+     * receipts, refund and void slips, and shift summaries share it.
+     *
+     * @return array{printedAt: string|null, printedBy: string}|null
+     */
+    public function reprintStamp(?AuditLog $reprint): ?array
     {
         return $reprint === null ? null : [
             'printedAt' => $reprint->created_at?->timezone($this->currentShop->getOrFail()->timezone)->format('Y-m-d H:i'),

@@ -60,6 +60,10 @@
         @yield('content')
     </div>
     @if ($autoPrint)
+        @if ($closeAfterPrint ?? false)
+            {{-- A reprint the till or the admin panel opened closes once printed. --}}
+            <script>if (window.opener !== null) { window.addEventListener('afterprint', () => window.close(), { once: true }); }</script>
+        @endif
         <script>window.addEventListener('load', () => window.print());</script>
     @endif
 </body>

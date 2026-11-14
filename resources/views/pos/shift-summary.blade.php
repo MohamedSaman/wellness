@@ -7,6 +7,13 @@
 @section('number', $shift->device?->code.' · '.$openedAt)
 
 @section('content')
+    @if ($reprint ?? null)
+        {{-- A logged reprint (branch 17), marked as the receipt printer's reprints are. --}}
+        <div class="banner" style="text-align: center" data-test="shift-reprint">
+            *** REPRINT ***<br>
+            <span style="font-weight: 400">Reprinted {{ $reprint['printedAt'] }} by {{ $reprint['printedBy'] }}</span>
+        </div>
+    @endif
     <div class="meta">
         <dl>
             <dt>Till</dt><dd>{{ $shift->device?->code }} {{ $shift->device?->name }}</dd>

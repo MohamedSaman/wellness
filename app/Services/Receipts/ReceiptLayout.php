@@ -233,7 +233,9 @@ final class ReceiptLayout
      * A shift's summary on the receipt printer: every figure of the A4
      * summary (ShiftService::summary(), as calculated there), plus the
      * shift's invoice range and the discounts given on its bills. The
-     * difference says SHORT or OVER, and there are lines to sign.
+     * difference says SHORT or OVER, and there are lines to sign. A reprint
+     * (branch 17) is marked as a sale's is: REPRINT at the top, when and by
+     * whom at the bottom. The first print, when the shift closes, is not.
      *
      * @param  array<string, mixed>  $shift  ShiftController::summary()'s thermal payload
      * @return list<array{text: string, bold: bool, tall: bool}>
@@ -250,6 +252,12 @@ final class ReceiptLayout
         /** @var array{first: string, last: string}|null $invoices */
         $invoices = $shift['invoices'] ?? null;
         $optional = fn (?int $minor): string => $minor === null ? '-' : $this->money($minor);
+        /** @var array{printedAt: string|null, printedBy: string}|null $reprint */
+        $reprint = $shift['reprint'] ?? null;
+
+        if ($reprint !== null) {
+            $this->center('*** REPRINT ***', bold: true, tall: true);
+        }
 
         $this->header();
         $this->center('SHIFT SUMMARY', bold: true, tall: true);
@@ -315,6 +323,8 @@ final class ReceiptLayout
             $this->push('');
             $this->push(str_pad($signature.' ', $this->width, '_'));
         }
+
+        $this->reprinted($reprint);
 
         return $this->lines;
     }

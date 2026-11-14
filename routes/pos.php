@@ -9,6 +9,7 @@ use App\Http\Controllers\Pos\ReceiptController;
 use App\Http\Controllers\Pos\RecentSalesController;
 use App\Http\Controllers\Pos\ReprintController;
 use App\Http\Controllers\Pos\ShiftController;
+use App\Http\Controllers\Pos\ShiftReprintController;
 use App\Http\Controllers\Pos\StockRequestController;
 use App\Http\Controllers\Pos\TillController;
 use App\Http\Controllers\Pos\VehicleController;
@@ -32,6 +33,11 @@ Route::middleware(['auth', 'can:pos.checkout'])->prefix('pos')->name('pos.')->gr
     Route::get('shift/expected', [ShiftController::class, 'expected'])->name('shift.expected');
     Route::post('shift/close', [ShiftController::class, 'close'])->name('shift.close');
     Route::get('shifts/{shift}/summary', [ShiftController::class, 'summary'])->name('shift.summary');
+    // Reprinting a closed shift's summary (pharmacy, docs/PHARMACY.md branch 17): this till's last 7 days.
+    Route::middleware('module:pharmacy')->group(function () {
+        Route::get('shifts/closed', [ShiftReprintController::class, 'index'])->name('shift.closed');
+        Route::post('shifts/{shift}/reprint', [ShiftReprintController::class, 'store'])->name('shift.reprint');
+    });
     // Patients this shift (docs/PHARMACY.md, branch 16): the till's own open shift only.
     Route::get('shift/patients', [ShiftController::class, 'patients'])->middleware('module:pharmacy')->name('shift.patients');
 
@@ -62,11 +68,14 @@ Route::middleware(['auth', 'can:pos.checkout'])->prefix('pos')->name('pos.')->gr
 | The duplicate receipt of a logged reprint. Reprints are made from the
 | checkout screen (pos.checkout) or the admin panel (sales.view_all), so this
 | page only needs a signed-in user: it opens just for whoever reprinted it.
+| A shift summary's reprint likewise (and while they may read the shift).
 | Refund and void slips are printed from the admin panel's sale page; the
 | sale's policy decides who may open them (docs/PHARMACY.md §9, branch 9).
 */
 Route::middleware('auth')->prefix('pos')->name('pos.')->group(function () {
     Route::get('receipts/{sale}/reprints/{reprint}', [ReprintController::class, 'show'])->whereNumber('reprint')->name('receipt.reprinted');
+    // A logged shift summary reprint, from the till or the admin's Shift history (pharmacy).
+    Route::get('shifts/{shift}/reprints/{reprint}', [ShiftReprintController::class, 'show'])->whereNumber('reprint')->middleware('module:pharmacy')->name('shift.reprinted');
     Route::get('receipts/{sale}/refunds/{saleReturn}', [ReceiptController::class, 'refund'])->name('receipt.refund');
     Route::get('receipts/{sale}/void', [ReceiptController::class, 'void'])->name('receipt.void');
 });

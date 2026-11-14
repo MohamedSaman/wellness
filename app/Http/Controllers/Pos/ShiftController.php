@@ -2,19 +2,20 @@
 
 namespace App\Http\Controllers\Pos;
 
-use App\Enums\SaleStatus;
 use App\Exceptions\PosException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Pos\OpenShiftRequest;
 use App\Http\Requests\Pos\ShiftCountRequest;
 use App\Http\Requests\Pos\ShiftPatientsRequest;
+use App\Models\AuditLog;
 use App\Models\Device;
 use App\Models\Sale;
 use App\Models\Shift;
-use App\Models\User;
 use App\Services\PatientListService;
+use App\Services\Receipts\ReceiptLayout;
 use App\Services\ReceiptService;
 use App\Services\ShiftService;
+use App\Services\ShiftSummaryService;
 use App\Support\CurrentShop;
 use App\Support\PatientAge;
 use App\Support\ShiftPresenter;
@@ -52,85 +53,63 @@ class ShiftController extends Controller
             'expected_cash' => $expected,
             'counted_cash' => $counted,
             'difference' => $counted === null ? null : $counted - $expected,
-            'summary' => $this->mayReadSummary($request->user(), $shift) ? $shifts->summary($shift) : null,
+            'summary' => ShiftSummaryService::mayRead($request->user(), $shift) ? $shifts->summary($shift) : null,
         ]);
     }
 
     /**
      * The printable summary of a shift: its takings, payments and cash, for
      * the cashier whose shift it is (or a user with shifts.manage). Another
-     * shop's shift is not found (tenant-scoped binding).
-     *
-     * A shop that prints thermal receipts (pharmacy) gets it laid out for the
-     * receipt printer, on the receipt page (ReceiptLayout::shiftSummary()):
-     * it prints like a receipt. `?format=a4`, and every other shop, get the
-     * A4 page.
+     * shop's shift is not found (tenant-scoped binding). This is the first
+     * print, from the Close shift dialog: never marked. Reprints are logged
+     * and marked (ShiftReprintController).
      */
-    public function summary(Request $request, Shift $shift, ShiftService $shifts, CurrentShop $currentShop, ReceiptService $receipts): View|Response
+    public function summary(Request $request, Shift $shift): View|Response
     {
-        abort_unless($this->mayReadSummary($request->user(), $shift), 403);
+        abort_unless(ShiftSummaryService::mayRead($request->user(), $shift), 403);
 
+        return self::summaryPage($shift, $request->query('format') === 'a4' ? 'a4' : 'thermal', $request->boolean('print'));
+    }
+
+    /**
+     * The summary page. A shop that prints thermal receipts (pharmacy) gets
+     * it laid out for the receipt printer, on the receipt page
+     * (ReceiptLayout::shiftSummary()): it prints like a receipt. The 'a4'
+     * format, and every other shop, get the A4 page. A reprint is marked
+     * REPRINT, with when and by whom.
+     */
+    public static function summaryPage(Shift $shift, string $format, bool $autoPrint, ?AuditLog $reprint = null): View|Response
+    {
+        $summaries = app(ShiftSummaryService::class);
+        $receipts = app(ReceiptService::class);
         $shift->load(['device.location', 'user']);
-        $shop = $currentShop->getOrFail();
-        $timezone = (string) ($shop->timezone ?: config('app.timezone'));
+        $timezone = $summaries->timezone();
 
-        if ($receipts->usesThermalReceipt() && $request->query('format') !== 'a4') {
+        if ($receipts->usesThermalReceipt() && $format !== 'a4') {
             return Inertia::render('pos/Receipt', [
-                'title' => 'Shift summary '.$shift->device?->code.' '.$shift->opened_at->setTimezone($timezone)->format('d/m/Y'),
+                'title' => ($reprint === null ? 'Shift summary ' : 'Shift summary reprint ').$shift->device?->code.' '.$shift->opened_at->setTimezone($timezone)->format('d/m/Y'),
                 'shop' => $receipts->shop(),
                 'sale' => null,
-                'thermal' => $receipts->thermal('shift', $this->thermalSummary($shift, $shifts->summary($shift), $timezone)),
+                'thermal' => $receipts->thermal('shift', $summaries->thermalPayload($shift, $reprint)),
                 'invoiceUrl' => null,
             ]);
         }
 
+        $stamp = $receipts->reprintStamp($reprint);
+
         return view('pos.shift-summary', [
-            'shop' => $shop,
+            'shop' => $receipts->currentShop(),
             'shift' => $shift,
-            'summary' => $shifts->summary($shift),
+            'summary' => app(ShiftService::class)->summary($shift),
             'openedAt' => $shift->opened_at->setTimezone($timezone)->format('d/m/Y H:i'),
             'closedAt' => $shift->closed_at?->setTimezone($timezone)->format('d/m/Y H:i'),
-            'autoPrint' => $request->boolean('print'),
-        ]);
-    }
-
-    /**
-     * The shift summary for the receipt printer: ShiftService::summary() as
-     * it is, the shift's details in shop time, and two figures the A4 page
-     * does not have, read from the shift's bills: the invoice range (first
-     * and last bill rung up, voided ones included: their numbers were used)
-     * and the discounts given on the bills that were not voided.
-     *
-     * @param  array<string, mixed>  $summary  ShiftService::summary()
-     * @return array<string, mixed>
-     */
-    private function thermalSummary(Shift $shift, array $summary, string $timezone): array
-    {
-        $bills = Sale::query()->where('shift_id', $shift->getKey());
-        $first = (clone $bills)->orderBy('sold_at')->orderBy('id')->value('invoice_no');
-        $last = (clone $bills)->orderByDesc('sold_at')->orderByDesc('id')->value('invoice_no');
-        $device = $shift->device;
-
-        return [
-            'till' => $device === null ? null : [
-                'code' => (string) $device->code,
-                'name' => $device->name,
-                'location' => $device->location?->name,
+            'autoPrint' => $autoPrint,
+            'closeAfterPrint' => $reprint !== null,
+            'reprint' => $stamp === null ? null : [
+                'printedAt' => ReceiptLayout::date((string) $stamp['printedAt']),
+                'printedBy' => $stamp['printedBy'],
             ],
-            'cashier' => (string) $shift->user?->name,
-            'openedAt' => $shift->opened_at->setTimezone($timezone)->format('Y-m-d H:i'),
-            'closedAt' => $shift->closed_at?->setTimezone($timezone)->format('Y-m-d H:i'),
-            'printedAt' => now($timezone)->format('Y-m-d H:i'),
-            'invoices' => $first === null ? null : ['first' => (string) $first, 'last' => (string) $last],
-            'discounts' => (int) (clone $bills)->where('status', '!=', SaleStatus::Voided->value)->sum('discount_total'),
-            'summary' => $summary,
-        ];
-    }
-
-    /** A cashier reads only their own shift; shifts.manage reads any. */
-    private function mayReadSummary(?User $user, Shift $shift): bool
-    {
-        return $user !== null && ((int) $shift->user_id === (int) $user->getKey() || $user->can('shifts.manage'));
+        ]);
     }
 
     /**
@@ -186,7 +165,7 @@ class ShiftController extends Controller
                 'counted_cash' => $shift->counted_cash,
                 'difference' => $shift->difference,
             ],
-            'summary' => $this->mayReadSummary($request->user(), $shift) ? $shifts->summary($shift) : null,
+            'summary' => ShiftSummaryService::mayRead($request->user(), $shift) ? $shifts->summary($shift) : null,
         ]);
     }
 
