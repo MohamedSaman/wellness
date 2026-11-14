@@ -3,6 +3,7 @@
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -30,8 +31,13 @@ return new class extends Migration
     {
         // On MySQL the new index took over from the foreign key's own index on patient_id
         // (it drops that one when another can serve the key): give the key one back first.
+        // SQLite needs none, and one left behind would stop the patients migration's
+        // rollback from dropping the column.
         Schema::table('sales', function (Blueprint $table) {
-            $table->index('patient_id');
+            if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+                $table->index('patient_id');
+            }
+
             $table->dropIndex(['patient_id', 'reported_at']);
         });
 
