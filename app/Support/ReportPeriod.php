@@ -32,8 +32,12 @@ final readonly class ReportPeriod
         public string $timezone,
     ) {}
 
-    /** From and to are inclusive dates (Y-m-d) in the shop's timezone. */
-    public static function between(Shop $shop, string $from, string $to): self
+    /**
+     * From and to are inclusive dates (Y-m-d) in the shop's timezone. Reports
+     * are kept to MAX_DAYS; a filter that only narrows a list (the patients'
+     * visits) may ask for any length ($clamp false).
+     */
+    public static function between(Shop $shop, string $from, string $to, bool $clamp = true): self
     {
         $timezone = self::timezone($shop);
         $start = CarbonImmutable::createFromFormat('!Y-m-d', $from, $timezone);
@@ -47,7 +51,7 @@ final readonly class ReportPeriod
             [$start, $last] = [$last, $start];
         }
 
-        if ($start->diffInDays($last) >= self::MAX_DAYS) {
+        if ($clamp && $start->diffInDays($last) >= self::MAX_DAYS) {
             $start = $last->subDays(self::MAX_DAYS - 1);
         }
 
