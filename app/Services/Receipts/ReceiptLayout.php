@@ -261,17 +261,7 @@ final class ReceiptLayout
 
         $this->header();
         $this->center('SHIFT SUMMARY', bold: true, tall: true);
-        /** @var array{code: string, name?: string|null, location?: string|null}|null $till */
-        $till = $shift['till'] ?? null;
-
-        if ($till !== null) {
-            $name = trim((string) ($till['name'] ?? ''));
-            $this->detail('Till', trim($till['code'].($name !== '' && $name !== $till['code'] ? ' '.$name : '')));
-
-            if (filled($till['location'] ?? null)) {
-                $this->detail('Location', (string) $till['location']);
-            }
-        }
+        $this->tillDetails($shift['till'] ?? null);
 
         $this->detail('Cashier', (string) $shift['cashier']);
         $this->detail('Opened', self::date((string) $shift['openedAt']));
@@ -318,15 +308,111 @@ final class ReceiptLayout
 
         $this->rule();
 
-        foreach (['Cashier', 'Checked by', 'Date'] as $signature) {
-            $this->push('');
-            $this->push('');
-            $this->push(str_pad($signature.' ', $this->width, '_'));
-        }
+        $this->signatures(['Cashier', 'Checked by', 'Date']);
 
         $this->reprinted($reprint);
 
         return $this->lines;
+    }
+
+    /**
+     * A cash movement's slip (docs/PHARMACY.md, branch 18): PAID OUT, PAID IN
+     * or DOCTOR PAYMENT, its number and time, the till, location and shift,
+     * who paid it (or took it in), what for, the amount and lines to sign
+     * (the doctor signs for a doctor payment). A voided movement says so; a
+     * reprint is marked as a sale's is. Server only: movements need a
+     * connection, so the till never lays a slip out itself.
+     *
+     * @param  array<string, mixed>  $slip  CashMovementService::slip()
+     * @return list<array{text: string, bold: bool, tall: bool}>
+     */
+    public function cashMovement(array $slip): array
+    {
+        $this->start([]);
+        /** @var array{printedAt: string|null, printedBy: string}|null $reprint */
+        $reprint = $slip['reprint'] ?? null;
+
+        if ($reprint !== null) {
+            $this->center('*** REPRINT ***', bold: true, tall: true);
+        }
+
+        $this->header();
+        $this->center((string) $slip['heading'], bold: true, tall: true);
+        $this->detail('No.', (string) $slip['number']);
+        $this->detail('Date', self::date((string) $slip['createdAt']));
+        $this->tillDetails($slip['till'] ?? null);
+        $this->detail('Shift', self::date((string) $slip['shiftOpenedAt']).' '.$slip['shiftCashier']);
+
+        if (filled($slip['doctor'] ?? null)) {
+            $this->detail('Doctor', (string) $slip['doctor']);
+        }
+
+        if (filled($slip['category'] ?? null)) {
+            $this->detail('For', (string) $slip['category']);
+        }
+
+        $this->detail($slip['type'] === 'paid_in' ? 'Taken in by' : 'Paid by', (string) $slip['user']);
+        $this->rule();
+        $this->grandTotal('AMOUNT '.$this->shop['currency'], $this->money((int) $slip['amount']));
+
+        if (filled($slip['note'] ?? null)) {
+            $this->rule();
+            $this->text('Note: '.$slip['note']);
+        }
+
+        /** @var array{voidedAt: string, voidedBy: string, reason: string}|null $void */
+        $void = $slip['void'] ?? null;
+
+        if ($void !== null) {
+            $this->rule();
+            $this->center('*** VOIDED ***', bold: true, tall: true);
+            $this->detail('Voided', self::date($void['voidedAt']));
+            $this->detail('Voided by', $void['voidedBy']);
+            $this->text('Reason: '.$void['reason']);
+        }
+
+        $this->rule();
+        $this->signatures(match ($slip['type']) {
+            'doctor_payment' => ["Doctor's signature", 'Paid by'],
+            'paid_in' => ['Given by', 'Taken in by'],
+            default => ['Received by', 'Paid by'],
+        });
+        $this->reprinted($reprint);
+
+        return $this->lines;
+    }
+
+    /**
+     * The till's code and name, and its location.
+     *
+     * @param  array{code: string, name?: string|null, location?: string|null}|null  $till
+     */
+    private function tillDetails(?array $till): void
+    {
+        if ($till === null) {
+            return;
+        }
+
+        $name = trim((string) ($till['name'] ?? ''));
+        $this->detail('Till', trim($till['code'].($name !== '' && $name !== $till['code'] ? ' '.$name : '')));
+
+        if (filled($till['location'] ?? null)) {
+            $this->detail('Location', (string) $till['location']);
+        }
+    }
+
+    /**
+     * Lines to sign, each under two blank lines.
+     *
+     * @param  list<string>  $labels
+     */
+    private function signatures(array $labels): void
+    {
+        foreach ($labels as $signature) {
+            $this->push('');
+            $this->push('');
+            $this->push(str_pad(self::ascii($signature).' ', $this->width, '_'));
+        }
     }
 
     /**

@@ -299,6 +299,68 @@ class CashMovementService
         ];
     }
 
+    /**
+     * A movement's slip for ReceiptLayout::cashMovement(), in shop time; a
+     * reprint carries its REPRINT stamp.
+     *
+     * @return array<string, mixed>
+     */
+    public function slip(CashMovement $movement, ?AuditLog $reprint = null): array
+    {
+        $movement->loadMissing(['device', 'location', 'user', 'doctor', 'voider', 'shift.user']);
+        $timezone = $this->timezone();
+        $device = $movement->device;
+
+        return [
+            'number' => $movement->number,
+            'type' => $movement->type->value,
+            'heading' => $movement->type->heading(),
+            'createdAt' => $movement->created_at->setTimezone($timezone)->format('Y-m-d H:i'),
+            'till' => $device === null ? null : ['code' => (string) $device->code, 'name' => $device->name, 'location' => $movement->location?->name],
+            'shiftOpenedAt' => (string) $movement->shift?->opened_at->setTimezone($timezone)->format('Y-m-d H:i'),
+            'shiftCashier' => (string) $movement->shift?->user?->name,
+            'doctor' => $movement->doctor?->name,
+            'category' => $movement->category?->label(),
+            'user' => (string) $movement->user?->name,
+            'amount' => $movement->amount,
+            'note' => $movement->note,
+            'void' => $movement->voided_at === null ? null : [
+                'voidedAt' => $movement->voided_at->setTimezone($timezone)->format('Y-m-d H:i'),
+                'voidedBy' => (string) $movement->voider?->name,
+                'reason' => (string) $movement->void_reason,
+            ],
+            'reprint' => app(ReceiptService::class)->reprintStamp($reprint),
+        ];
+    }
+
+    /**
+     * A movement as the till lists it.
+     *
+     * @return array{uuid: string, number: string, type: string, label: string, category: string|null, amount: int, doctor: string|null, note: string|null, user: string, at: string, voided: bool, void_reason: string|null}
+     */
+    public function present(CashMovement $movement): array
+    {
+        return [
+            'uuid' => (string) $movement->uuid,
+            'number' => $movement->number,
+            'type' => $movement->type->value,
+            'label' => $movement->type->label(),
+            'category' => $movement->category?->label(),
+            'amount' => $movement->amount,
+            'doctor' => $movement->doctor?->name,
+            'note' => $movement->note,
+            'user' => (string) $movement->user?->name,
+            'at' => $movement->created_at->setTimezone($this->timezone())->format('Y-m-d H:i'),
+            'voided' => $movement->isVoided(),
+            'void_reason' => $movement->void_reason,
+        ];
+    }
+
+    public function timezone(): string
+    {
+        return (string) ($this->shop()->timezone ?: config('app.timezone'));
+    }
+
     private function assertMayCreate(User $user, CashMovementType $type): void
     {
         if ($type === CashMovementType::DoctorPayment) {

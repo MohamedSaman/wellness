@@ -480,3 +480,39 @@ export type StockRequestSummary = {
         baseUnit: string;
     }[];
 };
+
+/** PosController::index `cashMovements` (branch 18): null when the module is off. */
+export type PosCashMovements = {
+    /** cash.movements: paid out and paid in. */
+    canMove: boolean;
+    /** doctors.pay in a pharmacy. */
+    canPayDoctor: boolean;
+    /** cash.movements.void (the owner). */
+    canVoid: boolean;
+} | null;
+
+/** A kind of movement this user may record (CashMovementController::index). */
+export type CashMovementTypeOption = {
+    value: string;
+    label: string;
+    categories: { value: string; label: string }[];
+    /** The most one may be, in minor units; null = no limit. */
+    limit: number | null;
+};
+
+/** A cash movement of the till's open shift (CashMovementService::present()). */
+export type CashMovementRow = {
+    uuid: string;
+    number: string;
+    type: string;
+    label: string;
+    category: string | null;
+    amount: number;
+    doctor: string | null;
+    note: string | null;
+    user: string;
+    /** Shop time, "YYYY-MM-DD HH:MM". */
+    at: string;
+    voided: boolean;
+    void_reason: string | null;
+};

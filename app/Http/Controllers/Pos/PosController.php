@@ -121,6 +121,12 @@ class PosController extends Controller
             ],
             'shift' => $shift === null ? null : ShiftPresenter::present($shift),
             'pharmacy' => $pharmacy ? $this->pharmacy($shop, $till, $items) : null,
+            // Cash paid out / in and doctor payments (branch 18): null when the module is off.
+            'cashMovements' => $shop->hasModule('cash_movements') ? [
+                'canMove' => $user->can('cash.movements'),
+                'canPayDoctor' => $pharmacy && $user->can('doctors.pay'),
+                'canVoid' => $user->can('cash.movements.void'),
+            ] : null,
         ]);
     }
 

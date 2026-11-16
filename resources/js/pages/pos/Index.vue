@@ -2,6 +2,7 @@
 import { Head, router } from '@inertiajs/vue3';
 import {
     ArrowLeftRight,
+    Banknote,
     FileText,
     History,
     Inbox,
@@ -27,6 +28,7 @@ import CheckoutController from '@/actions/App/Http/Controllers/Pos/CheckoutContr
 import StockRequestController from '@/actions/App/Http/Controllers/Pos/StockRequestController';
 import TillController from '@/actions/App/Http/Controllers/Pos/TillController';
 import CartPanel from '@/components/pos/CartPanel.vue';
+import CashMovementsDialog from '@/components/pos/CashMovementsDialog.vue';
 import CloseShiftDialog from '@/components/pos/CloseShiftDialog.vue';
 import DiscountDialog from '@/components/pos/DiscountDialog.vue';
 import ItemSearch from '@/components/pos/ItemSearch.vue';
@@ -57,6 +59,7 @@ import { receiptPrinter } from '@/lib/receiptPrinter';
 import { logout } from '@/routes';
 import type {
     CompletedSale,
+    PosCashMovements,
     PosCashier,
     PosFeatures,
     PosItem,
@@ -81,8 +84,10 @@ const props = withDefaults(
         pharmacy?: PosPharmacy;
         /** Search by location: the selling locations, in order (empty when it is off). */
         searchLocations?: PosLocation[];
+        /** Cash in and out (branch 18): null when the module is off. */
+        cashMovements?: PosCashMovements;
     }>(),
-    { pharmacy: null, searchLocations: () => [] },
+    { pharmacy: null, searchLocations: () => [], cashMovements: null },
 );
 
 const cart = usePosCart();
@@ -135,6 +140,19 @@ const recentSalesOpen = ref(false);
 const shiftPatientsOpen = ref(false);
 /** Reprint shift summary (pharmacy; branch 17): this till's shifts closed in the last 7 days. */
 const shiftSummariesOpen = ref(false);
+/** Cash in and out (Alt+C, branch 18): paid out, paid in, doctor payments of the open shift. */
+const cashOpen = ref(false);
+const cashStartWith = ref<string | null>(null);
+const canCash = computed(
+    () =>
+        props.cashMovements !== null &&
+        (props.cashMovements.canMove || props.cashMovements.canPayDoctor),
+);
+
+function openCash(startWith: string | null = null): void {
+    cashStartWith.value = startWith;
+    cashOpen.value = true;
+}
 const completed = ref<CompletedSale | null>(null);
 const submitting = ref(false);
 const checkoutError = ref<string | null>(null);
@@ -242,6 +260,7 @@ const dialogOpen = computed(
         recentSalesOpen.value ||
         shiftPatientsOpen.value ||
         shiftSummariesOpen.value ||
+        cashOpen.value ||
         rxOpen.value ||
         requestItem.value !== null ||
         completed.value !== null,
@@ -630,6 +649,19 @@ function onKeydown(event: KeyboardEvent): void {
         if (!dialogOpen.value) {
             shiftPatientsOpen.value = true;
         }
+    } else if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.code === 'KeyC' &&
+        canCash.value &&
+        props.shift
+    ) {
+        // Cash in and out of the open shift's drawer.
+        event.preventDefault();
+        if (!dialogOpen.value && !offlinePos.isOffline.value) {
+            openCash();
+        }
     } else if (event.key === 'F4') {
         event.preventDefault();
         if (
@@ -839,6 +871,18 @@ onBeforeUnmount(() => {
                 >
                     <Users class="size-4" /> Patients
                     <kbd class="text-xs text-muted-foreground">Alt+P</kbd>
+                </Button>
+                <Button
+                    v-if="till && shift && canCash"
+                    variant="outline"
+                    class="h-11"
+                    data-test="cash-button"
+                    title="Cash paid out or in (Alt+C)"
+                    :disabled="offlinePos.isOffline.value"
+                    @click="openCash()"
+                >
+                    <Banknote class="size-4" /> Cash
+                    <kbd class="text-xs text-muted-foreground">Alt+C</kbd>
                 </Button>
                 <Button
                     v-if="till && shift"
@@ -1109,6 +1153,13 @@ onBeforeUnmount(() => {
             v-model:open="shiftPatientsOpen"
             :till="till"
             :shift="shift"
+        />
+        <CashMovementsDialog
+            v-if="till && shift && canCash"
+            v-model:open="cashOpen"
+            :till="till"
+            :shop="shop"
+            :start-with="cashStartWith"
         />
         <CloseShiftDialog
             v-if="till"
