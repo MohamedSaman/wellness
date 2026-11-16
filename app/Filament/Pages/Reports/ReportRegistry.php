@@ -32,6 +32,8 @@ final class ReportRegistry
         ControlledDrugRegisterReport::class,
         DispensingRegisterReport::class,
         PriceChangesReport::class,
+        CashMovementsReport::class,
+        DoctorPaymentsReport::class,
         PurchasesReport::class,
         SupplierAgingReport::class,
     ];

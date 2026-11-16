@@ -7,8 +7,10 @@ import { addItem, dialog, expectInside, useTill } from './helpers';
  * scroll sideways). Walks one sale through the demo clinic: an OPD bill on
  * T2, then on T1 a price typed at the till (asked for, outside its limits,
  * then confirmed), a batch pick, discount, prescription, payment, the sale
- * done, recent sales, closing the shift and its printed summary, reprinting
- * that summary from Shift summary, and back on
+ * done, recent sales, the Close shift reminder about doctor payment, Cash
+ * in and out (a paid out, a doctor payment), Return without receipt,
+ * closing the shift and its printed summary, reprinting that summary from
+ * Shift summary, and back on
  * T2 the search looking at General Pharmacy's stock, the Request dialog and
  * the Stock requests page.
  */
@@ -268,6 +270,149 @@ for (const viewport of viewports) {
                 await expectInside(patients, 'Patients this shift dialog');
                 await page.keyboard.press('Escape');
                 await expect(patients).toBeHidden();
+            });
+
+            await test.step('Close shift reminder: no doctor paid yet', async () => {
+                // The demo clinic has "Remind about doctor payment at shift close" on (branch 18).
+                await page.locator('[data-test=close-shift-button]').click();
+                const close = dialog(page, /Close shift/);
+                const reminder = close.locator(
+                    '[data-test=doctor-payment-reminder]',
+                );
+                await expect(reminder).toBeVisible();
+                await expectInside(
+                    close,
+                    'Close shift dialog with the reminder',
+                );
+                // Pay doctor: Close shift gives way to Cash in and out, on its Doctor payment tab.
+                await reminder
+                    .locator('[data-test=doctor-payment-reminder-pay]')
+                    .click();
+                await expect(
+                    page.locator('[data-test=cash-type-doctor_payment]'),
+                ).toHaveAttribute('aria-selected', 'true');
+                await page.keyboard.press('Escape');
+                await expect(
+                    page.locator('[data-test=cash-movements]'),
+                ).toBeHidden();
+            });
+
+            await test.step('Cash in and out: paid out and a doctor payment', async () => {
+                // Catch the slips' windows, so no print dialog comes up in the test.
+                await page.evaluate(() => {
+                    const opened = { location: { href: '' }, close() {} };
+                    (
+                        window as unknown as { slipWindow: typeof opened }
+                    ).slipWindow = opened;
+                    window.open = () => opened as unknown as Window;
+                });
+                await page.keyboard.press('Alt+KeyC');
+                const cash = page.locator('[data-test=cash-movements]');
+                await expect(
+                    cash.locator('[data-test=cash-movement-form]'),
+                ).toBeVisible();
+                await expectInside(cash, 'Cash in and out dialog');
+
+                await cash.locator('[data-test=cash-type-paid_out]').click();
+                await cash
+                    .locator('[data-test=cash-movement-amount]')
+                    .fill('10');
+                await cash
+                    .locator('[data-test=cash-category-refund_difference]')
+                    .click();
+                await cash
+                    .locator('[data-test=cash-movement-note]')
+                    .fill(
+                        'Returned syrup bought before the system, took Panadol',
+                    );
+                await cash.locator('[data-test=cash-movement-save]').click();
+                await expect(
+                    cash.locator('[data-test=cash-movement-notice]'),
+                ).toContainText('Paid out');
+                await expect(
+                    cash.locator('[data-test=cash-movement-row]'),
+                ).toHaveCount(1);
+                await expectInside(
+                    cash,
+                    'Cash in and out dialog, one paid out',
+                );
+
+                await cash
+                    .locator('[data-test=cash-type-doctor_payment]')
+                    .click();
+                await cash
+                    .locator('[data-test=cash-movement-doctor]')
+                    .selectOption({ label: 'Dr. S. Perera' });
+                await expect(
+                    cash.locator('[data-test=doctor-reference]'),
+                ).toContainText('For reference only');
+                await cash
+                    .locator('[data-test=cash-movement-amount]')
+                    .fill('5000');
+                await cash
+                    .locator('[data-test=cash-movement-note]')
+                    .fill('Evening session');
+                await cash.locator('[data-test=cash-movement-save]').click();
+                await expect(
+                    cash.locator('[data-test=cash-movement-row]'),
+                ).toHaveCount(2);
+                // Choosing the doctor again says they were paid today (each viewport's run pays them
+                // once more on the same day and database: the newest line is this one).
+                await cash
+                    .locator('[data-test=cash-movement-doctor]')
+                    .selectOption({ label: 'Dr. S. Perera' });
+                await expect(
+                    cash.locator('[data-test=doctor-paid-today]').last(),
+                ).toContainText('5,000.00');
+                await expectInside(cash, 'Cash in and out dialog, doctor paid');
+                await expect
+                    .poll(() =>
+                        page.evaluate(
+                            () =>
+                                (
+                                    window as unknown as {
+                                        slipWindow: {
+                                            location: { href: string };
+                                        };
+                                    }
+                                ).slipWindow.location.href,
+                        ),
+                    )
+                    .toContain('/slip?print=1');
+            });
+
+            await test.step('Return without receipt dialog', async () => {
+                const cash = page.locator('[data-test=cash-movements]');
+                await cash
+                    .locator('[data-test=open-no-receipt-return]')
+                    .click();
+                const nr = page.locator('[data-test=no-receipt-return]');
+                await expect(nr).toBeVisible();
+                await expectInside(nr, 'Return without receipt dialog');
+
+                await nr
+                    .locator('[data-test=no-receipt-search]')
+                    .fill('Panadol');
+                await nr
+                    .locator('[data-test=no-receipt-result]')
+                    .first()
+                    .click();
+                await expect(
+                    nr.locator('[data-test=no-receipt-line]'),
+                ).toHaveCount(1);
+                await nr
+                    .locator('[data-test=no-receipt-reason]')
+                    .fill('Bought before the system went live');
+                await expectInside(
+                    nr,
+                    'Return without receipt dialog, one item',
+                );
+                await nr.locator('[data-test=no-receipt-save]').click();
+                await expect(
+                    nr.locator('[data-test=no-receipt-notice]'),
+                ).toContainText(/NR-\d{6}/);
+                await page.keyboard.press('Escape');
+                await expect(nr).toBeHidden();
             });
 
             await test.step('Close shift dialog and its summary', async () => {

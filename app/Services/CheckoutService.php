@@ -38,6 +38,9 @@ use Illuminate\Support\Facades\DB;
 
 class CheckoutService
 {
+    /** A sale voided (branch 18). */
+    public const VOIDED_EVENT = 'sale_voided';
+
     public function __construct(
         private readonly StockService $stock,
         private readonly CurrentShop $currentShop,
@@ -899,6 +902,15 @@ class CheckoutService
                 'voided_at' => now(),
                 'void_reason' => $reason,
             ]);
+
+            // Audited (branch 18): voids were not, and they hand money back.
+            app(AuditObserver::class)->record(self::VOIDED_EVENT, $sale, ['status' => SaleStatus::Completed->value], [
+                'status' => SaleStatus::Voided->value,
+                'invoice_no' => $sale->invoice_no,
+                'grand_total' => $sale->grand_total,
+                'reason' => $reason,
+                'shift_id' => $sale->shift_id,
+            ], (int) $user->getKey());
 
             return $sale;
         });

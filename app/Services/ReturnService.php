@@ -16,6 +16,7 @@ use App\Models\SaleReturn;
 use App\Models\SaleReturnItem;
 use App\Models\Shift;
 use App\Models\User;
+use App\Observers\AuditObserver;
 use App\Services\Data\ReturnLine;
 use App\Support\CurrentShop;
 use App\Support\Quantity;
@@ -47,6 +48,9 @@ use Illuminate\Support\Facades\DB;
  */
 class ReturnService
 {
+    /** A return recorded (branch 18). */
+    public const RETURNED_EVENT = 'sale_returned';
+
     public function __construct(
         private readonly StockService $stock,
         private readonly CurrentShop $currentShop,
@@ -140,6 +144,8 @@ class ReturnService
                 'sale_id' => $sale->getKey(),
                 'user_id' => $user->getKey(),
                 'shift_id' => $shift?->getKey(),
+                // The till whose drawer paid it (branch 18): the shift's.
+                'device_id' => $shift?->device_id,
                 'return_no' => $sale->invoice_no.'-R'.($count + 1),
                 'reason_code' => $reason,
                 'note' => $note,
@@ -216,6 +222,24 @@ class ReturnService
                 'refunded_total' => $sale->refunded_total + $refundTotal,
                 'status' => $fullyReturned ? SaleStatus::Returned : SaleStatus::PartiallyReturned,
             ]);
+
+            // Audited (branch 18): returns were not, and they hand money back.
+            app(AuditObserver::class)->record(self::RETURNED_EVENT, $return, [], [
+                'return_no' => $return->return_no,
+                'sale_id' => $sale->getKey(),
+                'invoice_no' => $sale->invoice_no,
+                'refund_total' => $refundTotal,
+                'refund_method' => $refundMethod->value,
+                'reason' => $reason->value,
+                'shift_id' => $shift?->getKey(),
+                'till' => $shift?->device?->code,
+                'lines' => array_map(fn (array $line): array => [
+                    'sale_item_id' => $line['item']->getKey(),
+                    'quantity' => $line['quantity'],
+                    'refund' => $line['refund'],
+                    'restock' => $line['restock'],
+                ], $priced),
+            ], (int) $user->getKey());
 
             return $return->load('items');
         });

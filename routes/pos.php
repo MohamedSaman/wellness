@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Pos\CashMovementController;
 use App\Http\Controllers\Pos\CheckoutController;
 use App\Http\Controllers\Pos\ItemSearchController;
+use App\Http\Controllers\Pos\NoReceiptReturnController;
 use App\Http\Controllers\Pos\PatientSearchController;
 use App\Http\Controllers\Pos\PosController;
 use App\Http\Controllers\Pos\QuoteController;
@@ -54,6 +56,21 @@ Route::middleware(['auth', 'can:pos.checkout'])->prefix('pos')->name('pos.')->gr
     Route::get('recent-sales', RecentSalesController::class)->name('recent-sales');
     Route::post('receipts/{sale}/reprint', [ReprintController::class, 'store'])->name('receipt.reprint');
 
+    // Cash paid out of or into the drawer, and doctors paid (cash_movements, docs/PHARMACY.md branch 18).
+    Route::middleware('module:cash_movements')->prefix('cash-movements')->name('cash-movements.')->group(function () {
+        Route::get('/', [CashMovementController::class, 'index'])->name('index');
+        Route::post('/', [CashMovementController::class, 'store'])->name('store');
+        Route::post('{cashMovement}/void', [CashMovementController::class, 'void'])->name('void');
+        Route::post('{cashMovement}/reprint', [CashMovementController::class, 'reprint'])->name('reprint');
+    });
+
+    // Returns without a receipt (pharmacy, branch 18): refunded from the till's drawer.
+    Route::middleware('module:pharmacy')->prefix('no-receipt-returns')->name('no-receipt-returns.')->group(function () {
+        Route::get('/', [NoReceiptReturnController::class, 'index'])->name('index');
+        Route::post('/', [NoReceiptReturnController::class, 'store'])->name('store');
+        Route::post('{noReceiptReturn}/reprint', [NoReceiptReturnController::class, 'reprint'])->name('reprint');
+    });
+
     // Stock requests from the till (multi_location): the OPD asks General Pharmacy for stock.
     Route::middleware(['can:stock.request', 'module:multi_location'])->prefix('stock-requests')->name('stock-requests.')->group(function () {
         Route::get('/', [StockRequestController::class, 'index'])->name('index');
@@ -78,6 +95,15 @@ Route::middleware('auth')->prefix('pos')->name('pos.')->group(function () {
     Route::get('shifts/{shift}/reprints/{reprint}', [ShiftReprintController::class, 'show'])->whereNumber('reprint')->middleware('module:pharmacy')->name('shift.reprinted');
     Route::get('receipts/{sale}/refunds/{saleReturn}', [ReceiptController::class, 'refund'])->name('receipt.refund');
     Route::get('receipts/{sale}/void', [ReceiptController::class, 'void'])->name('receipt.void');
+    // A cash movement's slip, as first printed and as a logged reprint (branch 18).
+    Route::middleware('module:cash_movements')->group(function () {
+        Route::get('cash-movements/{cashMovement}/slip', [CashMovementController::class, 'slip'])->name('cash-movements.slip');
+        Route::get('cash-movements/{cashMovement}/reprints/{reprint}', [CashMovementController::class, 'reprinted'])->whereNumber('reprint')->name('cash-movements.reprinted');
+    });
+    Route::middleware('module:pharmacy')->group(function () {
+        Route::get('no-receipt-returns/{noReceiptReturn}/slip', [NoReceiptReturnController::class, 'slip'])->name('no-receipt-returns.slip');
+        Route::get('no-receipt-returns/{noReceiptReturn}/reprints/{reprint}', [NoReceiptReturnController::class, 'reprinted'])->whereNumber('reprint')->name('no-receipt-returns.reprinted');
+    });
 });
 
 /*

@@ -245,7 +245,7 @@ final class ReceiptLayout
         $this->start([]);
         /** @var array<string, mixed> $summary */
         $summary = $shift['summary'];
-        /** @var array{opening: int, sales: int, refunds: int, expected: int, counted: int|null, difference: int|null} $cash */
+        /** @var array{opening: int, sales: int, refunds: int, paid_in?: int, paid_out?: int, doctor_payments?: int, expected: int, counted: int|null, difference: int|null} $cash */
         $cash = $summary['cash'];
         /** @var list<array{method: string, label: string, amount: int}> $payments */
         $payments = $summary['payments'];
@@ -261,17 +261,7 @@ final class ReceiptLayout
 
         $this->header();
         $this->center('SHIFT SUMMARY', bold: true, tall: true);
-        /** @var array{code: string, name?: string|null, location?: string|null}|null $till */
-        $till = $shift['till'] ?? null;
-
-        if ($till !== null) {
-            $name = trim((string) ($till['name'] ?? ''));
-            $this->detail('Till', trim($till['code'].($name !== '' && $name !== $till['code'] ? ' '.$name : '')));
-
-            if (filled($till['location'] ?? null)) {
-                $this->detail('Location', (string) $till['location']);
-            }
-        }
+        $this->tillDetails($shift['till'] ?? null);
 
         $this->detail('Cashier', (string) $shift['cashier']);
         $this->detail('Opened', self::date((string) $shift['openedAt']));
@@ -284,6 +274,12 @@ final class ReceiptLayout
         $this->row('Sales', $this->money((int) $summary['gross']));
         $this->row('Discounts given', $this->money((int) $shift['discounts']));
         $this->row('Refunds ('.$summary['refunds_count'].')', $this->money(-(int) $summary['refunds']));
+
+        if ((int) ($summary['no_receipt_count'] ?? 0) > 0) {
+            // Returns without a receipt (branch 18): part of the refunds above.
+            $this->row('of which without receipt ('.$summary['no_receipt_count'].')', $this->money(-(int) $summary['no_receipt_refunds']), indent: 2);
+        }
+
         $this->row('NET SALES '.$this->shop['currency'], $this->money((int) $summary['net']), bold: true);
         $this->row('Voided bills ('.$summary['voids'].')', $this->money((int) $summary['voids_total']));
         $this->rule();
@@ -304,6 +300,18 @@ final class ReceiptLayout
         $this->row('Opening float', $this->money($cash['opening']));
         $this->row('Cash sales', $this->money($cash['sales']));
         $this->row('Cash refunds', $this->money(-$cash['refunds']));
+
+        if (array_key_exists('paid_out', $cash)) {
+            // Cash movements (branch 18).
+            $this->row('Paid out', $this->money(-(int) $cash['paid_out']));
+
+            if (array_key_exists('doctor_payments', $summary)) {
+                $this->row('Doctor payments', $this->money(-(int) ($cash['doctor_payments'] ?? 0)));
+            }
+
+            $this->row('Paid in', $this->money((int) ($cash['paid_in'] ?? 0)));
+        }
+
         $this->grandTotal('EXPECTED CASH '.$this->shop['currency'], $this->money($cash['expected']));
         $this->row('Counted', $optional($cash['counted']));
         $this->row('Difference', $optional($cash['difference']), bold: true);
@@ -317,16 +325,227 @@ final class ReceiptLayout
         }
 
         $this->rule();
-
-        foreach (['Cashier', 'Checked by', 'Date'] as $signature) {
-            $this->push('');
-            $this->push('');
-            $this->push(str_pad($signature.' ', $this->width, '_'));
-        }
+        $this->movements($summary, $cash);
+        $this->signatures(['Cashier', 'Checked by', 'Date']);
 
         $this->reprinted($reprint);
 
         return $this->lines;
+    }
+
+    /**
+     * A cash movement's slip (docs/PHARMACY.md, branch 18): PAID OUT, PAID IN
+     * or DOCTOR PAYMENT, its number and time, the till, location and shift,
+     * who paid it (or took it in), what for, the amount and lines to sign
+     * (the doctor signs for a doctor payment). A voided movement says so; a
+     * reprint is marked as a sale's is. Server only: movements need a
+     * connection, so the till never lays a slip out itself.
+     *
+     * @param  array<string, mixed>  $slip  CashMovementService::slip()
+     * @return list<array{text: string, bold: bool, tall: bool}>
+     */
+    public function cashMovement(array $slip): array
+    {
+        $this->start([]);
+        /** @var array{printedAt: string|null, printedBy: string}|null $reprint */
+        $reprint = $slip['reprint'] ?? null;
+
+        if ($reprint !== null) {
+            $this->center('*** REPRINT ***', bold: true, tall: true);
+        }
+
+        $this->header();
+        $this->center((string) $slip['heading'], bold: true, tall: true);
+        $this->detail('No.', (string) $slip['number']);
+        $this->detail('Date', self::date((string) $slip['createdAt']));
+        $this->tillDetails($slip['till'] ?? null);
+        $this->detail('Shift', self::date((string) $slip['shiftOpenedAt']).' '.$slip['shiftCashier']);
+
+        if (filled($slip['doctor'] ?? null)) {
+            $this->detail('Doctor', (string) $slip['doctor']);
+        }
+
+        if (filled($slip['category'] ?? null)) {
+            $this->detail('For', (string) $slip['category']);
+        }
+
+        $this->detail($slip['type'] === 'paid_in' ? 'Taken in by' : 'Paid by', (string) $slip['user']);
+        $this->rule();
+        $this->grandTotal('AMOUNT '.$this->shop['currency'], $this->money((int) $slip['amount']));
+
+        if (filled($slip['note'] ?? null)) {
+            $this->rule();
+            $this->text('Note: '.$slip['note']);
+        }
+
+        /** @var array{voidedAt: string, voidedBy: string, reason: string}|null $void */
+        $void = $slip['void'] ?? null;
+
+        if ($void !== null) {
+            $this->rule();
+            $this->center('*** VOIDED ***', bold: true, tall: true);
+            $this->detail('Voided', self::date($void['voidedAt']));
+            $this->detail('Voided by', $void['voidedBy']);
+            $this->text('Reason: '.$void['reason']);
+        }
+
+        $this->rule();
+        $this->signatures(match ($slip['type']) {
+            'doctor_payment' => ["Doctor's signature", 'Paid by'],
+            'paid_in' => ['Given by', 'Taken in by'],
+            default => ['Received by', 'Paid by'],
+        });
+        $this->reprinted($reprint);
+
+        return $this->lines;
+    }
+
+    /**
+     * A refund without a receipt (docs/PHARMACY.md, branch 18): REFUND - NO
+     * RECEIPT, its number and time, the till and who refunded it, each item
+     * with how many came back, its value and where the stock went
+     * (Quarantine or back to stock, with the batch), the total paid back in
+     * cash, the reason and lines to sign. A reprint is marked as a sale's
+     * is. Server only, like every slip but the sale's receipt.
+     *
+     * @param  array<string, mixed>  $refund  NoReceiptReturnService::slip()
+     * @return list<array{text: string, bold: bool, tall: bool}>
+     */
+    public function noReceiptRefund(array $refund): array
+    {
+        $this->start([]);
+        /** @var array{printedAt: string|null, printedBy: string}|null $reprint */
+        $reprint = $refund['reprint'] ?? null;
+
+        if ($reprint !== null) {
+            $this->center('*** REPRINT ***', bold: true, tall: true);
+        }
+
+        $this->header();
+        $this->center('*** REFUND - NO RECEIPT ***', bold: true, tall: true);
+        $this->detail('Refund no.', (string) $refund['number']);
+        $this->detail('Date', self::date((string) $refund['returnedAt']));
+        $this->tillDetails($refund['till'] ?? null);
+        $this->detail('Refunded by', (string) $refund['user']);
+        $this->rule();
+
+        /** @var list<array{description: string, quantity: string, unitName: string|null, unitValue: int, refund: int, to: string, batchNo: string|null, expiry: string|null}> $items */
+        $items = $refund['items'];
+
+        foreach ($items as $item) {
+            $this->text($item['description'], bold: true);
+            $this->row(trim($item['quantity'].' '.($item['unitName'] ?? '')).' x '.$this->money($item['unitValue']), $this->money($item['refund']), indent: 2);
+            $this->text($item['to'], indent: 2, hang: 2);
+
+            if (filled($item['batchNo'])) {
+                $this->text('Batch '.$item['batchNo'].(filled($item['expiry']) ? ' exp '.$item['expiry'] : ''), indent: 2, hang: 2);
+            }
+        }
+
+        $this->rule();
+        $this->grandTotal('REFUND TOTAL '.$this->shop['currency'], $this->money((int) $refund['refundTotal']));
+        $this->rule();
+        $this->payments(['payments' => [['method' => $refund['method'], 'amount' => (int) $refund['refundTotal']]]]);
+        $this->text('Reason: '.$refund['reason']);
+
+        if (filled($refund['note'] ?? null)) {
+            $this->text('Note: '.$refund['note']);
+        }
+
+        $this->rule();
+        $this->signatures(["Customer's signature", 'Refunded by']);
+        $this->reprinted($reprint);
+
+        return $this->lines;
+    }
+
+    /**
+     * The shift's paid out and paid in, one by one, and (a pharmacy) what
+     * each doctor was paid, as sections of their own (branch 18). Nothing
+     * when the shop does not record cash movements.
+     *
+     * @param  array<string, mixed>  $summary
+     * @param  array<string, int|null>  $cash
+     */
+    private function movements(array $summary, array $cash): void
+    {
+        if (! array_key_exists('movements', $summary)) {
+            return;
+        }
+
+        $this->text('Paid out and paid in', bold: true);
+
+        /** @var list<array{number: string, type: string, label: string, category: string|null, amount: int, note: string|null, user: string, at: string}> $movements */
+        $movements = $summary['movements'];
+
+        foreach ($movements as $movement) {
+            $this->row(substr($movement['at'], 11).' '.$movement['label'], $this->money($movement['type'] === 'paid_in' ? $movement['amount'] : -$movement['amount']));
+            $this->text(trim($movement['number'].' '.($movement['category'] ?? '').(filled($movement['note']) ? ': '.$movement['note'] : '')), indent: 2, hang: 2);
+        }
+
+        if ($movements === []) {
+            $this->text('Nothing paid out or in.');
+        }
+
+        if ((int) ($summary['voided_movements'] ?? 0) > 0) {
+            $this->text('Voided ('.$summary['voided_movements'].') not counted.');
+        }
+
+        $this->rule();
+
+        if (! array_key_exists('doctor_payments', $summary)) {
+            return;
+        }
+
+        $this->text('Doctor payments', bold: true);
+
+        /** @var list<array{doctor: string, payments: int, amount: int}> $doctors */
+        $doctors = $summary['doctor_payments'];
+
+        foreach ($doctors as $payment) {
+            $this->row($payment['doctor'].($payment['payments'] > 1 ? ' ('.$payment['payments'].')' : ''), $this->money($payment['amount']));
+        }
+
+        if ($doctors === []) {
+            $this->text('No doctor paid in this shift.');
+        } elseif (count($doctors) > 1) {
+            $this->row('Total', $this->money((int) ($cash['doctor_payments'] ?? 0)), bold: true);
+        }
+
+        $this->rule();
+    }
+
+    /**
+     * The till's code and name, and its location.
+     *
+     * @param  array{code: string, name?: string|null, location?: string|null}|null  $till
+     */
+    private function tillDetails(?array $till): void
+    {
+        if ($till === null) {
+            return;
+        }
+
+        $name = trim((string) ($till['name'] ?? ''));
+        $this->detail('Till', trim($till['code'].($name !== '' && $name !== $till['code'] ? ' '.$name : '')));
+
+        if (filled($till['location'] ?? null)) {
+            $this->detail('Location', (string) $till['location']);
+        }
+    }
+
+    /**
+     * Lines to sign, each under two blank lines.
+     *
+     * @param  list<string>  $labels
+     */
+    private function signatures(array $labels): void
+    {
+        foreach ($labels as $signature) {
+            $this->push('');
+            $this->push('');
+            $this->push(str_pad(self::ascii($signature).' ', $this->width, '_'));
+        }
     }
 
     /**

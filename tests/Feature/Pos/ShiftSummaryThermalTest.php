@@ -136,10 +136,19 @@ class ShiftSummaryThermalTest extends BatchTestCase
             Opening float               5,000.00
             Cash sales                    330.00
             Cash refunds                  -33.00
+            Paid out                        0.00
+            Doctor payments                 0.00
+            Paid in                         0.00
             EXPECTED CASH LKR           5,297.00
             Counted                     5,247.00
             Difference                    -50.00
                     *** SHORT 50.00 ***
+            ------------------------------------
+            Paid out and paid in
+            Nothing paid out or in.
+            ------------------------------------
+            Doctor payments
+            No doctor paid in this shift.
             ------------------------------------
 
 

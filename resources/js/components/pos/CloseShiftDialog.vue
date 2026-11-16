@@ -14,8 +14,19 @@ import { ApiError, getJson, postJson, queryString } from '@/lib/http';
 import { formatMoney } from '@/lib/money';
 import type { PosShop, PosTill } from '@/types/pos';
 
-const props = defineProps<{ open: boolean; till: PosTill; shop: PosShop }>();
-const emit = defineEmits<{ 'update:open': [value: boolean] }>();
+const props = defineProps<{
+    open: boolean;
+    till: PosTill;
+    shop: PosShop;
+    /** Note a shift that paid no doctor (branch 18); closing is never blocked. */
+    remindDoctorPayment?: boolean;
+    /** May pay a doctor from here: the note offers Pay doctor. */
+    canPayDoctor?: boolean;
+}>();
+const emit = defineEmits<{
+    'update:open': [value: boolean];
+    'pay-doctor': [];
+}>();
 
 type Count = {
     expected_cash: number;
@@ -29,6 +40,9 @@ type Summary = {
     gross: number;
     refunds: number;
     refunds_count: number;
+    /** Of the refunds, those without a receipt (pharmacy, branch 18). */
+    no_receipt_refunds?: number;
+    no_receipt_count?: number;
     voids: number;
     voids_total: number;
     net: number;
@@ -37,10 +51,16 @@ type Summary = {
         opening: number;
         sales: number;
         refunds: number;
+        /** Cash movements (branch 18): present when the shop records them. */
+        paid_in?: number;
+        paid_out?: number;
+        doctor_payments?: number;
         expected: number;
         counted: number | null;
         difference: number | null;
     };
+    /** What each doctor was paid in the shift (pharmacy, branch 18). */
+    doctor_payments?: { doctor: string; payments: number; amount: number }[];
 };
 
 const counted = ref('');
@@ -139,7 +159,7 @@ function money(minor: number | null): string {
         :open="open"
         @update:open="closed ? done() : emit('update:open', $event)"
     >
-        <DialogContent class="sm:max-w-md">
+        <DialogContent class="max-h-[95dvh] overflow-y-auto sm:max-w-md">
             <DialogHeader>
                 <DialogTitle>{{
                     closed ? 'Shift closed' : 'Close shift'
@@ -152,6 +172,32 @@ function money(minor: number | null): string {
                     }}
                 </DialogDescription>
             </DialogHeader>
+
+            <div
+                v-if="
+                    remindDoctorPayment &&
+                    !closed &&
+                    summary?.doctor_payments &&
+                    summary.doctor_payments.length === 0
+                "
+                class="flex flex-wrap items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
+                role="note"
+                data-test="doctor-payment-reminder"
+            >
+                <span class="min-w-0 flex-1"
+                    >No doctor has been paid in this shift. You can still close
+                    it.</span
+                >
+                <Button
+                    v-if="canPayDoctor"
+                    variant="outline"
+                    class="h-9 shrink-0"
+                    data-test="doctor-payment-reminder-pay"
+                    @click="emit('pay-doctor')"
+                >
+                    Pay doctor
+                </Button>
+            </div>
 
             <dl
                 v-if="summary"
@@ -170,6 +216,16 @@ function money(minor: number | null): string {
                 <dd class="text-right tabular-nums">
                     {{ money(-summary.refunds) }}
                 </dd>
+                <template v-if="(summary.no_receipt_count ?? 0) > 0">
+                    <dt class="pl-3 text-muted-foreground">
+                        of which without receipt ({{
+                            summary.no_receipt_count
+                        }})
+                    </dt>
+                    <dd class="text-right text-muted-foreground tabular-nums">
+                        {{ money(-(summary.no_receipt_refunds ?? 0)) }}
+                    </dd>
+                </template>
                 <dt class="font-medium">Net sales</dt>
                 <dd class="text-right font-semibold tabular-nums">
                     {{ money(summary.net) }}
@@ -195,6 +251,41 @@ function money(minor: number | null): string {
                     {{ money(summary.cash.sales) }} −
                     {{ money(summary.cash.refunds) }}
                 </dd>
+                <template v-if="summary.cash.paid_out !== undefined">
+                    <dt class="text-muted-foreground">Paid out</dt>
+                    <dd
+                        class="text-right tabular-nums"
+                        data-test="shift-paid-out"
+                    >
+                        {{ money(-(summary.cash.paid_out ?? 0)) }}
+                    </dd>
+                    <template v-if="summary.doctor_payments">
+                        <dt class="text-muted-foreground">Doctor payments</dt>
+                        <dd
+                            class="text-right tabular-nums"
+                            data-test="shift-doctor-payments"
+                        >
+                            {{ money(-(summary.cash.doctor_payments ?? 0)) }}
+                        </dd>
+                        <template
+                            v-for="payment in summary.doctor_payments"
+                            :key="payment.doctor"
+                        >
+                            <dt class="truncate pl-3 text-muted-foreground">
+                                {{ payment.doctor }}
+                            </dt>
+                            <dd
+                                class="text-right text-muted-foreground tabular-nums"
+                            >
+                                {{ money(payment.amount) }}
+                            </dd>
+                        </template>
+                    </template>
+                    <dt class="text-muted-foreground">Paid in</dt>
+                    <dd class="text-right tabular-nums">
+                        {{ money(summary.cash.paid_in ?? 0) }}
+                    </dd>
+                </template>
             </dl>
 
             <dl class="grid grid-cols-[1fr_auto] gap-y-2 text-lg">

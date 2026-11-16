@@ -1,6 +1,8 @@
+import CashMovementController from '@/actions/App/Http/Controllers/Pos/CashMovementController';
 import ReprintController from '@/actions/App/Http/Controllers/Pos/ReprintController';
 import ShiftReprintController from '@/actions/App/Http/Controllers/Pos/ShiftReprintController';
 import { postJson } from '@/lib/http';
+import type { CashMovementRow } from '@/types/pos';
 
 /**
  * Reprint a sale from the till (Recent sales, Patients this shift). The
@@ -60,6 +62,69 @@ export async function reprintShiftSummary(
         }
     } catch (caught) {
         summaryWindow?.close();
+
+        throw caught;
+    }
+}
+
+/**
+ * Record a cash movement (paid out, paid in, a doctor payment; branch 18)
+ * and print its slip. As reprintSale(): call it straight from the click,
+ * so the slip's window opens at once and is not blocked as a pop-up; it is
+ * closed again if the server refuses the movement.
+ */
+export async function printCashMovement(body: {
+    device: string;
+    type: string;
+    amount: string;
+    category?: string | null;
+    doctor?: number | null;
+    note?: string | null;
+}): Promise<CashMovementRow> {
+    const slipWindow = window.open('', '_blank', 'width=420,height=720');
+
+    try {
+        const response = await postJson<{
+            movement: CashMovementRow;
+            slip_url: string;
+        }>(CashMovementController.store.url(), body);
+        const url = `${response.slip_url}?print=1`;
+
+        if (slipWindow) {
+            slipWindow.location.href = url;
+        } else {
+            window.open(url, '_blank', 'width=420,height=720');
+        }
+
+        return response.movement;
+    } catch (caught) {
+        slipWindow?.close();
+
+        throw caught;
+    }
+}
+
+/** Reprint a cash movement's slip: logged first, then printed marked REPRINT. */
+export async function reprintCashMovement(
+    movementUuid: string,
+    tillUuid: string,
+): Promise<void> {
+    const slipWindow = window.open('', '_blank', 'width=420,height=720');
+
+    try {
+        const response = await postJson<{ slip_url: string }>(
+            CashMovementController.reprint.url({ cashMovement: movementUuid }),
+            { device: tillUuid },
+        );
+        const url = `${response.slip_url}?print=1`;
+
+        if (slipWindow) {
+            slipWindow.location.href = url;
+        } else {
+            window.open(url, '_blank', 'width=420,height=720');
+        }
+    } catch (caught) {
+        slipWindow?.close();
 
         throw caught;
     }

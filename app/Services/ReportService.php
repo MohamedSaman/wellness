@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\AdjustmentReason;
 use App\Enums\BillType;
+use App\Enums\CashMovementType;
 use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Enums\GoodsReceiptStatus;
@@ -13,8 +14,10 @@ use App\Enums\SaleStatus;
 use App\Enums\StockMovementType;
 use App\Enums\SupplierReturnReason;
 use App\Models\AuditLog;
+use App\Models\CashMovement;
 use App\Models\GoodsReceipt;
 use App\Models\Location;
+use App\Models\NoReceiptReturn;
 use App\Models\ProductVariant;
 use App\Models\Sale;
 use App\Models\SaleReturn;
@@ -530,6 +533,15 @@ class ReportService
             ->selectRaw('refund_method as method, SUM(refund_total) as refunds')
             ->groupBy('refund_method')
             ->pluck('refunds', 'method');
+        // Returns without a receipt are refunds too (branch 18), paid back by their method (cash).
+        $noReceipt = $this->noReceiptReturns($period, $locationId)
+            ->selectRaw('refund_method as method, SUM(refund_total) as refunds')
+            ->groupBy('refund_method')
+            ->pluck('refunds', 'method');
+
+        foreach ($noReceipt as $method => $amount) {
+            $refunds[$method] = (int) ($refunds[$method] ?? 0) + (int) $amount;
+        }
 
         $rows = [];
 
@@ -1772,11 +1784,17 @@ class ReportService
             ->get()
             ->keyBy('location_id');
 
+        // Returns without a receipt (branch 18): refunds at the counter that paid them, always goods.
+        $noReceipt = $this->noReceiptReturns($period, $locationId)
+            ->selectRaw('location_id, SUM(refund_total) as refunds')
+            ->groupBy('location_id')
+            ->pluck('refunds', 'location_id');
+
         $sold = $this->lineFacts($period);
         $returned = $this->returnFacts($period);
         $items = $this->itemsOf($sold, $returned);
 
-        $locations = $this->counterLocations($locationId, [...$bills->keys()->all(), ...$refunds->keys()->all(), ...$voids->keys()->all()]);
+        $locations = $this->counterLocations($locationId, [...$bills->keys()->all(), ...$refunds->keys()->all(), ...$voids->keys()->all(), ...$noReceipt->keys()->all()]);
         $rows = [];
 
         foreach ($locations as $id => $name) {
@@ -1794,8 +1812,9 @@ class ReportService
                 $income['consultations'] -= $goods ? 0 : $row->quantity;
             }
 
+            $income['goods_refunds'] += (int) ($noReceipt[$id] ?? 0);
             $gross = (int) ($bills->get($id)->gross ?? 0);
-            $refund = (int) ($refunds[$id] ?? 0);
+            $refund = (int) ($refunds[$id] ?? 0) + (int) ($noReceipt[$id] ?? 0);
 
             $rows[] = [
                 'location_id' => (int) $id,
@@ -1849,7 +1868,7 @@ class ReportService
      * shifts as recorded at closing, open ones as they stand now
      * (ShiftService::summary()). With a location, the shifts on its tills.
      *
-     * @return list<array{till: string, location: string, cashier: string, opened_at: string|null, closed_at: string, opening_cash: int, cash_sales: int, cash_refunds: int, expected_cash: int, counted_cash: int|null, difference: int|null}>
+     * @return list<array{till: string, location: string, cashier: string, opened_at: string|null, closed_at: string, opening_cash: int, cash_sales: int, cash_refunds: int, paid_out: int, doctor_payments: int, paid_in: int, expected_cash: int, counted_cash: int|null, difference: int|null}>
      */
     public function shiftCash(ReportPeriod $period, ?int $locationId = null): array
     {
@@ -1873,11 +1892,240 @@ class ReportService
                     'opening_cash' => $summary['cash']['opening'],
                     'cash_sales' => $summary['cash']['sales'],
                     'cash_refunds' => $summary['cash']['refunds'],
+                    // Cash movements (branch 18): zero where the shop does not record them.
+                    'paid_out' => (int) ($summary['cash']['paid_out'] ?? 0),
+                    'doctor_payments' => (int) ($summary['cash']['doctor_payments'] ?? 0),
+                    'paid_in' => (int) ($summary['cash']['paid_in'] ?? 0),
                     'expected_cash' => $summary['cash']['expected'],
                     'counted_cash' => $summary['cash']['counted'],
                     'difference' => $summary['cash']['difference'],
                 ];
             })
+            ->all());
+    }
+
+    /**
+     * Doctor payments not voided, paid in the period (server time, on the
+     * shop's days), joined to their doctor; narrowed to the tills at a
+     * location, a doctor, a till, who paid, or one shift (branch 18).
+     *
+     * @param  array{doctor_id?: int|null, device_id?: int|null, user_id?: int|null, shift_id?: int|null}  $filters
+     */
+    private function doctorPayments(ReportPeriod $period, ?int $locationId, array $filters): Builder
+    {
+        $shiftId = $filters['shift_id'] ?? null;
+        $doctorId = $filters['doctor_id'] ?? null;
+        $deviceId = $filters['device_id'] ?? null;
+        $userId = $filters['user_id'] ?? null;
+
+        return CashMovement::query()->toBase()
+            ->join('doctors', 'doctors.id', '=', 'cash_movements.doctor_id')
+            ->where('cash_movements.type', CashMovementType::DoctorPayment->value)
+            ->whereNull('cash_movements.voided_at')
+            // A shift is asked for as a whole (from Shift history), whatever the period.
+            ->when($shiftId === null, fn (Builder $query) => $query
+                ->where('cash_movements.created_at', '>=', $period->startUtc())
+                ->where('cash_movements.created_at', '<', $period->endUtc()))
+            ->when($shiftId !== null, fn (Builder $query) => $query->where('cash_movements.shift_id', $shiftId))
+            ->when($locationId !== null, fn (Builder $query) => $query->where('cash_movements.location_id', $locationId))
+            ->when($doctorId !== null, fn (Builder $query) => $query->where('cash_movements.doctor_id', $doctorId))
+            ->when($deviceId !== null, fn (Builder $query) => $query->where('cash_movements.device_id', $deviceId))
+            ->when($userId !== null, fn (Builder $query) => $query->where('cash_movements.user_id', $userId));
+    }
+
+    /**
+     * Each doctor payment of the period, newest first (Reports → Doctor
+     * payments, a doctor's page): when (shop time), the doctor, the amount,
+     * the till, its location, the shift (to its summary), who paid and the
+     * note. Voided payments are left out, as from every total.
+     *
+     * @param  array{doctor_id?: int|null, device_id?: int|null, user_id?: int|null, shift_id?: int|null}  $filters
+     * @return list<array{movement_uuid: string, number: string, when: string, doctor_id: int, doctor: string, amount: int, till: string, location: string, shift: string, shift_uuid: string, paid_by: string, note: string|null}>
+     */
+    public function doctorPaymentRows(ReportPeriod $period, ?int $locationId = null, array $filters = []): array
+    {
+        return array_values($this->doctorPayments($period, $locationId, $filters)
+            ->join('devices', 'devices.id', '=', 'cash_movements.device_id')
+            ->join('locations', 'locations.id', '=', 'cash_movements.location_id')
+            ->join('users', 'users.id', '=', 'cash_movements.user_id')
+            ->join('shifts', 'shifts.id', '=', 'cash_movements.shift_id')
+            ->orderByDesc('cash_movements.created_at')
+            ->orderByDesc('cash_movements.id')
+            ->get([
+                'cash_movements.uuid', 'cash_movements.number', 'cash_movements.created_at', 'cash_movements.amount', 'cash_movements.note',
+                'doctors.id as doctor_id', 'doctors.name as doctor', 'devices.code as till', 'locations.name as location',
+                'users.name as paid_by', 'shifts.uuid as shift_uuid', 'shifts.opened_at as shift_opened_at',
+            ])
+            ->map(fn ($row): array => [
+                'movement_uuid' => (string) $row->uuid,
+                'number' => (string) $row->number,
+                'when' => (string) $period->local($row->created_at),
+                'doctor_id' => (int) $row->doctor_id,
+                'doctor' => (string) $row->doctor,
+                'amount' => (int) $row->amount,
+                'till' => (string) $row->till,
+                'location' => (string) $row->location,
+                'shift' => $row->till.' '.$period->local($row->shift_opened_at),
+                'shift_uuid' => (string) $row->shift_uuid,
+                'paid_by' => (string) $row->paid_by,
+                'note' => $row->note === null ? null : (string) $row->note,
+            ])
+            ->all());
+    }
+
+    /**
+     * Doctor payments per shift (Shift history's column), voided ones apart.
+     *
+     * @param  list<int>  $shiftIds
+     * @return array<int, int> shift id => amount
+     */
+    public function doctorPaymentsPerShift(array $shiftIds): array
+    {
+        if ($shiftIds === []) {
+            return [];
+        }
+
+        return CashMovement::query()->toBase()
+            ->whereIn('shift_id', $shiftIds)
+            ->where('type', CashMovementType::DoctorPayment->value)
+            ->whereNull('voided_at')
+            ->groupBy('shift_id')
+            ->selectRaw('shift_id, SUM(amount) as amount')
+            ->pluck('amount', 'shift_id')
+            ->map(fn (mixed $amount): int => (int) $amount)
+            ->all();
+    }
+
+    /**
+     * Cash paid out and in, doctor payments and returns without a receipt in
+     * the period, newest first (Reports → Cash movements & returns without
+     * receipt, branch 18): when (shop time), the till, its location, the
+     * shift, the number, the kind, what for (or the doctor), the amount as
+     * recorded, its effect on the drawer (+ in, − out, 0 when voided), who,
+     * the note and, for a return, its items. Voided movements are listed,
+     * marked, and move no drawer.
+     *
+     * @param  array{type?: string|null, device_id?: int|null, user_id?: int|null}  $filters
+     * @return list<array<string, mixed>>
+     */
+    public function cashMovementRows(ReportPeriod $period, ?int $locationId = null, array $filters = []): array
+    {
+        $type = $filters['type'] ?? null;
+        $deviceId = $filters['device_id'] ?? null;
+        $userId = $filters['user_id'] ?? null;
+        $rows = [];
+
+        if ($type !== 'no_receipt') {
+            $movements = CashMovement::query()
+                ->with(['device', 'location', 'user', 'doctor', 'shift', 'voider'])
+                ->where('created_at', '>=', $period->startUtc())
+                ->where('created_at', '<', $period->endUtc())
+                ->when($type !== null, fn ($query) => $query->where('type', $type))
+                ->when($locationId !== null, fn ($query) => $query->where('location_id', $locationId))
+                ->when($deviceId !== null, fn ($query) => $query->where('device_id', $deviceId))
+                ->when($userId !== null, fn ($query) => $query->where('user_id', $userId))
+                ->get();
+
+            foreach ($movements as $movement) {
+                $voided = $movement->isVoided();
+                $rows[] = [
+                    'at' => [$movement->created_at->getTimestamp(), 0, (int) $movement->getKey()],
+                    'uuid' => (string) $movement->uuid,
+                    'document' => 'cash',
+                    'when' => (string) $period->local($movement->created_at->utc()->format('Y-m-d H:i:s')),
+                    'till' => (string) $movement->device?->code,
+                    'location' => (string) $movement->location?->name,
+                    'shift' => $movement->device?->code.' '.$period->local($movement->shift?->opened_at->utc()->format('Y-m-d H:i:s')),
+                    'shift_uuid' => (string) $movement->shift?->uuid,
+                    'number' => $movement->number,
+                    'type' => $movement->type->label(),
+                    'category' => $movement->type === CashMovementType::DoctorPayment ? (string) $movement->doctor?->name : (string) $movement->category?->label(),
+                    'amount' => $movement->amount,
+                    'drawer' => $voided ? 0 : $movement->amount * $movement->type->direction(),
+                    'user' => (string) $movement->user?->name,
+                    'note' => $movement->note,
+                    'items' => null,
+                    'status' => $voided ? 'Voided by '.$movement->voider?->name.': '.$movement->void_reason : null,
+                ];
+            }
+        }
+
+        if ($type === null || $type === 'no_receipt') {
+            $returns = NoReceiptReturn::query()
+                ->with(['device', 'location', 'user', 'shift', 'items.location'])
+                ->where('returned_at', '>=', $period->startUtc())
+                ->where('returned_at', '<', $period->endUtc())
+                ->when($locationId !== null, fn ($query) => $query->where('location_id', $locationId))
+                ->when($deviceId !== null, fn ($query) => $query->where('device_id', $deviceId))
+                ->when($userId !== null, fn ($query) => $query->where('user_id', $userId))
+                ->get();
+
+            foreach ($returns as $return) {
+                $rows[] = [
+                    'at' => [$return->returned_at->getTimestamp(), 1, (int) $return->getKey()],
+                    'uuid' => (string) $return->uuid,
+                    'document' => 'no_receipt',
+                    'when' => (string) $period->local($return->returned_at->utc()->format('Y-m-d H:i:s')),
+                    'till' => (string) $return->device?->code,
+                    'location' => (string) $return->location?->name,
+                    'shift' => $return->device?->code.' '.$period->local($return->shift?->opened_at->utc()->format('Y-m-d H:i:s')),
+                    'shift_uuid' => (string) $return->shift?->uuid,
+                    'number' => $return->number,
+                    'type' => 'Return without receipt',
+                    'category' => $return->reason,
+                    'amount' => $return->refund_total,
+                    'drawer' => $return->refund_method === PaymentMethod::Cash ? -$return->refund_total : 0,
+                    'user' => (string) $return->user?->name,
+                    'note' => $return->note,
+                    'items' => $return->items->map(fn ($item): string => Quantity::format((string) $item->quantity).' '.($item->unit_name ?? '').' '.$item->description.' → '.($item->location->name ?? '').($item->batch_no === null ? '' : ' ('.$item->batch_no.')'))->implode('; '),
+                    'status' => null,
+                ];
+            }
+        }
+
+        usort($rows, fn (array $a, array $b): int => $b['at'] <=> $a['at']);
+
+        return array_map(function (array $row): array {
+            unset($row['at']);
+
+            return $row;
+        }, $rows);
+    }
+
+    /**
+     * Returns without a receipt given in the period (on the shop's days, by
+     * when they were refunded), at a counter when one is given (branch 18).
+     */
+    private function noReceiptReturns(ReportPeriod $period, ?int $locationId = null): Builder
+    {
+        return NoReceiptReturn::query()->toBase()
+            ->where('returned_at', '>=', $period->startUtc())
+            ->where('returned_at', '<', $period->endUtc())
+            ->when($locationId !== null, fn (Builder $query) => $query->where('location_id', $locationId));
+    }
+
+    /**
+     * What each doctor was paid in the period (docs/PHARMACY.md, branch 18):
+     * doctor payments not voided, on the shop's days by when they were paid
+     * (server time), from the tills at a location when one is given; the
+     * doctor paid most first.
+     *
+     * @param  array{doctor_id?: int|null, device_id?: int|null, user_id?: int|null, shift_id?: int|null}  $filters
+     * @return list<array{doctor_id: int, doctor: string, payments: int, amount: int}>
+     */
+    public function doctorPaymentsByDoctor(ReportPeriod $period, ?int $locationId = null, array $filters = []): array
+    {
+        return array_values($this->doctorPayments($period, $locationId, $filters)
+            ->groupBy('doctors.id', 'doctors.name')
+            ->orderByRaw('SUM(cash_movements.amount) DESC')
+            ->orderBy('doctors.name')
+            ->get(['doctors.id', 'doctors.name', DB::raw('COUNT(*) as payments'), DB::raw('SUM(cash_movements.amount) as amount')])
+            ->map(fn ($row): array => [
+                'doctor_id' => (int) $row->id,
+                'doctor' => (string) $row->name,
+                'payments' => (int) $row->payments,
+                'amount' => (int) $row->amount,
+            ])
             ->all());
     }
 

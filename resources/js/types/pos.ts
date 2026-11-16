@@ -480,3 +480,58 @@ export type StockRequestSummary = {
         baseUnit: string;
     }[];
 };
+
+/** PosController::index `cashMovements` (branch 18): null when the module is off. */
+export type PosCashMovements = {
+    /** cash.movements: paid out and paid in. */
+    canMove: boolean;
+    /** doctors.pay in a pharmacy. */
+    canPayDoctor: boolean;
+    /** cash.movements.void (the owner). */
+    canVoid: boolean;
+    /** Close shift notes a shift that paid no doctor (shop setting, pharmacy). */
+    remindDoctorPayment?: boolean;
+} | null;
+
+/** A kind of movement this user may record (CashMovementController::index). */
+export type CashMovementTypeOption = {
+    value: string;
+    label: string;
+    categories: { value: string; label: string }[];
+    /** The most one may be, in minor units; null = no limit. */
+    limit: number | null;
+};
+
+/** A cash movement of the till's open shift (CashMovementService::present()). */
+export type CashMovementRow = {
+    uuid: string;
+    number: string;
+    type: string;
+    label: string;
+    category: string | null;
+    amount: number;
+    doctor: string | null;
+    note: string | null;
+    user: string;
+    /** Shop time, "YYYY-MM-DD HH:MM". */
+    at: string;
+    voided: boolean;
+    void_reason: string | null;
+};
+
+/** Pay doctor (branch 18): for reference only; no amount is worked out from it. */
+export type DoctorReference = {
+    /** Today's OPD bills at every till (shop day). */
+    opd_bills: number;
+    /** Today's consultation fees, net of refunds, minor units. */
+    consultation_fees: number;
+    paid_today: {
+        doctor_id: number;
+        doctor: string;
+        amount: number;
+        /** HH:MM, shop time. */
+        at: string;
+        till: string;
+        user: string;
+    }[];
+};

@@ -20,7 +20,7 @@ The left-hand menu has these groups: **Catalog**, **Stock**, **Purchasing**, **S
 10. Expiry lists and write-offs
 11. Stock counts
 12. Low stock and reorder
-13. Sales, returns and voids
+13. Sales, returns and voids (cash in and out, doctors)
 14. Offline sales to review
 15. Reports and exports
 16. Users and allowed locations
@@ -229,10 +229,18 @@ The sale page shows every line with its batch and expiry, the prescriber, the pa
 1. Open the sale, press **Return items**.
 2. For each line, the **Return quantity** (in the unit sold, or in tablets from a box).
 3. **Put back into stock?** for each line. It is off by default for fridge items and controlled drugs: decide each time.
-4. The **Reason**, and **Refund by** cash, card or bank transfer (with its reference).
+4. The **Reason**, and **Refund by** cash, card or bank transfer (with its reference). For cash, **Cash paid from the drawer of**: the till whose drawer the money comes out of (the till that made the sale, if its shift is open). It comes off that shift's expected cash. With no shift open anywhere it says so: the refund then comes off no drawer.
 5. Confirm. The refund slip prints (**Print refund slip**). The refund is worked out from what the patient paid for that line.
 
 **Void sale (cancel a whole bill):** open the sale, **Void sale**, give the reason. The stock goes back. Print the void slip (**Print void slip**) and give back the money shown.
+
+Every return and every void is kept in the audit log, with who did it and why.
+
+**Returned without a bill** (bought before the system went live, or the bill is lost): at a till with an open shift, **Cash** (Alt+C) → **Return without receipt**. Choose the item, its unit and how many; the value starts at today's price and can be changed; a **Reason** is required. Each item goes **To Quarantine / Expired** (default; batch number and expiry if you know them) or **Back on sale** at that till's location (batch number and expiry from the pack required; expired stock is refused). The refund is paid in cash from that drawer, prints a **REFUND - NO RECEIPT** slip, shows on the shift summary as **of which without receipt**, and counts as a refund on the daily summary. Only you may do it (`returns.no_receipt`).
+
+**Cash in and out at the till** (Alt+C, any till with an open shift): **Paid out** (Refund difference, Expense, Other), **Paid in** (Float top-up, Other) and **Doctor payment**. Each one prints a slip to sign and changes that shift's expected cash only. Cashiers may pay out up to their limit (Shop settings → **Cash in and out**: 2,000.00 for a paid out and 25,000.00 for a doctor payment at first; you have none). A mistake: in **This shift**, **Void** it with a reason (you only, while the shift is open). Reprints are marked **REPRINT** and logged.
+
+**Doctors:** **Administration → Doctors**: **Add doctor** (name as it should print, phone, notes); untick **Active** when a doctor leaves (never deleted; their payments stay). Open a doctor for every payment made to them, with a period filter and its total, and cards for this month, last month, the last payment and all time. At the till, the cashier chooses the doctor and types the amount the clinic decided: nothing is worked out from the consultations, which the box only shows for reference.
 
 **Print** on the sale page: **Reprint receipt**, **Reprint refund slip**, **Reprint void slip**, **A4 invoice**.
 
@@ -259,12 +267,14 @@ Useful reports:
 
 | Report                                                          | Use it for                                                                                                                                                                                                                                            |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Daily summary (end of day)**                                  | Each counter's bills, consultations, medicines, payments, cashiers and each shift's cash, expected and counted                                                                                                                                        |
+| **Daily summary (end of day)**                                  | Each counter's bills, consultations, medicines, payments, cashiers, each shift's cash (with paid out, doctor payments and paid in), expected and counted, and what each doctor was paid                                                               |
 | **Monthly sales**                                               | The month by counter, day, category, schedule, OPD consultations and medicine                                                                                                                                                                         |
 | **Profit**                                                      | Revenue, cost and gross profit by counter, category and medicine                                                                                                                                                                                      |
 | **Payment methods**                                             | Cash, card and bank transfer totals                                                                                                                                                                                                                   |
 | **Voids and returns**                                           | Every refund and cancelled bill                                                                                                                                                                                                                       |
-| **Shift history**                                               | Every shift's float, expected and counted cash                                                                                                                                                                                                        |
+| **Shift history**                                               | Every shift's float, expected and counted cash, and what it paid doctors (click it for those payments)                                                                                                                                                |
+| **Cash movements & no-receipt returns**                         | Every paid out, paid in, doctor payment and return without a receipt: till, shift, who, what for, the note, the items, and what it did to the drawer (voided ones listed, moving nothing). Filter by type, till, location and who                     |
+| **Doctor payments**                                             | Each payment to a doctor: when, amount, till, shift, who paid, note; totals per doctor. Filter by doctor, till, location and who paid                                                                                                                 |
 | **Stock valuation**, **Stock by batch**                         | What the stock is worth at cost                                                                                                                                                                                                                       |
 | **Expiry**, **Slow-moving and dead stock**                      | Stock to act on                                                                                                                                                                                                                                       |
 | **Adjustments and write-offs**, **Transfers between locations** | Stock that moved for reasons other than sales                                                                                                                                                                                                         |
@@ -333,6 +343,7 @@ If Chrome ignores the page length (shrunk text, a long blank tail, or a cut mid-
 - **Shop**: name, address and phone (printed at the top of receipts).
 - **Branding**: logo, favicon and brand colour (**Suggest from logo**).
 - **Till**: **Sell only with an open shift** (on for the clinic: no "Sell without a shift").
+- **Cash in and out**: the most one paid out, and one doctor payment, may be at the till, per role (blank = no limit; paid in has none), and **Remind about doctor payment at shift close** (off at first: on, Close shift notes a shift that paid no doctor, with **Pay doctor**; closing is never blocked).
 - **Money and tax**: **Cashier discount limit (%)** (0 for the clinic: cashiers then see no Discount button), **Tax rate (%)** (the clinic charges no VAT on sales).
 - **Batches and expiry**: **Stop selling days before expiry** (0: sell until expiry), **Short expiry: within (days)** (90).
 - **Pharmacy checkout**: **Default prescriber**, **Prescriber on prescription-only medicines** (Required), **OPD consultation item**, **Warn when the OPD Medicines amount is below (% of list value)** (100; 0 turns the warning off), **Bank transfer needs a reference**, **Controlled-drug register** (off), **Patient on sale** (**Ask, can skip**; or required for prescription and controlled medicines, required for every sale, or off).

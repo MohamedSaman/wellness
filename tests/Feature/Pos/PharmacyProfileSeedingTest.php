@@ -17,7 +17,7 @@ use Spatie\Permission\Models\Role;
 
 class PharmacyProfileSeedingTest extends PharmacyTestCase
 {
-    private const ON = ['pharmacy', 'multi_location', 'suppliers', 'purchasing', 'offline_sync', 'labels'];
+    private const ON = ['pharmacy', 'multi_location', 'suppliers', 'purchasing', 'offline_sync', 'labels', 'cash_movements'];
 
     public function test_it_seeds_no_vehicle_data_and_no_moto_gear_shop(): void
     {

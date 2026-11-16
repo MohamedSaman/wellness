@@ -164,6 +164,12 @@ trait HasReportFilters
         return app(CurrentShop::class)->getOrFail()->hasModule('pharmacy');
     }
 
+    /** Cash paid in and out at the tills (branch 18). */
+    protected function hasCashMovements(): bool
+    {
+        return app(CurrentShop::class)->getOrFail()->hasModule('cash_movements');
+    }
+
     /** The location picked in the filter, when it is one of this shop's. */
     public function locationId(): ?int
     {

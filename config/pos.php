@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Device;
+use App\Models\Doctor;
 use App\Models\DrugDetail;
 use App\Models\Location;
 use App\Models\Patient;
@@ -120,6 +121,15 @@ return [
         // pos:audit-prune deletes audit log entries older than this many days (0 = keep
         // them all). Cost revaluations are always kept: pos:stock-rebuild --costs reads them.
         'audit_log_retention_days' => 0,
+        // Cash movements (docs/PHARMACY.md, branch 18): the most one paid out or one doctor
+        // payment may be, per role, in minor units (2,000.00 = 200000); a role not listed, or
+        // null, has no limit. A user with several roles gets the highest. Paid in has none.
+        'cash_movement_limits' => [
+            'cashier' => ['paid_out' => 200_000, 'doctor_payment' => 2_500_000],
+        ],
+        // Close shift shows a note, with Pay doctor, when the shift paid no doctor (pharmacy).
+        // Never blocks closing.
+        'doctor_payment_reminder' => false,
     ],
 
     /*
@@ -337,6 +347,9 @@ return [
         'offline_sync' => 'Offline till sync API',
         'pharmacy' => 'Pharmacy: drug master, batches & pharmacy checkout',
         'vehicle_fitment' => 'Vehicle fitment for spare parts',
+        // Branch 18: paid out / paid in at the till, in the shift's expected cash. Starts on for
+        // pharmacy shops (PosServiceProvider::registerModules), so the clinic needs no migration.
+        'cash_movements' => 'Cash paid in and out at the till',
     ],
 
     /*
@@ -373,7 +386,8 @@ return [
         'pharmacy' => [
             'business_type' => 'pharmacy',
             // labels: in-store barcodes and labels for the medicines and packs without one.
-            'modules' => ['pharmacy', 'multi_location', 'suppliers', 'purchasing', 'offline_sync', 'labels'],
+            // cash_movements: paid out / paid in and doctor payments at the tills (branch 18).
+            'modules' => ['pharmacy', 'multi_location', 'suppliers', 'purchasing', 'offline_sync', 'labels', 'cash_movements'],
             'reference_seeders' => [],
             'demo_seeder' => DemoClinicSeeder::class,
             'locations' => [
@@ -462,6 +476,12 @@ return [
         'patients.manage' => 'Edit a patient\'s name, age or date of birth and notes (pharmacy)',
         // Branch 16: owner only (through '*'); every export is written to the audit log.
         'patients.export' => 'Export the filtered patients list to Excel or PDF (pharmacy)',
+        // Branch 18: cash movements in a shift, doctors and their payments, returns without a receipt.
+        'cash.movements' => 'Pay cash out of or into the till\'s drawer in their open shift, within their role\'s limit (cash_movements)',
+        'cash.movements.void' => 'Void a cash movement or doctor payment while its shift is open (cash_movements)',
+        'returns.no_receipt' => 'Refund an item returned without its bill, to Quarantine or back to stock (pharmacy)',
+        'doctors.manage' => 'Add and edit doctors, and see each doctor\'s payments (pharmacy)',
+        'doctors.pay' => 'Pay a doctor in cash from the till, within their role\'s limit (pharmacy, cash_movements)',
     ],
 
     /*
@@ -482,6 +502,9 @@ return [
             'stock.view',
             'sales.view',
             'shifts.open_close',
+            // Branch 18: paid out / paid in and doctor payments, within the role's limits.
+            'cash.movements',
+            'doctors.pay',
         ],
     ],
 
@@ -504,6 +527,7 @@ return [
         SupplierPayment::class,
         SupplierAllocation::class,
         Patient::class,
+        Doctor::class,
     ],
 
     /*

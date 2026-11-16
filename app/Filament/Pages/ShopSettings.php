@@ -8,6 +8,7 @@ use App\Models\Shop;
 use App\Models\User;
 use App\Services\CatalogSyncService;
 use App\Support\CurrentShop;
+use App\Support\Money;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Radio;
@@ -25,6 +26,8 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 use UnitEnum;
 
 /**
@@ -92,6 +95,8 @@ class ShopSettings extends Page
             'logo_path' => $shop->logo_path,
             'favicon_path' => $shop->setting('favicon_path'),
             'brand_color' => $shop->setting('brand_color'),
+            'cash_limits' => $this->cashLimitsForForm(),
+            'doctor_payment_reminder' => (bool) $shop->setting('doctor_payment_reminder'),
         ]);
     }
 
@@ -147,6 +152,31 @@ class ShopSettings extends Page
                         Toggle::make('require_open_shift')
                             ->label('Sell only with an open shift')
                             ->helperText('The till asks the cashier to open a shift (with the cash float) before the first sale; "Sell without a shift" is not offered. Sales a till made offline are always accepted.'),
+                    ]),
+                // Branch 18: cash paid out / in and doctor payments at the till.
+                Section::make('Cash in and out')
+                    ->visible(fn (): bool => $this->shop()->hasModule('cash_movements'))
+                    ->description('The most one paid out, or one doctor payment, may be at the till, per role. Leave blank for no limit. Paid in has no limit.')
+                    ->columns(2)
+                    ->schema(fn (): array => [
+                        ...collect($this->roleNames())->flatMap(fn (string $role): array => [
+                            TextInput::make("cash_limits.{$role}.paid_out")
+                                ->label(Str::headline($role).': most one paid out')
+                                ->prefix($this->shop()->currency)
+                                ->regex('/^\d{1,10}(\.\d{1,4})?$/')
+                                ->placeholder('No limit'),
+                            TextInput::make("cash_limits.{$role}.doctor_payment")
+                                ->label(Str::headline($role).': most one doctor payment')
+                                ->prefix($this->shop()->currency)
+                                ->regex('/^\d{1,10}(\.\d{1,4})?$/')
+                                ->placeholder('No limit')
+                                ->visible(fn (): bool => $this->shop()->hasModule('pharmacy')),
+                        ])->all(),
+                        Toggle::make('doctor_payment_reminder')
+                            ->label('Remind about doctor payment at shift close')
+                            ->helperText('Close shift shows a note, with Pay doctor, when no doctor was paid in the shift. Closing is never blocked.')
+                            ->visible(fn (): bool => $this->shop()->hasModule('pharmacy'))
+                            ->columnSpanFull(),
                     ]),
                 Section::make('Batches and expiry')
                     ->visible(fn (): bool => $this->shop()->hasModule('pharmacy'))
@@ -294,12 +324,72 @@ class ShopSettings extends Page
                 ...(array_key_exists('till_clock_tolerance_minutes', $data) ? [
                     'till_clock_tolerance_minutes' => (int) $data['till_clock_tolerance_minutes'],
                 ] : []),
+                ...($shop->hasModule('cash_movements') ? [
+                    'cash_movement_limits' => $this->cashLimitsFromForm((array) ($data['cash_limits'] ?? [])),
+                ] : []),
+                ...(array_key_exists('doctor_payment_reminder', $data) ? [
+                    'doctor_payment_reminder' => (bool) $data['doctor_payment_reminder'],
+                ] : []),
                 'favicon_path' => BrandingForm::replaceFavicon($shop, $data['favicon_path'] ?? null),
                 'brand_color' => BrandingForm::normalize($data['brand_color'] ?? null),
             ],
         ]);
 
         Notification::make()->title('Settings saved')->success()->send();
+    }
+
+    /**
+     * The roles a limit can be set for, in name order.
+     *
+     * @return list<string>
+     */
+    private function roleNames(): array
+    {
+        return array_values(Role::query()->orderBy('name')->pluck('name')->map(fn (mixed $name): string => (string) $name)->all());
+    }
+
+    /**
+     * cash_movement_limits as the form shows them: amounts in the currency, blank for no limit.
+     *
+     * @return array<string, array{paid_out: string|null, doctor_payment: string|null}>
+     */
+    private function cashLimitsForForm(): array
+    {
+        $limits = (array) $this->shop()->setting('cash_movement_limits', []);
+        $decimals = (int) $this->shop()->currency_decimals;
+        $shown = fn (mixed $minor): ?string => $minor === null || $minor === '' ? null : Money::toInputString((int) $minor, $decimals);
+
+        return collect($this->roleNames())->mapWithKeys(fn (string $role): array => [$role => [
+            'paid_out' => $shown($limits[$role]['paid_out'] ?? null),
+            'doctor_payment' => $shown($limits[$role]['doctor_payment'] ?? null),
+        ]])->all();
+    }
+
+    /**
+     * The form's limits back in minor units; a role with neither limit is left out (no limit).
+     *
+     * @param  array<string, mixed>  $form
+     * @return array<string, array{paid_out: int|null, doctor_payment: int|null}>
+     */
+    private function cashLimitsFromForm(array $form): array
+    {
+        $decimals = (int) $this->shop()->currency_decimals;
+        $previous = (array) $this->shop()->setting('cash_movement_limits', []);
+        $minor = fn (mixed $value): ?int => blank($value) ? null : Money::toMinor((string) $value, $decimals);
+        $limits = [];
+
+        foreach ($this->roleNames() as $role) {
+            $row = (array) ($form[$role] ?? []);
+            $paidOut = $minor($row['paid_out'] ?? null);
+            // Without the pharmacy module the doctor's limit is not on the form: it is kept as it was.
+            $doctor = array_key_exists('doctor_payment', $row) ? $minor($row['doctor_payment']) : ($previous[$role]['doctor_payment'] ?? null);
+
+            if ($paidOut !== null || $doctor !== null) {
+                $limits[$role] = ['paid_out' => $paidOut, 'doctor_payment' => $doctor === null ? null : (int) $doctor];
+            }
+        }
+
+        return $limits;
     }
 
     /**
