@@ -18,7 +18,7 @@ Buttons and messages are written here **in bold**, exactly as they appear on the
 
 Always open a shift: the till does not sell without one.
 
-The till does not sign you out by itself. **Sign out** when you leave the counter (but not while sales are waiting to sync, section 10), so nobody sells under your name.
+The till does not sign you out by itself. **Sign out** when you leave the counter (but not while sales are waiting to sync, section 11), so nobody sells under your name.
 
 ## 2. Keyboard shortcuts
 
@@ -31,6 +31,7 @@ The till does not sign you out by itself. **Sign out** when you leave the counte
 | F8                          | Go to the **Medicines amount** box                          |
 | Enter (in Medicines amount) | Back to the search box                                      |
 | F9 or Ctrl + Enter          | Pay                                                         |
+| Alt + C                     | Cash in and out: pay a doctor, paid out, paid in            |
 | Ctrl + Enter                | In the payment box: **Complete sale**                       |
 
 ## 3. An OPD bill, step by step
@@ -177,30 +178,43 @@ Not available while the till is offline.
 
 ## 9. Returns and cancelled bills
 
-Cashiers cannot do returns, refunds or cancel (void) a bill. **Ask the Admin.**
+Cashiers cannot do returns, refunds or cancel (void) a bill. **Ask the Admin.** An item returned without a bill is refunded by the owner at the till (**Cash** → **Return without receipt**; see the General Pharmacy guide).
 
-## 10. When the internet goes down
+## 10. Paying a doctor, and other cash in and out
+
+When a doctor's session ends, the doctor may be paid in cash from this till (or from General Pharmacy's; either is fine, the payment comes off the drawer it was paid from).
+
+1. Press **Cash** (Alt+C), then the **Doctor payment** tab.
+2. Choose the doctor and type the amount the clinic tells you (for example **5000**). The box shows today's OPD bills and consultation fees **for reference only**, and warns if the doctor was already paid today.
+3. Add a note if useful (**Evening session**) and press **Pay doctor & print**.
+4. The doctor signs the **DOCTOR PAYMENT** slip. Keep it in the drawer.
+
+Two doctors on one day: pay each one separately. Paying a doctor is optional: the shift closes with or without it.
+
+**Paid out** and **Paid in** (other cash out of or into the drawer, with what for and a note) work the same way; each prints a slip to sign. A mistake: the owner can void it with a reason while the shift is open. Cash in and out needs a connection.
+
+## 11. When the internet goes down
 
 - The top bar shows **Offline** (amber), and how many sales are waiting, for example **Offline – 3 sales waiting to sync**.
 - Keep selling. OPD bills, the Medicines amount, prescriptions, payment and receipts all work offline.
 - **Sale complete** says **Saved on this till. It will sync when the connection is back.**
 - When the internet is back the sales go up by themselves. You can press **Refresh now**.
 
-Not available offline: **Recent sales** and reprints, **Stock requests**, and **Close shift** (until every sale is sent).
+Not available offline: **Recent sales** and reprints, **Stock requests**, **Cash** (paying a doctor, paid out and in), and **Close shift** (until every sale is sent).
 
 While sales are waiting: do not sign out, do not press **Change till**, and do not clear Chrome's data. If you are signed out while the internet is down, you cannot sign in again until it is back.
 
-## 11. End of day
+## 12. End of day
 
 1. Make sure the top bar says **Online** and no sales are waiting. Press **Refresh now** if needed.
-2. Press **Close shift**.
-3. Count the drawer and type it in **Counted cash (LKR)**.
+2. Press **Close shift**. If no doctor was paid in this shift and the clinic asked to be reminded, a note says so with **Pay doctor**; closing is never blocked.
+3. Count the drawer and type it in **Counted cash (LKR)**. The summary shows the doctor payments, paid out and paid in, and the **Expected cash** takes them into account.
 4. Check the **Difference**. Count again if it is red.
 5. Press **Close shift**.
 6. Press **Print the shift summary**, hand in the drawer with it.
 7. Press **Done**, then **Sign out**.
 
-## 12. Common problems
+## 13. Common problems
 
 | Problem                                               | What to do                                                                                                                   |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |

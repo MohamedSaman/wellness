@@ -12,7 +12,7 @@ Buttons and messages are written here **in bold**, exactly as they appear on the
 
 Each person has their own account. Never use someone else's account, and never tell anyone your password. Every sale records who rang it up.
 
-The till does not sign you out by itself. **Sign out** when you leave the counter (but not while sales are waiting to sync, section 14), so nobody sells under your name.
+The till does not sign you out by itself. **Sign out** when you leave the counter (but not while sales are waiting to sync, section 15), so nobody sells under your name.
 
 ## 2. Choose the till (first time only)
 
@@ -37,24 +37,25 @@ Always open a shift: the till does not sell without one. It asks for the opening
 
 ## 4. The till screen
 
-| Part of the screen | What it shows                                                                                                     |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| Top bar            | Clinic name, **T1**, the counter (**General Pharmacy**), your name, **Shift open**, and **Online** or **Offline** |
-| Top-right buttons  | **Recent sales** (F6), **Close shift**, **Change till**, **Sign out**                                             |
-| Left side          | The search box and the items found                                                                                |
-| Right side         | **Current sale**: the items on the bill, the totals and the **Pay** button                                        |
+| Part of the screen | What it shows                                                                                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Top bar            | Clinic name, **T1**, the counter (**General Pharmacy**), your name, **Shift open**, and **Online** or **Offline**                |
+| Top-right buttons  | **Recent sales** (F6), **Patients** (Alt+P), **Cash** (Alt+C), **Close shift**, **Shift summary**, **Change till**, **Sign out** |
+| Left side          | The search box and the items found                                                                                               |
+| Right side         | **Current sale**: the items on the bill, the totals and the **Pay** button                                                       |
 
 ### Keyboard shortcuts
 
-| Key                | What it does                          |
-| ------------------ | ------------------------------------- |
-| F2                 | Go to the search box                  |
-| F6                 | Recent sales (reprint a receipt)      |
-| F7                 | Patient and prescription              |
-| F9 or Ctrl + Enter | Pay                                   |
-| Ctrl + Enter       | In the payment box: **Complete sale** |
-| Arrow up / down    | Move through the search results       |
-| Enter              | Add the highlighted search result     |
+| Key                | What it does                                      |
+| ------------------ | ------------------------------------------------- |
+| F2                 | Go to the search box                              |
+| F6                 | Recent sales (reprint a receipt)                  |
+| F7                 | Patient and prescription                          |
+| F9 or Ctrl + Enter | Pay                                               |
+| Alt + C            | Cash in and out (paid out, paid in, pay a doctor) |
+| Ctrl + Enter       | In the payment box: **Complete sale**             |
+| Arrow up / down    | Move through the search results                   |
+| Enter              | Add the highlighted search result                 |
 
 ## 5. Find an item
 
@@ -186,11 +187,27 @@ The reprint is marked **\*\*\* REPRINT \*\*\*** and the system logs who reprinte
 
 ## 13. Returns, refunds and cancelled bills
 
-Cashiers cannot do returns, refunds or cancel (void) a bill. **Ask the Admin.** The Admin does them in the admin panel, and the refund slip prints from there.
+Cashiers cannot do returns, refunds or cancel (void) a bill. **Ask the Admin.** The Admin does them in the admin panel, and the refund slip prints from there; for a cash refund the Admin chooses which till's drawer paid it, and it comes off that drawer's expected cash.
+
+**Returned without a bill** (bought before the system, or the bill is lost): the owner does it at the till: **Cash** → **Return without receipt**. Choose the item, unit and how many; the value starts at today's price and can be changed; a reason is required. The stock goes to **Quarantine** unless the owner puts it back on sale (then the batch number and expiry on the pack are needed). The refund is paid in cash from this drawer and prints a **REFUND - NO RECEIPT** slip for the patient to sign.
 
 If you made a mistake on a bill **before** pressing **Complete sale**, just fix the line or clear the bill. After it is completed, call the Admin.
 
-## 14. When the internet goes down
+## 14. Cash in and out, and paying a doctor
+
+Every note that goes into or out of the drawer outside a bill is recorded, so the drawer balances at the end of the day. Press **Cash** (Alt+C). It needs an open shift and a connection.
+
+**Paid out** (cash taken out of the drawer): type the amount, choose what for (**Refund difference**, **Expense** or **Other**), add a note (required for **Other**), press **Pay out & print**. The slip prints at once; have the person who took the cash sign it, and keep it in the drawer. Example: a patient returns a medicine bought before the system and takes a cheaper one: pay the difference out as **Refund difference** with a note.
+
+**Paid in** (cash put into the drawer, for example a float top-up): the same, then **Take in & print**.
+
+**Pay a doctor** (usually when a doctor's session ends): choose the **Doctor payment** tab, choose the doctor, type the amount (for example 5000), an optional note (**Evening session**), press **Pay doctor & print**. The **DOCTOR PAYMENT** slip prints with a line for the doctor's signature; keep it in the drawer. The box shows today's OPD bills and consultation fees **for reference only**, and says if the doctor was already paid today, from which till and by whom. The amount is what the clinic tells you; the system does not work it out. Two doctors on one day: pay each one separately.
+
+You may pay out up to the limit the owner set (the box says **Up to … at once**). Above it, ask the owner.
+
+Under the form, **This shift** lists what was paid in and out of this drawer, with **Reprint** (marked **REPRINT** and logged). A mistake: tell the owner, who can **Void** it with a reason while your shift is still open. Everything paid in and out, and each doctor's payment, is on your shift summary and comes off (or adds to) **Expected cash**.
+
+## 15. When the internet goes down
 
 The top bar shows the connection:
 
@@ -224,26 +241,26 @@ The top bar shows the connection:
 | **This till has no offline invoice numbers left. Reconnect to get more.** | The till needs the internet before it can sell more offline. Use the other till or wait. |
 | **2 sales refused by the server – press Refresh now to retry**            | Press **Refresh now**. If it stays, tell the Admin.                                      |
 
-## 15. Close your shift and count the cash
+## 16. Close your shift and count the cash
 
 At the end of your shift, while the till is **Online** and no sales are waiting:
 
-1. Press **Close shift**.
+1. Press **Close shift**. If the clinic asked to be reminded and no doctor was paid in this shift, a note says so with **Pay doctor**; pay them first if they are due, or just carry on: closing is never blocked.
 2. Count all the cash in the drawer, notes and coins.
 3. Type the total in **Counted cash (LKR)**.
 4. The box shows **Expected cash** and the **Difference**. Green 0.00 means the drawer is right. Red means it is over or short. Count again if it is red.
 5. Press **Close shift**.
-6. The **Shift closed** summary shows your bills, sales, refunds, **Net sales**, voided bills, each payment method, **Float + cash − refunds**, **Expected cash**, **Counted cash** and the **Difference**.
+6. The **Shift closed** summary shows your bills, sales, refunds (**of which without receipt**, if any), **Net sales**, voided bills, each payment method, **Float + cash − refunds**, **Paid out**, **Doctor payments** (each doctor), **Paid in**, **Expected cash**, **Counted cash** and the **Difference**.
 7. Press **Print the shift summary**. Hand the drawer in with the printed summary.
 8. Press **Done**, then **Sign out**.
 
 Card and bank transfer payments are not in the drawer. They are listed on the summary for checking against the card machine and bank.
 
-## 16. Stock requests
+## 17. Stock requests
 
 Stock requests are made at the OPD counter, to ask General Pharmacy for stock; T1 has no **Stock requests** button. When one arrives, the Admin sends the stock from the admin panel.
 
-## 17. Common problems
+## 18. Common problems
 
 | Problem                                                   | What to do                                                                                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -254,7 +271,7 @@ Stock requests are made at the OPD counter, to ask General Pharmacy for stock; T
 | Pay opens the **Patient & prescription** box              | Choose or add the patient (or **Skip patient**), enter the prescriber if asked, then **Continue to payment**.                  |
 | **Enter the bank transfer reference.**                    | Type the reference in the bank transfer line.                                                                                  |
 | The receipt does not print                                | Check the printer has paper and is switched on. Reprint from **Recent sales**. If a print box appears on screen, call support. |
-| The till says **Offline**                                 | Keep selling. See section 14.                                                                                                  |
+| The till says **Offline**                                 | Keep selling. See section 15.                                                                                                  |
 | **Close shift** is greyed out                             | The till is offline or still has sales to sync. Wait until it is **Online**, press **Sync now**.                               |
 | A patient wants to return something                       | Ask the Admin.                                                                                                                 |
 | You sold the wrong thing and the sale is complete         | Do not ring it up again. Ask the Admin.                                                                                        |

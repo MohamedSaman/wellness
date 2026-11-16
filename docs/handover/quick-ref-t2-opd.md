@@ -15,12 +15,14 @@
 | Ask GEN for stock               | **Stock requests** (online only): add items or **From low stock**, unit + quantity, **Send request to General Pharmacy**. **Back to the till**.                                                                             |
 | Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                                                        |
 | Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                                                              |
+| Pay a doctor                    | **Cash** (Alt+C) → **Doctor payment**: doctor, amount, note, **Pay doctor & print**. Doctor signs the slip.                                                                                                                 |
+| Cash out / in                   | **Cash** (Alt+C) → **Paid out** or **Paid in**: amount, what for, note, print, have it signed. Up to your limit.                                                                                                            |
 | Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                                                                  |
 | End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**.                                         |
 
 ## Keys
 
-F2 search · F3 OPD / itemised · F6 recent sales · F7 patient and prescription · F8 Medicines amount · F9 pay · Ctrl + Enter complete sale
+F2 search · F3 OPD / itemised · F6 recent sales · F7 patient and prescription · F8 Medicines amount · F9 pay · Alt + C cash in and out · Ctrl + Enter complete sale
 
 ## If something goes wrong
 

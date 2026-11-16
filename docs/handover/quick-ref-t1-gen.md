@@ -15,12 +15,14 @@
 | Reprint                         | **Recent sales** (F6), find the invoice, **Reprint**. (Online only.)                                                                                                                                                        |
 | Discount                        | None at the clinic (no button). Ask the Admin.                                                                                                                                                                              |
 | Return / refund / cancel a bill | Ask the Admin.                                                                                                                                                                                                              |
+| Pay a doctor                    | **Cash** (Alt+C) → **Doctor payment**: doctor, amount, note, **Pay doctor & print**. Doctor signs the slip.                                                                                                                 |
+| Cash out / in                   | **Cash** (Alt+C) → **Paid out** or **Paid in**: amount, what for, note, print, have it signed. Up to your limit.                                                                                                            |
 | Offline (amber **Offline**)     | Keep selling. Receipts print. Sales sync by themselves; **Refresh now** when back online. Do not sign out or clear Chrome.                                                                                                  |
 | End of day                      | **Online**, nothing waiting. **Close shift**, count the drawer, **Counted cash (LKR)**, check **Difference**, **Close shift**, **Print the shift summary**, **Done**, **Sign out**.                                         |
 
 ## Keys
 
-F2 search · F6 recent sales · F7 patient and prescription · F9 pay · Ctrl + Enter complete sale
+F2 search · F6 recent sales · F7 patient and prescription · F9 pay · Alt + C cash in and out · Ctrl + Enter complete sale
 
 ## If something goes wrong
 

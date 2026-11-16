@@ -19,6 +19,7 @@ Clinic: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ Web address: https://\_\_\_\_\_\_\_\_\_
 - [ ] Shop name, address and phone checked on a printed receipt.
 - [ ] Tax rate 0 (no VAT on sales); cashier discount limit 0.
 - [ ] **Sell only with an open shift** on (Shop settings → Till); cashiers see no Discount button.
+- [ ] The clinic's doctors added (Administration → Doctors); cash limits per role and **Remind about doctor payment at shift close** set as the clinic wants (Shop settings → Cash in and out).
 - [ ] Administration → Security: admin panel signs out after 30 minutes idle; tills never sign out by themselves (0).
 - [ ] Short expiry 90 days; stop selling days before expiry 0.
 - [ ] Default prescriber, prescriber required, OPD consultation item and its fee set.
@@ -56,6 +57,8 @@ Clinic: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ Web address: https://\_\_\_\_\_\_\_\_\_
 - [ ] Return of one item by the owner, refund slip printed.
 - [ ] Void of a whole bill by the owner, void slip printed.
 - [ ] Stock request from T2, sent from the admin panel, stock arrives at Doctor's Medicines.
+- [ ] A paid out (Refund difference) and a doctor payment on T1, a doctor payment on T2: slips printed and signed, both on their shift summaries (Doctor payments section) and in Reports → Doctor payments.
+- [ ] A return without a receipt by the owner to Quarantine, REFUND - NO RECEIPT slip printed, the drawer still balances.
 - [ ] Shift opened and closed on each till, shift summary printed.
 - [ ] Daily summary report checked against the test sales.
 
@@ -107,12 +110,12 @@ Trainer (Webxkey): \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ Signature: \_\_\_\_\_\_\_\_\
 
 ## 11. Support contacts
 
-| Who                | Name | Phone | When to call                                 |
-| ------------------ | ---- | ----- | -------------------------------------------- |
-| Owner (Admin)      |      |       | Returns, voids, prices, stock, user accounts |
-| Webxkey support    |      |       | The system, tills, printers, backups         |
-| Internet provider  |      |       | The internet is down                         |
-| Printer / hardware |      |       | A printer, drawer or scanner is broken       |
+| Who                | Name | Phone | When to call                                                       |
+| ------------------ | ---- | ----- | ------------------------------------------------------------------ |
+| Owner (Admin)      |      |       | Returns, voids, prices, stock, user accounts, doctors, cash limits |
+| Webxkey support    |      |       | The system, tills, printers, backups                               |
+| Internet provider  |      |       | The internet is down                                               |
+| Printer / hardware |      |       | A printer, drawer or scanner is broken                             |
 
 Support: Webxkey — phone \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
 
