@@ -356,12 +356,13 @@ for (const viewport of viewports) {
                 await expect(
                     cash.locator('[data-test=cash-movement-row]'),
                 ).toHaveCount(2);
-                // Choosing the doctor again says they were paid today.
+                // Choosing the doctor again says they were paid today (each viewport's run pays them
+                // once more on the same day and database: the newest line is this one).
                 await cash
                     .locator('[data-test=cash-movement-doctor]')
                     .selectOption({ label: 'Dr. S. Perera' });
                 await expect(
-                    cash.locator('[data-test=doctor-paid-today]'),
+                    cash.locator('[data-test=doctor-paid-today]').last(),
                 ).toContainText('5,000.00');
                 await expectInside(cash, 'Cash in and out dialog, doctor paid');
                 await expect
