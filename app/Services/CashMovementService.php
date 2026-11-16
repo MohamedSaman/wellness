@@ -14,6 +14,7 @@ use App\Models\Shop;
 use App\Models\User;
 use App\Observers\AuditObserver;
 use App\Support\CurrentShop;
+use App\Support\ReportPeriod;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -296,6 +297,42 @@ class CashMovementService
             'paid_in' => (int) ($totals[CashMovementType::PaidIn->value] ?? 0),
             'paid_out' => (int) ($totals[CashMovementType::PaidOut->value] ?? 0),
             'doctor_payments' => (int) ($totals[CashMovementType::DoctorPayment->value] ?? 0),
+        ];
+    }
+
+    /**
+     * What the Pay doctor dialog shows for reference (no amount is worked out
+     * from it): today's OPD bills and consultation fees at every till, net of
+     * refunds, and today's payments to doctors at every till (shop days).
+     *
+     * @return array{opd_bills: int, consultation_fees: int, paid_today: list<array{doctor_id: int, doctor: string, amount: int, at: string, till: string, user: string}>}
+     */
+    public function doctorReference(): array
+    {
+        $period = ReportPeriod::today($this->shop());
+        $consultations = app(ReportService::class)->consultations($period);
+        $timezone = $this->timezone();
+
+        return [
+            'opd_bills' => $consultations['opd_bills'],
+            'consultation_fees' => $consultations['net'],
+            'paid_today' => array_values(CashMovement::query()
+                ->with(['doctor', 'device', 'user'])
+                ->where('type', CashMovementType::DoctorPayment->value)
+                ->whereNull('voided_at')
+                ->where('created_at', '>=', $period->startUtc())
+                ->where('created_at', '<', $period->endUtc())
+                ->orderBy('id')
+                ->get()
+                ->map(fn (CashMovement $movement): array => [
+                    'doctor_id' => (int) $movement->doctor_id,
+                    'doctor' => (string) $movement->doctor?->name,
+                    'amount' => $movement->amount,
+                    'at' => $movement->created_at->setTimezone($timezone)->format('H:i'),
+                    'till' => (string) $movement->device?->code,
+                    'user' => (string) $movement->user?->name,
+                ])
+                ->all()),
         ];
     }
 

@@ -17,6 +17,7 @@ import { printCashMovement, reprintCashMovement } from '@/lib/receipt/reprint';
 import type {
     CashMovementRow,
     CashMovementTypeOption,
+    DoctorReference,
     PosShop,
     PosTill,
 } from '@/types/pos';
@@ -55,6 +56,10 @@ const busy = ref<string | null>(null);
 
 const type = ref<string>('paid_out');
 const amount = ref('');
+/** Pay doctor (pharmacy): the active doctors, and for reference only, today's OPD figures and payments. */
+const doctors = ref<{ id: number; name: string }[]>([]);
+const reference = ref<DoctorReference | null>(null);
+const doctorId = ref<number | null>(null);
 const category = ref<string | null>(null);
 const note = ref('');
 const amountInput = ref<HTMLInputElement | null>(null);
@@ -71,7 +76,16 @@ const money = (minor: number) =>
     formatMoney(minor, props.shop.decimals, props.shop.currency);
 const shownTime = (local: string) => local.slice(11);
 const submitLabel = computed(() =>
-    type.value === 'paid_in' ? 'Take in & print' : 'Pay out & print',
+    type.value === 'paid_in'
+        ? 'Take in & print'
+        : type.value === 'doctor_payment'
+          ? 'Pay doctor & print'
+          : 'Pay out & print',
+);
+const paidTodayToDoctor = computed(() =>
+    (reference.value?.paid_today ?? []).filter(
+        (payment) => payment.doctor_id === doctorId.value,
+    ),
 );
 
 async function load(): Promise<void> {
@@ -84,6 +98,8 @@ async function load(): Promise<void> {
             movements: CashMovementRow[];
             types: CashMovementTypeOption[];
             can_void: boolean;
+            doctors: { id: number; name: string }[];
+            reference: DoctorReference | null;
         }>(
             CashMovementController.index.url() +
                 queryString({ device: props.till.uuid }),
@@ -93,6 +109,15 @@ async function load(): Promise<void> {
         movements.value = response.movements;
         canVoid.value = response.can_void;
         hasShift.value = response.shift !== null;
+        doctors.value = response.doctors;
+        reference.value = response.reference;
+
+        if (
+            doctorId.value !== null &&
+            !response.doctors.some((doctor) => doctor.id === doctorId.value)
+        ) {
+            doctorId.value = null;
+        }
         error.value = null;
 
         if (!response.types.some((option) => option.value === type.value)) {
@@ -122,6 +147,7 @@ function choose(value: string): void {
 function reset(): void {
     amount.value = '';
     note.value = '';
+    doctorId.value = null;
     voiding.value = null;
     voidReason.value = '';
 }
@@ -150,6 +176,12 @@ async function save(): Promise<void> {
         return;
     }
 
+    if (type.value === 'doctor_payment' && doctorId.value === null) {
+        error.value = 'Choose the doctor.';
+
+        return;
+    }
+
     if (amount.value.trim() === '') {
         error.value = 'Enter the amount.';
 
@@ -166,6 +198,7 @@ async function save(): Promise<void> {
             type: type.value,
             amount: amount.value.trim().replace(/,/g, ''),
             category: current.value.categories.length ? category.value : null,
+            doctor: type.value === 'doctor_payment' ? doctorId.value : null,
             note: note.value.trim() || null,
         });
         notice.value = `${movement.number}: ${movement.label} ${money(movement.amount)} recorded. The slip is printing.`;
@@ -320,6 +353,61 @@ async function confirmVoid(row: CashMovementRow): Promise<void> {
                         </Button>
                     </div>
 
+                    <template v-if="type === 'doctor_payment'">
+                        <label class="grid min-w-0 gap-1 text-sm font-medium">
+                            Doctor
+                            <select
+                                v-model="doctorId"
+                                class="h-12 min-w-0 rounded-lg border bg-background px-3 text-base"
+                                data-test="cash-movement-doctor"
+                            >
+                                <option :value="null" disabled>
+                                    Choose the doctor
+                                </option>
+                                <option
+                                    v-for="doctor in doctors"
+                                    :key="doctor.id"
+                                    :value="doctor.id"
+                                >
+                                    {{ doctor.name }}
+                                </option>
+                            </select>
+                            <span
+                                v-if="doctors.length === 0"
+                                class="text-xs font-normal text-muted-foreground"
+                                >No active doctor: the owner adds them in Admin
+                                → Doctors.</span
+                            >
+                        </label>
+                        <div
+                            v-if="reference"
+                            class="grid min-w-0 gap-1 rounded-lg bg-muted/50 px-3 py-2 text-sm"
+                            data-test="doctor-reference"
+                        >
+                            <p class="text-muted-foreground">
+                                For reference only: today
+                                {{ reference.opd_bills }} OPD
+                                {{
+                                    reference.opd_bills === 1
+                                        ? 'bill'
+                                        : 'bills'
+                                }}, consultation fees
+                                {{ money(reference.consultation_fees) }}.
+                            </p>
+                            <p
+                                v-for="(payment, index) in paidTodayToDoctor"
+                                :key="index"
+                                class="font-medium text-amber-700 dark:text-amber-400"
+                                data-test="doctor-paid-today"
+                            >
+                                Already paid today:
+                                {{ money(payment.amount) }} at
+                                {{ payment.at }} from {{ payment.till }} by
+                                {{ payment.user }}.
+                            </p>
+                        </div>
+                    </template>
+
                     <label class="grid min-w-0 gap-1 text-sm font-medium">
                         Amount ({{ shop.currency }})
                         <input
@@ -364,7 +452,11 @@ async function confirmVoid(row: CashMovementRow): Promise<void> {
                     </fieldset>
 
                     <label class="grid min-w-0 gap-1 text-sm font-medium">
-                        Note{{ category === 'other' ? '' : ' (optional)' }}
+                        Note{{
+                            category === 'other' && type !== 'doctor_payment'
+                                ? ''
+                                : ' (optional)'
+                        }}
                         <input
                             v-model="note"
                             type="text"

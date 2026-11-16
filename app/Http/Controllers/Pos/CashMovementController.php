@@ -39,11 +39,17 @@ class CashMovementController extends Controller
         $till = $request->device() ?? abort(422);
         $shift = Shift::query()->where('device_id', $till->getKey())->whereNull('closed_at')->latest('opened_at')->first();
 
+        $payDoctors = $movements->doctorPaymentsEnabled() && $user->can('doctors.pay');
+
         return response()->json([
             'shift' => $shift === null ? null : ['uuid' => $shift->uuid],
             'movements' => $movements->openShiftMovements($till)->map(fn (CashMovement $movement): array => $movements->present($movement))->values(),
             'types' => $this->types($user, $movements),
             'can_void' => $user->can('cash.movements.void'),
+            // Pay doctor (pharmacy, doctors.pay): who may be paid, and for reference only, today's OPD
+            // bills and consultation fees (every OPD till) and today's payments to doctors (every till).
+            'doctors' => $payDoctors ? Doctor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name'])->map(fn (Doctor $doctor): array => ['id' => (int) $doctor->getKey(), 'name' => $doctor->name])->values() : [],
+            'reference' => $payDoctors ? $movements->doctorReference() : null,
         ]);
     }
 

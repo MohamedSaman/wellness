@@ -516,3 +516,20 @@ export type CashMovementRow = {
     voided: boolean;
     void_reason: string | null;
 };
+
+/** Pay doctor (branch 18): for reference only; no amount is worked out from it. */
+export type DoctorReference = {
+    /** Today's OPD bills at every till (shop day). */
+    opd_bills: number;
+    /** Today's consultation fees, net of refunds, minor units. */
+    consultation_fees: number;
+    paid_today: {
+        doctor_id: number;
+        doctor: string;
+        amount: number;
+        /** HH:MM, shop time. */
+        at: string;
+        till: string;
+        user: string;
+    }[];
+};

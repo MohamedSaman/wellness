@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Pos;
 
+use App\Filament\Resources\Doctors\Pages\ManageDoctors;
 use App\Models\Shop;
 use App\Services\ShiftService;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -62,5 +63,10 @@ class CashMovementRetailTest extends PosTestCase
         $this->actingAs($this->owner)
             ->postJson(route('pos.no-receipt-returns.store'), ['device' => $this->till->uuid, 'reason' => 'x', 'lines' => []])
             ->assertNotFound();
+    }
+
+    public function test_retail_has_no_doctors(): void
+    {
+        $this->actingAs($this->owner)->get(ManageDoctors::getUrl())->assertForbidden();
     }
 }
