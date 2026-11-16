@@ -159,7 +159,7 @@ function money(minor: number | null): string {
         :open="open"
         @update:open="closed ? done() : emit('update:open', $event)"
     >
-        <DialogContent class="sm:max-w-md">
+        <DialogContent class="max-h-[95dvh] overflow-y-auto sm:max-w-md">
             <DialogHeader>
                 <DialogTitle>{{
                     closed ? 'Shift closed' : 'Close shift'

@@ -17,7 +17,9 @@ use Illuminate\Database\Seeder;
  * clinic's two counters (DemoClinicCountersSeeder: an OPD till at Doctor's
  * Medicines, allowed locations, syrups sold loose there) and stock control
  * (DemoClinicStockControlSeeder: a quarantine location, expiring stock,
- * reorder and par levels, a stock request waiting).
+ * reorder and par levels, a stock request waiting), patients
+ * (DemoClinicPatientsSeeder) and two doctors to pay, with the reminder at
+ * shift close on (DemoClinicDoctorsSeeder).
  * The pharmacy profile's demo; skipped under any other profile.
  *
  *   owner@clinic.test   / password
@@ -63,6 +65,7 @@ class DemoClinicSeeder extends Seeder
             $this->call(DemoClinicTillPricesSeeder::class);
             $this->call(DemoClinicStockControlSeeder::class);
             $this->call(DemoClinicPatientsSeeder::class);
+            $this->call(DemoClinicDoctorsSeeder::class);
         }
     }
 }
