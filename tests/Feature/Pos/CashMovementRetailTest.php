@@ -3,6 +3,7 @@
 namespace Tests\Feature\Pos;
 
 use App\Models\Shop;
+use App\Services\ShiftService;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Pennant\Feature;
 
@@ -31,5 +32,23 @@ class CashMovementRetailTest extends PosTestCase
         $this->actingAs($this->cashier)
             ->postJson(route('pos.cash-movements.store'), ['device' => $this->till->uuid, 'type' => 'paid_out', 'amount' => '10', 'category' => 'expense'])
             ->assertNotFound();
+    }
+
+    public function test_the_retail_shift_summary_is_as_it_was(): void
+    {
+        $shifts = app(ShiftService::class);
+        $shift = $shifts->open($this->till, $this->cashier, 100_000);
+        $summary = $shifts->summary($shift);
+
+        $this->assertSame(['opening', 'sales', 'refunds', 'expected', 'counted', 'difference'], array_keys($summary['cash']));
+        $this->assertArrayNotHasKey('movements', $summary);
+        $this->assertArrayNotHasKey('doctor_payments', $summary);
+        $this->assertArrayNotHasKey('no_receipt_refunds', $summary);
+
+        $this->actingAs($this->cashier)->get(route('pos.shift.summary', ['shift' => $shift->uuid]))
+            ->assertOk()
+            ->assertDontSee('Paid out')
+            ->assertDontSee('Doctor payments')
+            ->assertDontSee('without receipt');
     }
 }

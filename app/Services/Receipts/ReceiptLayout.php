@@ -245,7 +245,7 @@ final class ReceiptLayout
         $this->start([]);
         /** @var array<string, mixed> $summary */
         $summary = $shift['summary'];
-        /** @var array{opening: int, sales: int, refunds: int, expected: int, counted: int|null, difference: int|null} $cash */
+        /** @var array{opening: int, sales: int, refunds: int, paid_in?: int, paid_out?: int, doctor_payments?: int, expected: int, counted: int|null, difference: int|null} $cash */
         $cash = $summary['cash'];
         /** @var list<array{method: string, label: string, amount: int}> $payments */
         $payments = $summary['payments'];
@@ -274,6 +274,12 @@ final class ReceiptLayout
         $this->row('Sales', $this->money((int) $summary['gross']));
         $this->row('Discounts given', $this->money((int) $shift['discounts']));
         $this->row('Refunds ('.$summary['refunds_count'].')', $this->money(-(int) $summary['refunds']));
+
+        if ((int) ($summary['no_receipt_count'] ?? 0) > 0) {
+            // Returns without a receipt (branch 18): part of the refunds above.
+            $this->row('of which without receipt ('.$summary['no_receipt_count'].')', $this->money(-(int) $summary['no_receipt_refunds']), indent: 2);
+        }
+
         $this->row('NET SALES '.$this->shop['currency'], $this->money((int) $summary['net']), bold: true);
         $this->row('Voided bills ('.$summary['voids'].')', $this->money((int) $summary['voids_total']));
         $this->rule();
@@ -294,6 +300,18 @@ final class ReceiptLayout
         $this->row('Opening float', $this->money($cash['opening']));
         $this->row('Cash sales', $this->money($cash['sales']));
         $this->row('Cash refunds', $this->money(-$cash['refunds']));
+
+        if (array_key_exists('paid_out', $cash)) {
+            // Cash movements (branch 18).
+            $this->row('Paid out', $this->money(-(int) $cash['paid_out']));
+
+            if (array_key_exists('doctor_payments', $summary)) {
+                $this->row('Doctor payments', $this->money(-(int) ($cash['doctor_payments'] ?? 0)));
+            }
+
+            $this->row('Paid in', $this->money((int) ($cash['paid_in'] ?? 0)));
+        }
+
         $this->grandTotal('EXPECTED CASH '.$this->shop['currency'], $this->money($cash['expected']));
         $this->row('Counted', $optional($cash['counted']));
         $this->row('Difference', $optional($cash['difference']), bold: true);
@@ -307,7 +325,7 @@ final class ReceiptLayout
         }
 
         $this->rule();
-
+        $this->movements($summary, $cash);
         $this->signatures(['Cashier', 'Checked by', 'Date']);
 
         $this->reprinted($reprint);
@@ -380,6 +398,62 @@ final class ReceiptLayout
         $this->reprinted($reprint);
 
         return $this->lines;
+    }
+
+    /**
+     * The shift's paid out and paid in, one by one, and (a pharmacy) what
+     * each doctor was paid, as sections of their own (branch 18). Nothing
+     * when the shop does not record cash movements.
+     *
+     * @param  array<string, mixed>  $summary
+     * @param  array<string, int|null>  $cash
+     */
+    private function movements(array $summary, array $cash): void
+    {
+        if (! array_key_exists('movements', $summary)) {
+            return;
+        }
+
+        $this->text('Paid out and paid in', bold: true);
+
+        /** @var list<array{number: string, type: string, label: string, category: string|null, amount: int, note: string|null, user: string, at: string}> $movements */
+        $movements = $summary['movements'];
+
+        foreach ($movements as $movement) {
+            $this->row(substr($movement['at'], 11).' '.$movement['label'], $this->money($movement['type'] === 'paid_in' ? $movement['amount'] : -$movement['amount']));
+            $this->text(trim($movement['number'].' '.($movement['category'] ?? '').(filled($movement['note']) ? ': '.$movement['note'] : '')), indent: 2, hang: 2);
+        }
+
+        if ($movements === []) {
+            $this->text('Nothing paid out or in.');
+        }
+
+        if ((int) ($summary['voided_movements'] ?? 0) > 0) {
+            $this->text('Voided ('.$summary['voided_movements'].') not counted.');
+        }
+
+        $this->rule();
+
+        if (! array_key_exists('doctor_payments', $summary)) {
+            return;
+        }
+
+        $this->text('Doctor payments', bold: true);
+
+        /** @var list<array{doctor: string, payments: int, amount: int}> $doctors */
+        $doctors = $summary['doctor_payments'];
+
+        foreach ($doctors as $payment) {
+            $this->row($payment['doctor'].($payment['payments'] > 1 ? ' ('.$payment['payments'].')' : ''), $this->money($payment['amount']));
+        }
+
+        if ($doctors === []) {
+            $this->text('No doctor paid in this shift.');
+        } elseif (count($doctors) > 1) {
+            $this->row('Total', $this->money((int) ($cash['doctor_payments'] ?? 0)), bold: true);
+        }
+
+        $this->rule();
     }
 
     /**

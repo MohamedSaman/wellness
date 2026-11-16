@@ -200,7 +200,7 @@ class ShiftService
      * control) and, in a pharmacy, what each doctor was paid: one row per
      * doctor, in the order first paid.
      *
-     * @return array{movements: list<array{number: string, type: string, label: string, category: string|null, amount: int, note: string|null, user: string, at: string}>, voided_movements: int, doctor_payments: list<array{doctor: string, payments: int, amount: int}>}
+     * @return array{movements: list<array{number: string, type: string, label: string, category: string|null, amount: int, note: string|null, user: string, at: string}>, voided_movements: int, doctor_payments?: list<array{doctor: string, payments: int, amount: int}>}
      */
     private function movementLists(Shift $shift, bool $pharmacy): array
     {
@@ -220,13 +220,13 @@ class ShiftService
                 'at' => $movement->created_at->setTimezone($timezone)->format('Y-m-d H:i'),
             ])->all()),
             'voided_movements' => $all->count() - $counted->count(),
-            'doctor_payments' => ! $pharmacy ? [] : array_values($counted->where('type', CashMovementType::DoctorPayment)
+            ...(! $pharmacy ? [] : ['doctor_payments' => array_values($counted->where('type', CashMovementType::DoctorPayment)
                 ->groupBy('doctor_id')
                 ->map(fn (Collection $payments): array => [
                     'doctor' => (string) $payments->first()?->doctor?->name,
                     'payments' => $payments->count(),
                     'amount' => (int) $payments->sum('amount'),
-                ])->all()),
+                ])->all())]),
         ];
     }
 

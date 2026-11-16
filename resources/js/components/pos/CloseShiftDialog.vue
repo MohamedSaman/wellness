@@ -29,6 +29,9 @@ type Summary = {
     gross: number;
     refunds: number;
     refunds_count: number;
+    /** Of the refunds, those without a receipt (pharmacy, branch 18). */
+    no_receipt_refunds?: number;
+    no_receipt_count?: number;
     voids: number;
     voids_total: number;
     net: number;
@@ -37,10 +40,16 @@ type Summary = {
         opening: number;
         sales: number;
         refunds: number;
+        /** Cash movements (branch 18): present when the shop records them. */
+        paid_in?: number;
+        paid_out?: number;
+        doctor_payments?: number;
         expected: number;
         counted: number | null;
         difference: number | null;
     };
+    /** What each doctor was paid in the shift (pharmacy, branch 18). */
+    doctor_payments?: { doctor: string; payments: number; amount: number }[];
 };
 
 const counted = ref('');
@@ -170,6 +179,16 @@ function money(minor: number | null): string {
                 <dd class="text-right tabular-nums">
                     {{ money(-summary.refunds) }}
                 </dd>
+                <template v-if="(summary.no_receipt_count ?? 0) > 0">
+                    <dt class="pl-3 text-muted-foreground">
+                        of which without receipt ({{
+                            summary.no_receipt_count
+                        }})
+                    </dt>
+                    <dd class="text-right text-muted-foreground tabular-nums">
+                        {{ money(-(summary.no_receipt_refunds ?? 0)) }}
+                    </dd>
+                </template>
                 <dt class="font-medium">Net sales</dt>
                 <dd class="text-right font-semibold tabular-nums">
                     {{ money(summary.net) }}
@@ -195,6 +214,41 @@ function money(minor: number | null): string {
                     {{ money(summary.cash.sales) }} −
                     {{ money(summary.cash.refunds) }}
                 </dd>
+                <template v-if="summary.cash.paid_out !== undefined">
+                    <dt class="text-muted-foreground">Paid out</dt>
+                    <dd
+                        class="text-right tabular-nums"
+                        data-test="shift-paid-out"
+                    >
+                        {{ money(-(summary.cash.paid_out ?? 0)) }}
+                    </dd>
+                    <template v-if="summary.doctor_payments">
+                        <dt class="text-muted-foreground">Doctor payments</dt>
+                        <dd
+                            class="text-right tabular-nums"
+                            data-test="shift-doctor-payments"
+                        >
+                            {{ money(-(summary.cash.doctor_payments ?? 0)) }}
+                        </dd>
+                        <template
+                            v-for="payment in summary.doctor_payments"
+                            :key="payment.doctor"
+                        >
+                            <dt class="truncate pl-3 text-muted-foreground">
+                                {{ payment.doctor }}
+                            </dt>
+                            <dd
+                                class="text-right text-muted-foreground tabular-nums"
+                            >
+                                {{ money(payment.amount) }}
+                            </dd>
+                        </template>
+                    </template>
+                    <dt class="text-muted-foreground">Paid in</dt>
+                    <dd class="text-right tabular-nums">
+                        {{ money(summary.cash.paid_in ?? 0) }}
+                    </dd>
+                </template>
             </dl>
 
             <dl class="grid grid-cols-[1fr_auto] gap-y-2 text-lg">

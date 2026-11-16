@@ -84,6 +84,7 @@ class DailySummaryReport extends SummaryReportPage
         ];
 
         $shifts = $this->reports()->shiftCash($period, $location);
+        $movements = $this->hasCashMovements();
         $cashColumns = [
             ReportColumn::text('till', 'Till'),
             ...($this->multiLocation() ? [ReportColumn::text('location', 'Counter')] : []),
@@ -93,11 +94,26 @@ class DailySummaryReport extends SummaryReportPage
             ReportColumn::money('opening_cash', 'Float'),
             ReportColumn::money('cash_sales', 'Cash sales'),
             ReportColumn::money('cash_refunds', 'Cash refunds'),
+            // Cash movements (branch 18), where the shop records them.
+            ...($movements ? [ReportColumn::money('paid_out', 'Paid out')] : []),
+            ...($movements && $this->hasPharmacy() ? [ReportColumn::money('doctor_payments', 'Doctor payments')] : []),
+            ...($movements ? [ReportColumn::money('paid_in', 'Paid in')] : []),
             ReportColumn::money('expected_cash', 'Expected'),
             ReportColumn::money('counted_cash', 'Counted'),
             ReportColumn::money('difference', 'Difference'),
         ];
-        $tables[] = $this->makeTable('Cash: expected and counted', $cashColumns, $shifts, note: 'Expected = float + cash sales − cash refunds. An open shift shows what its drawer should hold now; it is counted when it closes.');
+        $formula = $movements
+            ? 'Expected = float + cash sales − cash refunds − paid out'.($this->hasPharmacy() ? ' − doctor payments' : '').' + paid in.'
+            : 'Expected = float + cash sales − cash refunds.';
+        $tables[] = $this->makeTable('Cash: expected and counted', $cashColumns, $shifts, note: $formula.' An open shift shows what its drawer should hold now; it is counted when it closes.');
+
+        if ($movements && $this->hasPharmacy()) {
+            $tables[] = $this->makeTable('Doctor payments', [
+                ReportColumn::text('doctor', 'Doctor'),
+                ReportColumn::integer('payments', 'Payments'),
+                ReportColumn::money('amount', 'Paid'),
+            ], $this->reports()->doctorPaymentsByDoctor($period, $location), note: 'Cash paid to each doctor from the tills, voided payments apart. Reports → Doctor payments lists each one.');
+        }
 
         return $tables;
     }

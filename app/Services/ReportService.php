@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\AdjustmentReason;
 use App\Enums\BillType;
+use App\Enums\CashMovementType;
 use App\Enums\DosageForm;
 use App\Enums\DrugSchedule;
 use App\Enums\GoodsReceiptStatus;
@@ -13,6 +14,7 @@ use App\Enums\SaleStatus;
 use App\Enums\StockMovementType;
 use App\Enums\SupplierReturnReason;
 use App\Models\AuditLog;
+use App\Models\CashMovement;
 use App\Models\GoodsReceipt;
 use App\Models\Location;
 use App\Models\ProductVariant;
@@ -1849,7 +1851,7 @@ class ReportService
      * shifts as recorded at closing, open ones as they stand now
      * (ShiftService::summary()). With a location, the shifts on its tills.
      *
-     * @return list<array{till: string, location: string, cashier: string, opened_at: string|null, closed_at: string, opening_cash: int, cash_sales: int, cash_refunds: int, expected_cash: int, counted_cash: int|null, difference: int|null}>
+     * @return list<array{till: string, location: string, cashier: string, opened_at: string|null, closed_at: string, opening_cash: int, cash_sales: int, cash_refunds: int, paid_out: int, doctor_payments: int, paid_in: int, expected_cash: int, counted_cash: int|null, difference: int|null}>
      */
     public function shiftCash(ReportPeriod $period, ?int $locationId = null): array
     {
@@ -1873,11 +1875,45 @@ class ReportService
                     'opening_cash' => $summary['cash']['opening'],
                     'cash_sales' => $summary['cash']['sales'],
                     'cash_refunds' => $summary['cash']['refunds'],
+                    // Cash movements (branch 18): zero where the shop does not record them.
+                    'paid_out' => (int) ($summary['cash']['paid_out'] ?? 0),
+                    'doctor_payments' => (int) ($summary['cash']['doctor_payments'] ?? 0),
+                    'paid_in' => (int) ($summary['cash']['paid_in'] ?? 0),
                     'expected_cash' => $summary['cash']['expected'],
                     'counted_cash' => $summary['cash']['counted'],
                     'difference' => $summary['cash']['difference'],
                 ];
             })
+            ->all());
+    }
+
+    /**
+     * What each doctor was paid in the period (docs/PHARMACY.md, branch 18):
+     * doctor payments not voided, on the shop's days by when they were paid
+     * (server time), from the tills at a location when one is given; the
+     * doctor paid most first.
+     *
+     * @return list<array{doctor_id: int, doctor: string, payments: int, amount: int}>
+     */
+    public function doctorPaymentsByDoctor(ReportPeriod $period, ?int $locationId = null): array
+    {
+        return array_values(CashMovement::query()->toBase()
+            ->join('doctors', 'doctors.id', '=', 'cash_movements.doctor_id')
+            ->where('cash_movements.type', CashMovementType::DoctorPayment->value)
+            ->whereNull('cash_movements.voided_at')
+            ->where('cash_movements.created_at', '>=', $period->startUtc())
+            ->where('cash_movements.created_at', '<', $period->endUtc())
+            ->when($locationId !== null, fn (Builder $query) => $query->where('cash_movements.location_id', $locationId))
+            ->groupBy('doctors.id', 'doctors.name')
+            ->orderByRaw('SUM(cash_movements.amount) DESC')
+            ->orderBy('doctors.name')
+            ->get(['doctors.id', 'doctors.name', DB::raw('COUNT(*) as payments'), DB::raw('SUM(cash_movements.amount) as amount')])
+            ->map(fn ($row): array => [
+                'doctor_id' => (int) $row->id,
+                'doctor' => (string) $row->name,
+                'payments' => (int) $row->payments,
+                'amount' => (int) $row->amount,
+            ])
             ->all());
     }
 
