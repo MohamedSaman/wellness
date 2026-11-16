@@ -13,6 +13,7 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleItemBatch;
 use App\Models\SaleReturn;
+use App\Models\Shift;
 use App\Models\User;
 use App\Services\CheckoutService;
 use App\Services\Data\ReturnLine;
@@ -92,6 +93,8 @@ class ViewSale extends ViewRecord
             ->modalWidth(Width::FiveExtraLarge)
             ->fillForm(fn (): array => [
                 'refund_method' => PaymentMethod::Cash->value,
+                // The drawer the cash comes out of (branch 18): the selling till's open shift by default.
+                'shift_id' => $this->openShifts()->firstWhere('device_id', $this->saleRecord()->device_id)?->getKey(),
                 'items' => $this->returnableItems()->map(fn (SaleItem $item): array => [
                     'sale_item_id' => $item->getKey(),
                     'description' => $item->description,
@@ -166,6 +169,18 @@ class ViewSale extends ViewRecord
                     ->options(collect(PaymentMethod::cases())->mapWithKeys(fn (PaymentMethod $method) => [$method->value => ucwords(str_replace('_', ' ', $method->value))])->all())
                     ->required()
                     ->live(),
+                Select::make('shift_id')
+                    ->label('Cash paid from the drawer of')
+                    ->options(fn (): array => $this->openShifts()->mapWithKeys(fn (Shift $shift): array => [
+                        $shift->getKey() => trim($shift->device?->code.' · '.($shift->device?->location->name ?? '').' · '.$shift->user?->name.' · open since '.$shift->opened_at->setTimezone($this->timezone())->format('d/m H:i')),
+                    ])->all())
+                    ->placeholder('No till has an open shift')
+                    ->required(fn (Get $get): bool => $get('refund_method') === PaymentMethod::Cash->value && $this->openShifts()->isNotEmpty())
+                    ->native(false)
+                    ->helperText(fn (): string => $this->openShifts()->isEmpty()
+                        ? 'No till has an open shift: this cash refund will not come off any drawer. Open a shift first, or count it out of the safe.'
+                        : 'The refund comes off this till\'s expected cash.')
+                    ->visible(fn (Get $get): bool => $get('refund_method') === PaymentMethod::Cash->value),
                 TextInput::make('refund_reference')
                     ->label(fn (Get $get): string => $get('refund_method') === PaymentMethod::BankTransfer->value ? 'Bank transfer reference' : 'Reference')
                     ->maxLength(100)
@@ -185,6 +200,7 @@ class ViewSale extends ViewRecord
                         PaymentMethod::from($data['refund_method']),
                         $this->user(),
                         refundReference: $data['refund_reference'] ?? null,
+                        shift: $this->paidFrom($data),
                         note: $data['note'] ?? null,
                     );
                 } catch (PosException $exception) {
@@ -467,6 +483,40 @@ class ViewSale extends ViewRecord
     private function canVoid(): bool
     {
         return $this->user()->can('sales.void') && $this->saleRecord()->status === SaleStatus::Completed;
+    }
+
+    /**
+     * Every open shift, by till (branch 18): a cash refund comes off the
+     * drawer of the one picked.
+     *
+     * @return Collection<int, Shift>
+     */
+    private function openShifts(): Collection
+    {
+        return Shift::query()->with(['device.location', 'user'])->whereNull('closed_at')->orderBy('device_id')->get();
+    }
+
+    /**
+     * The shift a refund is paid from: the one picked for a cash refund
+     * (required while any till has an open shift); for any other method, or
+     * with no shift open anywhere, the return's default (the selling till's
+     * open shift, if any).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function paidFrom(array $data): ?Shift
+    {
+        if (($data['refund_method'] ?? null) !== PaymentMethod::Cash->value || blank($data['shift_id'] ?? null)) {
+            return null;
+        }
+
+        return $this->openShifts()->firstWhere('id', (int) $data['shift_id'])
+            ?? throw new PosException('That till\'s shift has closed. Choose another drawer.');
+    }
+
+    private function timezone(): string
+    {
+        return (string) (app(CurrentShop::class)->getOrFail()->timezone ?: config('app.timezone'));
     }
 
     private function canReturn(): bool

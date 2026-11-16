@@ -39,6 +39,16 @@ class SaleReturn extends Model
         ];
     }
 
+    /**
+     * The till whose drawer paid it (branch 18); null on returns before it.
+     *
+     * @return BelongsTo<Device, $this>
+     */
+    public function device(): BelongsTo
+    {
+        return $this->belongsTo(Device::class);
+    }
+
     /** @return BelongsTo<Sale, $this> */
     public function sale(): BelongsTo
     {
