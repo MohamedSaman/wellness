@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\SaleStatus;
 use App\Models\AuditLog;
 use App\Models\Device;
+use App\Models\NoReceiptReturn;
 use App\Models\Sale;
 use App\Models\SaleReturn;
 use App\Models\Shift;
@@ -89,12 +90,15 @@ class ShiftSummaryService
             ->groupBy('shift_id')->selectRaw('shift_id, SUM(grand_total) as total')->pluck('total', 'shift_id');
         $refunds = SaleReturn::query()->toBase()->whereIn('shift_id', $ids)
             ->groupBy('shift_id')->selectRaw('shift_id, SUM(refund_total) as total')->pluck('total', 'shift_id');
+        // Returns without a receipt are refunds too (branch 18).
+        $noReceipt = NoReceiptReturn::query()->toBase()->whereIn('shift_id', $ids)
+            ->groupBy('shift_id')->selectRaw('shift_id, SUM(refund_total) as total')->pluck('total', 'shift_id');
 
         return $shifts->map(fn (Shift $shift): array => [
             'uuid' => (string) $shift->uuid,
             'closed_at' => (string) $shift->closed_at?->setTimezone($timezone)->format('Y-m-d H:i'),
             'cashier' => (string) $shift->user?->name,
-            'net' => (int) ($gross[$shift->getKey()] ?? 0) - (int) ($refunds[$shift->getKey()] ?? 0),
+            'net' => (int) ($gross[$shift->getKey()] ?? 0) - (int) ($refunds[$shift->getKey()] ?? 0) - (int) ($noReceipt[$shift->getKey()] ?? 0),
         ])->values();
     }
 

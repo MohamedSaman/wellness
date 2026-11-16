@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\CashMovement;
 use App\Models\Device;
 use App\Models\GoodsReceipt;
+use App\Models\NoReceiptReturn;
 use App\Models\Patient;
 use App\Models\PurchaseOrder;
 use App\Models\Sale;
@@ -29,7 +31,8 @@ use Illuminate\Support\Facades\DB;
  * Clears the rehearsal out of a shop on go-live morning (pos:go-live-reset,
  * docs/deploy/GO-LIVE.md): the test sales with their items, payments and
  * batches, returns, voids, shifts and their stock movements, the patients
- * added with them (branch 13), and the
+ * added with them (branch 13), the cash movements, doctor payments and
+ * returns without a receipt of its shifts (branch 18), and the
  * invoice numbering (every till starts again at 000001, its offline number
  * blocks dropped and its sync token revoked, so it is registered again with
  * a clean slate). With $stock, also everything else that moved stock or
@@ -80,7 +83,7 @@ class GoLiveResetService
             $removed = [];
             $movementIds = $stock
                 ? []
-                : $this->movementsOf([(new Sale)->getMorphClass(), (new SaleReturn)->getMorphClass()]);
+                : $this->movementsOf([(new Sale)->getMorphClass(), (new SaleReturn)->getMorphClass(), (new NoReceiptReturn)->getMorphClass()]);
 
             // Links within a table (reversals) first, so whole tables can go.
             if ($stock) {
@@ -137,6 +140,10 @@ class GoLiveResetService
             'sales' => DB::table('sales')->where('shop_id', $shopId),
             // The rehearsal's patients (branch 13): added at the tills with its sales.
             'patients' => DB::table('patients')->where('shop_id', $shopId),
+            // Branch 18: the rehearsal's cash movements and returns without a receipt (they belong to its shifts).
+            'no_receipt_return_items' => DB::table('no_receipt_return_items')->whereIn('no_receipt_return_id', DB::table('no_receipt_returns')->where('shop_id', $shopId)->select('id')),
+            'no_receipt_returns' => DB::table('no_receipt_returns')->where('shop_id', $shopId),
+            'cash_movements' => DB::table('cash_movements')->where('shop_id', $shopId),
             'shifts' => DB::table('shifts')->where('shop_id', $shopId),
             'invoice_number_blocks' => DB::table('invoice_number_blocks')->where('shop_id', $shopId),
         ];
@@ -170,8 +177,8 @@ class GoLiveResetService
         $targets['audit_logs'] = DB::table('audit_logs')->where('shop_id', $shopId)->whereIn('auditable_type', array_map(
             fn (string $model): string => (new $model)->getMorphClass(),
             $stock
-                ? [Sale::class, SaleReturn::class, Shift::class, Patient::class, GoodsReceipt::class, PurchaseOrder::class, SupplierReturn::class, SupplierPayment::class, SupplierOpeningBalance::class, SupplierAllocation::class, StockTransfer::class, StockRequest::class, StockWriteOff::class, StockCount::class]
-                : [Sale::class, SaleReturn::class, Shift::class, Patient::class],
+                ? [Sale::class, SaleReturn::class, Shift::class, Patient::class, CashMovement::class, NoReceiptReturn::class, GoodsReceipt::class, PurchaseOrder::class, SupplierReturn::class, SupplierPayment::class, SupplierOpeningBalance::class, SupplierAllocation::class, StockTransfer::class, StockRequest::class, StockWriteOff::class, StockCount::class]
+                : [Sale::class, SaleReturn::class, Shift::class, Patient::class, CashMovement::class, NoReceiptReturn::class],
         ));
 
         return $targets;
