@@ -108,8 +108,8 @@ class ReceiptService
      * prints, and the receipt as ESC/POS bytes (base64) for a thermal printer,
      * laid out for that printer's own font (ReceiptLayout::forPrinter()).
      *
-     * @param  'sale'|'refund'|'void'|'shift'|'cash'  $document
-     * @param  array<string, mixed>  $payload  sale(), refund(), voidSlip(), a shift summary (ShiftController::summary()) or a cash movement's slip (CashMovementService::slip())
+     * @param  'sale'|'refund'|'void'|'shift'|'cash'|'no_receipt'  $document
+     * @param  array<string, mixed>  $payload  sale(), refund(), voidSlip(), a shift summary (ShiftController::summary()) a cash movement's slip (CashMovementService::slip()) or a refund without a receipt (NoReceiptReturnService::slip())
      * @param  ReceiptShop|null  $shop  shop(), or the shop as Receipt settings' preview has it
      * @return array{paperWidth: int, columns: int, largePrint: bool, lines: list<array{text: string, bold: bool, tall: bool}>, escpos: string}
      */
@@ -125,6 +125,7 @@ class ReceiptService
                 'void' => $layout->voidSlip($payload),
                 'shift' => $layout->shiftSummary($payload),
                 'cash' => $layout->cashMovement($payload),
+                'no_receipt' => $layout->noReceiptRefund($payload),
             };
         };
         $paperWidth = (int) $shop['receipt']['paperWidth'];

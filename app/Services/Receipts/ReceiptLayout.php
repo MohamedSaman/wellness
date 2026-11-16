@@ -401,6 +401,65 @@ final class ReceiptLayout
     }
 
     /**
+     * A refund without a receipt (docs/PHARMACY.md, branch 18): REFUND - NO
+     * RECEIPT, its number and time, the till and who refunded it, each item
+     * with how many came back, its value and where the stock went
+     * (Quarantine or back to stock, with the batch), the total paid back in
+     * cash, the reason and lines to sign. A reprint is marked as a sale's
+     * is. Server only, like every slip but the sale's receipt.
+     *
+     * @param  array<string, mixed>  $refund  NoReceiptReturnService::slip()
+     * @return list<array{text: string, bold: bool, tall: bool}>
+     */
+    public function noReceiptRefund(array $refund): array
+    {
+        $this->start([]);
+        /** @var array{printedAt: string|null, printedBy: string}|null $reprint */
+        $reprint = $refund['reprint'] ?? null;
+
+        if ($reprint !== null) {
+            $this->center('*** REPRINT ***', bold: true, tall: true);
+        }
+
+        $this->header();
+        $this->center('*** REFUND - NO RECEIPT ***', bold: true, tall: true);
+        $this->detail('Refund no.', (string) $refund['number']);
+        $this->detail('Date', self::date((string) $refund['returnedAt']));
+        $this->tillDetails($refund['till'] ?? null);
+        $this->detail('Refunded by', (string) $refund['user']);
+        $this->rule();
+
+        /** @var list<array{description: string, quantity: string, unitName: string|null, unitValue: int, refund: int, to: string, batchNo: string|null, expiry: string|null}> $items */
+        $items = $refund['items'];
+
+        foreach ($items as $item) {
+            $this->text($item['description'], bold: true);
+            $this->row(trim($item['quantity'].' '.($item['unitName'] ?? '')).' x '.$this->money($item['unitValue']), $this->money($item['refund']), indent: 2);
+            $this->text($item['to'], indent: 2, hang: 2);
+
+            if (filled($item['batchNo'])) {
+                $this->text('Batch '.$item['batchNo'].(filled($item['expiry']) ? ' exp '.$item['expiry'] : ''), indent: 2, hang: 2);
+            }
+        }
+
+        $this->rule();
+        $this->grandTotal('REFUND TOTAL '.$this->shop['currency'], $this->money((int) $refund['refundTotal']));
+        $this->rule();
+        $this->payments(['payments' => [['method' => $refund['method'], 'amount' => (int) $refund['refundTotal']]]]);
+        $this->text('Reason: '.$refund['reason']);
+
+        if (filled($refund['note'] ?? null)) {
+            $this->text('Note: '.$refund['note']);
+        }
+
+        $this->rule();
+        $this->signatures(["Customer's signature", 'Refunded by']);
+        $this->reprinted($reprint);
+
+        return $this->lines;
+    }
+
+    /**
      * The shift's paid out and paid in, one by one, and (a pharmacy) what
      * each doctor was paid, as sections of their own (branch 18). Nothing
      * when the shop does not record cash movements.

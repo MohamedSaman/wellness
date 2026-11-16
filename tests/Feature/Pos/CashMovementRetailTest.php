@@ -51,4 +51,16 @@ class CashMovementRetailTest extends PosTestCase
             ->assertDontSee('Doctor payments')
             ->assertDontSee('without receipt');
     }
+
+    public function test_retail_has_no_returns_without_a_receipt(): void
+    {
+        $this->actingAs($this->owner)->withCookie('pos_till', $this->till->uuid)->get(route('pos.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('noReceiptReturns', false));
+        $this->actingAs($this->owner)
+            ->getJson(route('pos.no-receipt-returns.index', ['device' => $this->till->uuid]))
+            ->assertNotFound();
+        $this->actingAs($this->owner)
+            ->postJson(route('pos.no-receipt-returns.store'), ['device' => $this->till->uuid, 'reason' => 'x', 'lines' => []])
+            ->assertNotFound();
+    }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Ban, Printer, WifiOff } from '@lucide/vue';
+import { Ban, Printer, Undo2, WifiOff } from '@lucide/vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import CashMovementController from '@/actions/App/Http/Controllers/Pos/CashMovementController';
 import { Button } from '@/components/ui/button';
@@ -34,10 +34,13 @@ const props = defineProps<{
     shop: PosShop;
     /** The tab to start on ('paid_out' when omitted). */
     startWith?: string | null;
+    /** returns.no_receipt in a pharmacy: offers Return without receipt. */
+    canReturnWithoutReceipt?: boolean;
 }>();
 const emit = defineEmits<{
     'update:open': [value: boolean];
     recorded: [];
+    'no-receipt': [];
 }>();
 
 const offlinePos = useOfflinePos();
@@ -240,6 +243,16 @@ async function confirmVoid(row: CashMovementRow): Promise<void> {
                     cash.</DialogDescription
                 >
             </DialogHeader>
+
+            <Button
+                v-if="canReturnWithoutReceipt && !offlinePos.isOffline.value"
+                variant="outline"
+                class="h-10 justify-self-start"
+                data-test="open-no-receipt-return"
+                @click="emit('no-receipt')"
+            >
+                <Undo2 class="size-4" /> Return without receipt
+            </Button>
 
             <p
                 v-if="offlinePos.isOffline.value"

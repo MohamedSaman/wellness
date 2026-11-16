@@ -127,6 +127,8 @@ class PosController extends Controller
                 'canPayDoctor' => $pharmacy && $user->can('doctors.pay'),
                 'canVoid' => $user->can('cash.movements.void'),
             ] : null,
+            // Returns without a receipt (pharmacy, returns.no_receipt; branch 18).
+            'noReceiptReturns' => $pharmacy && $user->can('returns.no_receipt'),
         ]);
     }
 

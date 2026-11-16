@@ -53,7 +53,7 @@ class DailySummaryReport extends SummaryReportPage
                 ...($this->hasPharmacy() ? [ReportColumn::integer('opd_bills', 'OPD bills')] : []),
                 ReportColumn::integer('voids', 'Voided bills'),
                 ReportColumn::money('voids_total', 'Voided'),
-            ], $counters, note: 'Net sales = sales − refunds given. Voided bills are not in the sales; they are shown for control, on the day they were voided.'),
+            ], $counters, note: 'Net sales = sales − refunds given'.($this->hasPharmacy() ? ' (returns without a receipt included, as medicines, at the counter that paid them)' : '').'. Voided bills are not in the sales; they are shown for control, on the day they were voided.'),
 
             $this->makeTable('Payments', [
                 ReportColumn::text('method', 'Method'),

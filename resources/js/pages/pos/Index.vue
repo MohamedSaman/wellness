@@ -29,6 +29,7 @@ import StockRequestController from '@/actions/App/Http/Controllers/Pos/StockRequ
 import TillController from '@/actions/App/Http/Controllers/Pos/TillController';
 import CartPanel from '@/components/pos/CartPanel.vue';
 import CashMovementsDialog from '@/components/pos/CashMovementsDialog.vue';
+import NoReceiptReturnDialog from '@/components/pos/NoReceiptReturnDialog.vue';
 import CloseShiftDialog from '@/components/pos/CloseShiftDialog.vue';
 import DiscountDialog from '@/components/pos/DiscountDialog.vue';
 import ItemSearch from '@/components/pos/ItemSearch.vue';
@@ -86,8 +87,15 @@ const props = withDefaults(
         searchLocations?: PosLocation[];
         /** Cash in and out (branch 18): null when the module is off. */
         cashMovements?: PosCashMovements;
+        /** Returns without a receipt (pharmacy, returns.no_receipt; branch 18). */
+        noReceiptReturns?: boolean;
     }>(),
-    { pharmacy: null, searchLocations: () => [], cashMovements: null },
+    {
+        pharmacy: null,
+        searchLocations: () => [],
+        cashMovements: null,
+        noReceiptReturns: false,
+    },
 );
 
 const cart = usePosCart();
@@ -143,15 +151,29 @@ const shiftSummariesOpen = ref(false);
 /** Cash in and out (Alt+C, branch 18): paid out, paid in, doctor payments of the open shift. */
 const cashOpen = ref(false);
 const cashStartWith = ref<string | null>(null);
-const canCash = computed(
+const canMoveCash = computed(
     () =>
         props.cashMovements !== null &&
         (props.cashMovements.canMove || props.cashMovements.canPayDoctor),
 );
+const canCash = computed(() => canMoveCash.value || props.noReceiptReturns);
+/** Return without receipt (branch 18): opened from Cash in and out. */
+const noReceiptOpen = ref(false);
 
 function openCash(startWith: string | null = null): void {
+    if (!canMoveCash.value) {
+        noReceiptOpen.value = true;
+
+        return;
+    }
+
     cashStartWith.value = startWith;
     cashOpen.value = true;
+}
+
+function openNoReceipt(): void {
+    cashOpen.value = false;
+    noReceiptOpen.value = true;
 }
 const completed = ref<CompletedSale | null>(null);
 const submitting = ref(false);
@@ -261,6 +283,7 @@ const dialogOpen = computed(
         shiftPatientsOpen.value ||
         shiftSummariesOpen.value ||
         cashOpen.value ||
+        noReceiptOpen.value ||
         rxOpen.value ||
         requestItem.value !== null ||
         completed.value !== null,
@@ -1155,11 +1178,19 @@ onBeforeUnmount(() => {
             :shift="shift"
         />
         <CashMovementsDialog
-            v-if="till && shift && canCash"
+            v-if="till && shift && canMoveCash"
             v-model:open="cashOpen"
             :till="till"
             :shop="shop"
             :start-with="cashStartWith"
+            :can-return-without-receipt="noReceiptReturns"
+            @no-receipt="openNoReceipt"
+        />
+        <NoReceiptReturnDialog
+            v-if="till && shift && noReceiptReturns"
+            v-model:open="noReceiptOpen"
+            :till="till"
+            :shop="shop"
         />
         <CloseShiftDialog
             v-if="till"

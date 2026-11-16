@@ -17,6 +17,7 @@ use App\Models\AuditLog;
 use App\Models\CashMovement;
 use App\Models\GoodsReceipt;
 use App\Models\Location;
+use App\Models\NoReceiptReturn;
 use App\Models\ProductVariant;
 use App\Models\Sale;
 use App\Models\SaleReturn;
@@ -532,6 +533,15 @@ class ReportService
             ->selectRaw('refund_method as method, SUM(refund_total) as refunds')
             ->groupBy('refund_method')
             ->pluck('refunds', 'method');
+        // Returns without a receipt are refunds too (branch 18), paid back by their method (cash).
+        $noReceipt = $this->noReceiptReturns($period, $locationId)
+            ->selectRaw('refund_method as method, SUM(refund_total) as refunds')
+            ->groupBy('refund_method')
+            ->pluck('refunds', 'method');
+
+        foreach ($noReceipt as $method => $amount) {
+            $refunds[$method] = (int) ($refunds[$method] ?? 0) + (int) $amount;
+        }
 
         $rows = [];
 
@@ -1774,11 +1784,17 @@ class ReportService
             ->get()
             ->keyBy('location_id');
 
+        // Returns without a receipt (branch 18): refunds at the counter that paid them, always goods.
+        $noReceipt = $this->noReceiptReturns($period, $locationId)
+            ->selectRaw('location_id, SUM(refund_total) as refunds')
+            ->groupBy('location_id')
+            ->pluck('refunds', 'location_id');
+
         $sold = $this->lineFacts($period);
         $returned = $this->returnFacts($period);
         $items = $this->itemsOf($sold, $returned);
 
-        $locations = $this->counterLocations($locationId, [...$bills->keys()->all(), ...$refunds->keys()->all(), ...$voids->keys()->all()]);
+        $locations = $this->counterLocations($locationId, [...$bills->keys()->all(), ...$refunds->keys()->all(), ...$voids->keys()->all(), ...$noReceipt->keys()->all()]);
         $rows = [];
 
         foreach ($locations as $id => $name) {
@@ -1796,8 +1812,9 @@ class ReportService
                 $income['consultations'] -= $goods ? 0 : $row->quantity;
             }
 
+            $income['goods_refunds'] += (int) ($noReceipt[$id] ?? 0);
             $gross = (int) ($bills->get($id)->gross ?? 0);
-            $refund = (int) ($refunds[$id] ?? 0);
+            $refund = (int) ($refunds[$id] ?? 0) + (int) ($noReceipt[$id] ?? 0);
 
             $rows[] = [
                 'location_id' => (int) $id,
@@ -1885,6 +1902,18 @@ class ReportService
                 ];
             })
             ->all());
+    }
+
+    /**
+     * Returns without a receipt given in the period (on the shop's days, by
+     * when they were refunded), at a counter when one is given (branch 18).
+     */
+    private function noReceiptReturns(ReportPeriod $period, ?int $locationId = null): Builder
+    {
+        return NoReceiptReturn::query()->toBase()
+            ->where('returned_at', '>=', $period->startUtc())
+            ->where('returned_at', '<', $period->endUtc())
+            ->when($locationId !== null, fn (Builder $query) => $query->where('location_id', $locationId));
     }
 
     /**
