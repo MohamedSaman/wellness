@@ -105,6 +105,8 @@ class PosServiceProvider extends ServiceProvider
             // A shop created in this request has no business_type attribute
             // until reloaded; the column defaults to retail.
             'vehicle_fitment' => fn (Shop $shop): bool => ($shop->business_type ?? 'retail') === 'retail',
+            // Branch 18: on for pharmacy shops (the live clinic gets it on deploy), off for retail.
+            'cash_movements' => fn (Shop $shop): bool => ($shop->business_type ?? 'retail') === 'pharmacy',
         ];
 
         foreach (array_keys(config('pos.modules', [])) as $module) {

@@ -55,7 +55,7 @@ class PosInstallTest extends TestCase
         $this->assertTrue(User::query()->where('email', 'clin@example.test')->firstOrFail()->hasRole('owner'));
 
         // labels: in-store barcodes and labels for what has no manufacturer barcode (branch 7b).
-        foreach (['pharmacy', 'multi_location', 'suppliers', 'purchasing', 'offline_sync', 'labels'] as $module) {
+        foreach (['pharmacy', 'multi_location', 'suppliers', 'purchasing', 'offline_sync', 'labels', 'cash_movements'] as $module) {
             $this->assertTrue($shop->hasModule($module), "{$module} should be on");
         }
 
