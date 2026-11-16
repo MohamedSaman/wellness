@@ -274,6 +274,19 @@ class CashMovementServiceTest extends BatchTestCase
         $this->assertSame('Paid twice', $voided->new_values['reason']);
     }
 
+    public function test_a_shift_whose_drawer_went_below_zero_still_closes(): void
+    {
+        // The float was entered as 0, and a doctor was paid 5,000.00 from cash that was there.
+        $shift = $this->shifts->open($this->till, $this->cashier, 0);
+        $this->movements->create($this->till, $this->cashier, CashMovementType::DoctorPayment, 500_000, doctor: $this->doctor);
+
+        $closed = $this->shifts->close($shift, $this->cashier, 20_000);
+
+        $this->assertSame(-500_000, $closed->fresh()?->expected_cash);
+        $this->assertSame(520_000, $closed->fresh()?->difference);
+        $this->assertSame(-500_000, $this->shifts->summary($closed->fresh() ?? $closed)['cash']['expected']);
+    }
+
     public function test_go_live_reset_removes_the_rehearsals_movements(): void
     {
         $shift = $this->shifts->open($this->till, $this->cashier, 0);

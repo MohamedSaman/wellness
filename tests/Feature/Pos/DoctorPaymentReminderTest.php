@@ -80,7 +80,8 @@ class DoctorPaymentReminderTest extends PharmacyTestCase
             ->assertHasNoFormErrors();
 
         $shop = $this->shop->fresh();
-        $this->assertSame([
+        // Read back from the database: MySQL's JSON does not keep key order.
+        $this->assertSameIgnoringKeyOrder([
             'cashier' => ['paid_out' => 150_000, 'doctor_payment' => null],
             'owner' => ['paid_out' => 10_000_000, 'doctor_payment' => null],
         ], $shop?->setting('cash_movement_limits'));
