@@ -126,6 +126,8 @@ class PosController extends Controller
                 'canMove' => $user->can('cash.movements'),
                 'canPayDoctor' => $pharmacy && $user->can('doctors.pay'),
                 'canVoid' => $user->can('cash.movements.void'),
+                // Close shift notes a shift that paid no doctor (shop setting, pharmacy); never blocks.
+                'remindDoctorPayment' => $pharmacy && (bool) $shop->setting('doctor_payment_reminder'),
             ] : null,
             // Returns without a receipt (pharmacy, returns.no_receipt; branch 18).
             'noReceiptReturns' => $pharmacy && $user->can('returns.no_receipt'),

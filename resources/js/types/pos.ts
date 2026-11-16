@@ -489,6 +489,8 @@ export type PosCashMovements = {
     canPayDoctor: boolean;
     /** cash.movements.void (the owner). */
     canVoid: boolean;
+    /** Close shift notes a shift that paid no doctor (shop setting, pharmacy). */
+    remindDoctorPayment?: boolean;
 } | null;
 
 /** A kind of movement this user may record (CashMovementController::index). */

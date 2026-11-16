@@ -171,6 +171,12 @@ function openCash(startWith: string | null = null): void {
     cashOpen.value = true;
 }
 
+/** Close shift's reminder: Close shift gives way to Cash in and out on its Doctor payment tab. */
+function payDoctorFromClose(): void {
+    closeShiftOpen.value = false;
+    openCash('doctor_payment');
+}
+
 function openNoReceipt(): void {
     cashOpen.value = false;
     noReceiptOpen.value = true;
@@ -1197,6 +1203,9 @@ onBeforeUnmount(() => {
             v-model:open="closeShiftOpen"
             :till="till"
             :shop="shop"
+            :remind-doctor-payment="!!cashMovements?.remindDoctorPayment"
+            :can-pay-doctor="!!cashMovements?.canPayDoctor"
+            @pay-doctor="payDoctorFromClose"
         />
     </div>
 </template>

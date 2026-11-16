@@ -14,8 +14,19 @@ import { ApiError, getJson, postJson, queryString } from '@/lib/http';
 import { formatMoney } from '@/lib/money';
 import type { PosShop, PosTill } from '@/types/pos';
 
-const props = defineProps<{ open: boolean; till: PosTill; shop: PosShop }>();
-const emit = defineEmits<{ 'update:open': [value: boolean] }>();
+const props = defineProps<{
+    open: boolean;
+    till: PosTill;
+    shop: PosShop;
+    /** Note a shift that paid no doctor (branch 18); closing is never blocked. */
+    remindDoctorPayment?: boolean;
+    /** May pay a doctor from here: the note offers Pay doctor. */
+    canPayDoctor?: boolean;
+}>();
+const emit = defineEmits<{
+    'update:open': [value: boolean];
+    'pay-doctor': [];
+}>();
 
 type Count = {
     expected_cash: number;
@@ -161,6 +172,32 @@ function money(minor: number | null): string {
                     }}
                 </DialogDescription>
             </DialogHeader>
+
+            <div
+                v-if="
+                    remindDoctorPayment &&
+                    !closed &&
+                    summary?.doctor_payments &&
+                    summary.doctor_payments.length === 0
+                "
+                class="flex flex-wrap items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400"
+                role="note"
+                data-test="doctor-payment-reminder"
+            >
+                <span class="min-w-0 flex-1"
+                    >No doctor has been paid in this shift. You can still close
+                    it.</span
+                >
+                <Button
+                    v-if="canPayDoctor"
+                    variant="outline"
+                    class="h-9 shrink-0"
+                    data-test="doctor-payment-reminder-pay"
+                    @click="emit('pay-doctor')"
+                >
+                    Pay doctor
+                </Button>
+            </div>
 
             <dl
                 v-if="summary"
