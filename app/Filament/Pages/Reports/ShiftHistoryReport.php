@@ -41,6 +41,8 @@ class ShiftHistoryReport extends ReportPage
             ReportColumn::money('counted_cash', 'Counted cash', total: false),
             ReportColumn::money('difference', 'Difference'),
             ...($this->hasPharmacy() ? [ReportColumn::integer('patients', 'Patients', total: false)] : []),
+            // Branch 18: what the shift paid doctors, to the Doctor payments report for that shift.
+            ...($this->doctorPayments() ? [ReportColumn::money('doctor_payments', 'Doctor payments')] : []),
         ];
     }
 
@@ -56,13 +58,32 @@ class ShiftHistoryReport extends ReportPage
             return $rows;
         }
 
-        $patients = app(PatientListService::class)->patientsPerShift(array_map(fn (array $row): int => (int) $row['shift_id'], $rows));
+        $ids = array_map(fn (array $row): int => (int) $row['shift_id'], $rows);
+        $patients = app(PatientListService::class)->patientsPerShift($ids);
+        $doctors = $this->doctorPayments() ? $this->reports()->doctorPaymentsPerShift($ids) : null;
 
-        return array_map(fn (array $row): array => [...$row, 'patients' => $patients[$row['shift_id']] ?? 0], $rows);
+        return array_map(fn (array $row): array => [
+            ...$row,
+            'patients' => $patients[$row['shift_id']] ?? 0,
+            ...($doctors === null ? [] : ['doctor_payments' => $doctors[$row['shift_id']] ?? 0]),
+        ], $rows);
+    }
+
+    /** Doctor payments are recorded: pharmacy and cash movements (branch 18). */
+    private function doctorPayments(): bool
+    {
+        return $this->hasPharmacy() && $this->hasCashMovements();
     }
 
     protected function configureColumn(ReportColumn $column, TextColumn $text): TextColumn
     {
+        if ($column->key === 'doctor_payments' && DoctorPaymentsReport::canAccess()) {
+            return $text
+                ->url(fn (array $record): ?string => isset($record['shift_uuid']) && (int) ($record['doctor_payments'] ?? 0) > 0 ? DoctorPaymentsReport::getUrl(['shift' => $record['shift_uuid']]) : null)
+                ->color('primary')
+                ->tooltip('Doctor payments in this shift');
+        }
+
         if ($column->key !== 'patients' || ! ShiftPatients::canAccess()) {
             return $text;
         }

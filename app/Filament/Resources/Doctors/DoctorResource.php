@@ -6,6 +6,7 @@ use App\Enums\CashMovementType;
 use App\Exceptions\PosException;
 use App\Filament\Resources\Doctors\Pages\ManageDoctors;
 use App\Filament\Resources\Doctors\Pages\ViewDoctor;
+use App\Filament\Resources\Doctors\RelationManagers\PaymentsRelationManager;
 use App\Filament\Resources\PermissionResource;
 use App\Models\Doctor;
 use App\Services\DoctorService;
@@ -143,6 +144,11 @@ class DoctorResource extends PermissionResource
     public static function timezone(): string
     {
         return (string) (app(CurrentShop::class)->getOrFail()->timezone ?: config('app.timezone'));
+    }
+
+    public static function getRelations(): array
+    {
+        return [PaymentsRelationManager::class];
     }
 
     public static function getPages(): array

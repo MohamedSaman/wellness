@@ -2,11 +2,15 @@
 
 namespace Tests\Feature\Pos;
 
+use App\Filament\Pages\Reports\CashMovementsReport;
+use App\Filament\Pages\Reports\DoctorPaymentsReport;
+use App\Filament\Pages\Reports\ShiftHistoryReport;
 use App\Filament\Resources\Doctors\Pages\ManageDoctors;
 use App\Models\Shop;
 use App\Services\ShiftService;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Pennant\Feature;
+use Livewire\Livewire;
 
 /**
  * Retail is unchanged by branch 18 (docs/PHARMACY.md): the cash_movements
@@ -68,5 +72,15 @@ class CashMovementRetailTest extends PosTestCase
     public function test_retail_has_no_doctors(): void
     {
         $this->actingAs($this->owner)->get(ManageDoctors::getUrl())->assertForbidden();
+    }
+
+    public function test_retail_reports_and_shift_history_are_as_they_were(): void
+    {
+        $this->actingAs($this->owner)->get(CashMovementsReport::getUrl())->assertForbidden();
+        $this->actingAs($this->owner)->get(DoctorPaymentsReport::getUrl())->assertForbidden();
+
+        app(ShiftService::class)->open($this->till, $this->cashier, 0);
+        Livewire::withQueryParams(['range' => 'today'])->test(ShiftHistoryReport::class)
+            ->assertDontSee('Doctor payments');
     }
 }

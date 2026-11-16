@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Doctors\Pages;
 
 use App\Filament\Resources\Doctors\DoctorResource;
+use App\Filament\Resources\Doctors\Widgets\DoctorPaymentStats;
 use App\Models\Doctor;
 use App\Models\User;
 use App\Services\DoctorService;
@@ -17,6 +18,11 @@ use Filament\Resources\Pages\ViewRecord;
 class ViewDoctor extends ViewRecord
 {
     protected static string $resource = DoctorResource::class;
+
+    protected function getHeaderWidgets(): array
+    {
+        return [DoctorPaymentStats::class];
+    }
 
     protected function getHeaderActions(): array
     {
