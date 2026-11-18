@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Pos\CashMovementController;
 use App\Http\Controllers\Pos\CheckoutController;
+use App\Http\Controllers\Pos\ExchangeController;
 use App\Http\Controllers\Pos\ItemSearchController;
 use App\Http\Controllers\Pos\NoReceiptReturnController;
 use App\Http\Controllers\Pos\PatientSearchController;
@@ -71,6 +72,16 @@ Route::middleware(['auth', 'can:pos.checkout'])->prefix('pos')->name('pos.')->gr
         Route::post('{noReceiptReturn}/reprint', [NoReceiptReturnController::class, 'reprint'])->name('reprint');
     });
 
+    // Return / Exchange at the till (pharmacy, pos.exchange, branch 19): online only.
+    Route::middleware(['module:pharmacy', 'can:pos.exchange'])->prefix('exchanges')->name('exchanges.')->group(function () {
+        Route::get('/', [ExchangeController::class, 'index'])->name('index');
+        Route::get('bills', [ExchangeController::class, 'bills'])->middleware('throttle:pos-search')->name('bills');
+        Route::get('bills/{sale}', [ExchangeController::class, 'show'])->name('bill');
+        Route::post('preview', [ExchangeController::class, 'preview'])->name('preview');
+        Route::post('/', [ExchangeController::class, 'store'])->name('store');
+        Route::post('{exchange}/reprint', [ExchangeController::class, 'reprint'])->name('reprint');
+    });
+
     // Stock requests from the till (multi_location): the OPD asks General Pharmacy for stock.
     Route::middleware(['can:stock.request', 'module:multi_location'])->prefix('stock-requests')->name('stock-requests.')->group(function () {
         Route::get('/', [StockRequestController::class, 'index'])->name('index');
@@ -101,6 +112,9 @@ Route::middleware('auth')->prefix('pos')->name('pos.')->group(function () {
         Route::get('cash-movements/{cashMovement}/reprints/{reprint}', [CashMovementController::class, 'reprinted'])->whereNumber('reprint')->name('cash-movements.reprinted');
     });
     Route::middleware('module:pharmacy')->group(function () {
+        // A return or exchange's receipt, as first printed and as a logged reprint (branch 19).
+        Route::get('exchanges/{exchange}/receipt', [ExchangeController::class, 'receipt'])->name('exchanges.receipt');
+        Route::get('exchanges/{exchange}/reprints/{reprint}', [ExchangeController::class, 'reprinted'])->whereNumber('reprint')->name('exchanges.reprinted');
         Route::get('no-receipt-returns/{noReceiptReturn}/slip', [NoReceiptReturnController::class, 'slip'])->name('no-receipt-returns.slip');
         Route::get('no-receipt-returns/{noReceiptReturn}/reprints/{reprint}', [NoReceiptReturnController::class, 'reprinted'])->whereNumber('reprint')->name('no-receipt-returns.reprinted');
     });

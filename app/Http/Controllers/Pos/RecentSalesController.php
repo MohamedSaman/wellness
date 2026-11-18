@@ -16,6 +16,7 @@ class RecentSalesController extends Controller
     {
         $input = $request->validated();
         $timezone = $currentShop->getOrFail()->timezone;
+        $pharmacy = $currentShop->getOrFail()->hasModule('pharmacy');
 
         $sales = $receipts->recentSales($request->device() ?? abort(422), $input['q'] ?? null);
 
@@ -27,6 +28,8 @@ class RecentSalesController extends Controller
                 'cashier' => $sale->cashier->name,
                 'grand_total' => $sale->grand_total,
                 'status' => $sale->status->value,
+                // The new bill of an exchange (pharmacy, branch 19): its reprint is the EXCHANGE receipt.
+                ...($pharmacy ? ['exchange' => $sale->exchange === null ? null : ['uuid' => (string) $sale->exchange->uuid, 'number' => $sale->exchange->number]] : []),
             ])->values(),
         ]);
     }

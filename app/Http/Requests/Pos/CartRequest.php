@@ -74,7 +74,7 @@ abstract class CartRequest extends PosRequest
                 prescriber: $line['prescriber'] ?? null,
                 prescriptionRef: $line['prescription_ref'] ?? null,
             ),
-            $this->validated('lines'),
+            (array) ($this->validated('lines') ?? []),
         ));
     }
 
