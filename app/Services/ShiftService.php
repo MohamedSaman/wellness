@@ -8,6 +8,7 @@ use App\Enums\SaleStatus;
 use App\Exceptions\PosException;
 use App\Models\CashMovement;
 use App\Models\Device;
+use App\Models\Exchange;
 use App\Models\NoReceiptReturn;
 use App\Models\Payment;
 use App\Models\Sale;
@@ -124,7 +125,7 @@ class ShiftService
      * difference (closed shifts as recorded at closing, open ones now).
      * What a cashier sees of their own shift; reports use it per shift.
      *
-     * @return array{bills: int, gross: int, refunds: int, refunds_count: int, no_receipt_refunds?: int, no_receipt_count?: int, voids: int, voids_total: int, net: int, payments: list<array{method: string, label: string, amount: int}>, cash: array{opening: int, sales: int, refunds: int, paid_in?: int, paid_out?: int, doctor_payments?: int, expected: int, counted: int|null, difference: int|null}, movements?: list<array{number: string, type: string, label: string, category: string|null, amount: int, note: string|null, user: string, at: string}>, voided_movements?: int, doctor_payments?: list<array{doctor: string, payments: int, amount: int}>}
+     * @return array{bills: int, gross: int, refunds: int, refunds_count: int, no_receipt_refunds?: int, no_receipt_count?: int, exchanges?: int, till_returns?: int, voids: int, voids_total: int, net: int, payments: list<array{method: string, label: string, amount: int}>, cash: array{opening: int, sales: int, refunds: int, paid_in?: int, paid_out?: int, doctor_payments?: int, expected: int, counted: int|null, difference: int|null}, movements?: list<array{number: string, type: string, label: string, category: string|null, amount: int, note: string|null, user: string, at: string}>, voided_movements?: int, doctor_payments?: list<array{doctor: string, payments: int, amount: int}>}
      */
     public function summary(Shift $shift): array
     {
@@ -178,6 +179,9 @@ class ShiftService
             'refunds_count' => (int) ($refunds->refunds_count ?? 0) + $drawer['no_receipt_count'],
             // Of which without a receipt (pharmacy, branch 18).
             ...($pharmacy ? ['no_receipt_refunds' => $drawer['no_receipt'], 'no_receipt_count' => $drawer['no_receipt_count']] : []),
+            // Returns and exchanges at the till (pharmacy, branch 19): counted here; their money is in
+            // the refunds, the payments (Exchange credit) and the drawer above.
+            ...($pharmacy ? $this->exchangeCounts($shift) : []),
             'voids' => (int) ($voids->voids ?? 0),
             'voids_total' => (int) ($voids->voids_total ?? 0),
             'net' => $gross - $refundTotal,
@@ -194,6 +198,22 @@ class ShiftService
             // Each paid out and paid in, and each doctor's payments (branch 18).
             ...($movementsOn ? $this->movementLists($shift, $pharmacy) : []),
         ];
+    }
+
+    /**
+     * How many exchanges (a new bill paid with return credit) and plain
+     * returns the till made in this shift (branch 19).
+     *
+     * @return array{exchanges: int, till_returns: int}
+     */
+    private function exchangeCounts(Shift $shift): array
+    {
+        $row = Exchange::query()->toBase()
+            ->where('shift_id', $shift->getKey())
+            ->selectRaw('COALESCE(SUM(CASE WHEN new_sale_id IS NULL THEN 0 ELSE 1 END), 0) as exchanges, COALESCE(SUM(CASE WHEN new_sale_id IS NULL THEN 1 ELSE 0 END), 0) as returns')
+            ->first();
+
+        return ['exchanges' => (int) ($row->exchanges ?? 0), 'till_returns' => (int) ($row->returns ?? 0)];
     }
 
     /**

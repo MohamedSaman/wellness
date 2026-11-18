@@ -33,6 +33,7 @@ final class ReportRegistry
         DispensingRegisterReport::class,
         PriceChangesReport::class,
         CashMovementsReport::class,
+        ExchangesReport::class,
         DoctorPaymentsReport::class,
         PurchasesReport::class,
         SupplierAgingReport::class,

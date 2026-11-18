@@ -280,6 +280,12 @@ final class ReceiptLayout
             $this->row('of which without receipt ('.$summary['no_receipt_count'].')', $this->money(-(int) $summary['no_receipt_refunds']), indent: 2);
         }
 
+        // Returns and exchanges at the till (branch 19): counts; their money is above and in Payments.
+        if ((int) ($summary['exchanges'] ?? 0) > 0 || (int) ($summary['till_returns'] ?? 0) > 0) {
+            $this->row('Exchanges at the till', number_format((int) $summary['exchanges']), amount: false);
+            $this->row('Returns at the till', number_format((int) $summary['till_returns']), amount: false);
+        }
+
         $this->row('NET SALES '.$this->shop['currency'], $this->money((int) $summary['net']), bold: true);
         $this->row('Voided bills ('.$summary['voids'].')', $this->money((int) $summary['voids_total']));
         $this->rule();

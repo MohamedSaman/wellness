@@ -26,6 +26,7 @@ use App\Services\Data\PaymentInput;
 use App\Services\Data\ReturnLine;
 use App\Services\ExchangeService;
 use App\Services\ShiftService;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -123,6 +124,17 @@ class ExchangeServiceTest extends BatchTestCase
         } catch (PosException $e) {
             $this->assertStringContainsString($message, $e->getMessage());
         }
+    }
+
+    public function test_the_permissions_reach_the_owner_and_the_cashier_and_the_limit_starts_at_14_days(): void
+    {
+        (new RolesAndPermissionsSeeder)->run();
+
+        $this->assertTrue($this->owner->fresh()?->can('pos.exchange'));
+        $this->assertTrue($this->owner->fresh()?->can('pos.exchange.late'));
+        $this->assertTrue($this->cashier->fresh()?->can('pos.exchange'));
+        $this->assertFalse($this->cashier->fresh()?->can('pos.exchange.late'));
+        $this->assertSame(14, $this->exchanges->maxDays());
     }
 
     public function test_the_new_item_costs_less_so_the_rest_of_the_credit_is_refunded_in_cash(): void

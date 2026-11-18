@@ -115,6 +115,20 @@ class DailySummaryReport extends SummaryReportPage
             ], $this->reports()->doctorPaymentsByDoctor($period, $location), note: 'Cash paid to each doctor from the tills, voided payments apart. Reports → Doctor payments lists each one.');
         }
 
+        if ($this->hasPharmacy()) {
+            // Returns and exchanges at the till (branch 19): their money is in the refunds, the
+            // payments (Exchange credit taken and refunded) and the drawers above.
+            $totals = $this->reports()->exchangeTotals($period, $location);
+            $tables[] = $this->makeTable('Returns and exchanges at the till', [
+                ReportColumn::integer('exchanges', 'Exchanges'),
+                ReportColumn::integer('returns', 'Returns'),
+                ReportColumn::money('credit', 'Credit'),
+                ReportColumn::money('applied', 'Paid new bills'),
+                ReportColumn::money('patient_paid', 'Patients paid'),
+                ReportColumn::money('refunded', 'Refunded in cash'),
+            ], [$totals], note: 'Credit pays the new bills (Exchange credit); patients pay what is left, or the rest is refunded from the drawer, so a drawer moves by the difference only. Reports → Exchanges & returns lists each one.');
+        }
+
         return $tables;
     }
 }

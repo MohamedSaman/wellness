@@ -15,6 +15,7 @@ use App\Enums\StockMovementType;
 use App\Enums\SupplierReturnReason;
 use App\Models\AuditLog;
 use App\Models\CashMovement;
+use App\Models\Exchange;
 use App\Models\GoodsReceipt;
 use App\Models\Location;
 use App\Models\NoReceiptReturn;
@@ -529,19 +530,24 @@ class ReportService
 
         $change = (int) $this->sales($period, $locationId)->sum('change_due');
 
+        // An exchange's credit (branch 19) went back as Exchange credit, the rest by the refund's method:
+        // Exchange credit taken (its payments) equals Exchange credit refunded.
         $refunds = $this->returns($period, $locationId)
-            ->selectRaw('refund_method as method, SUM(refund_total) as refunds')
+            ->selectRaw('refund_method as method, SUM(refund_total - exchange_credit) as refunds, SUM(exchange_credit) as credit')
             ->groupBy('refund_method')
-            ->pluck('refunds', 'method');
+            ->get();
         // Returns without a receipt are refunds too (branch 18), paid back by their method (cash).
         $noReceipt = $this->noReceiptReturns($period, $locationId)
-            ->selectRaw('refund_method as method, SUM(refund_total) as refunds')
+            ->selectRaw('refund_method as method, SUM(refund_total - exchange_credit) as refunds, SUM(exchange_credit) as credit')
             ->groupBy('refund_method')
-            ->pluck('refunds', 'method');
+            ->get();
 
-        foreach ($noReceipt as $method => $amount) {
-            $refunds[$method] = (int) ($refunds[$method] ?? 0) + (int) $amount;
-        }
+        $refunds = $refunds->concat($noReceipt)->reduce(function (array $carry, object $row): array {
+            $carry[$row->method] = ($carry[$row->method] ?? 0) + (int) $row->refunds;
+            $carry[PaymentMethod::Exchange->value] = ($carry[PaymentMethod::Exchange->value] ?? 0) + (int) $row->credit;
+
+            return $carry;
+        }, []);
 
         $rows = [];
 
@@ -2074,7 +2080,8 @@ class ReportService
                     'type' => 'Return without receipt',
                     'category' => $return->reason,
                     'amount' => $return->refund_total,
-                    'drawer' => $return->refund_method === PaymentMethod::Cash ? -$return->refund_total : 0,
+                    // In an exchange (branch 19) only the cash that left the drawer: the rest paid the new bill.
+                    'drawer' => $return->refund_method === PaymentMethod::Cash ? -($return->refund_total - $return->exchange_credit) : 0,
                     'user' => (string) $return->user?->name,
                     'note' => $return->note,
                     'items' => $return->items->map(fn ($item): string => Quantity::format((string) $item->quantity).' '.($item->unit_name ?? '').' '.$item->description.' → '.($item->location->name ?? '').($item->batch_no === null ? '' : ' ('.$item->batch_no.')'))->implode('; '),
@@ -2090,6 +2097,89 @@ class ReportService
 
             return $row;
         }, $rows);
+    }
+
+    /**
+     * Returns and exchanges at the till in the period (docs/PHARMACY.md,
+     * branch 19), on the shop's days by when they were made, newest first:
+     * the bill the items came from (or the return without a bill), what came
+     * back and where it went, the new bill and its items, the credit, what
+     * the patient paid on top and the cash refunded from the drawer. At the
+     * till's location when one is given.
+     *
+     * @param  array{device_id?: int|null, user_id?: int|null, patient_id?: int|null, reason?: string|null}  $filters
+     * @return list<array<string, mixed>>
+     */
+    public function exchangeRows(ReportPeriod $period, ?int $locationId = null, array $filters = []): array
+    {
+        $deviceId = $filters['device_id'] ?? null;
+        $userId = $filters['user_id'] ?? null;
+        $patientId = $filters['patient_id'] ?? null;
+        $reason = $filters['reason'] ?? null;
+
+        return array_values(Exchange::query()
+            ->with(['device', 'location', 'user', 'patient', 'doctor', 'originalSale', 'newSale.items', 'saleReturn.items.saleItem', 'saleReturn.items.location', 'noReceiptReturn.items.location'])
+            ->where('exchanged_at', '>=', $period->startUtc())
+            ->where('exchanged_at', '<', $period->endUtc())
+            ->when($locationId !== null, fn ($query) => $query->where('location_id', $locationId))
+            ->when($deviceId !== null, fn ($query) => $query->where('device_id', $deviceId))
+            ->when($userId !== null, fn ($query) => $query->where('user_id', $userId))
+            ->when($patientId !== null, fn ($query) => $query->where('patient_id', $patientId))
+            ->when($reason !== null, fn ($query) => $query->where('reason', $reason))
+            ->orderByDesc('exchanged_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (Exchange $exchange): array => [
+                'uuid' => (string) $exchange->uuid,
+                'when' => (string) $period->local($exchange->exchanged_at->utc()->format('Y-m-d H:i:s')),
+                'number' => $exchange->number,
+                'kind' => $exchange->isPlainReturn() ? 'Return' : 'Exchange',
+                'till' => (string) $exchange->device?->code,
+                'location' => (string) $exchange->location?->name,
+                'user' => (string) $exchange->user?->name,
+                'patient' => $exchange->patient?->name,
+                'original' => $exchange->originalSale->invoice_no ?? ('No bill '.$exchange->noReceiptReturn?->number),
+                'original_uuid' => $exchange->originalSale?->uuid,
+                'returned' => implode('; ', app(ExchangeService::class)->returnedLines($exchange)),
+                'new_bill' => $exchange->newSale?->invoice_no,
+                'new_bill_uuid' => $exchange->newSale?->uuid,
+                'new_items' => $exchange->newSale?->items->map(fn ($item): string => $item->description.' × '.Quantity::format((float) $item->quantity).' '.($item->unit_name ?? ''))->implode('; '),
+                'credit' => $exchange->credit_total,
+                'new_total' => $exchange->new_total,
+                'patient_paid' => $exchange->patient_paid,
+                'refunded' => $exchange->cash_refunded,
+                'reason' => $exchange->reason->label(),
+                'doctor' => $exchange->doctor?->name,
+                'note' => $exchange->note,
+            ])
+            ->all());
+    }
+
+    /**
+     * How many returns and exchanges the period had, and what they moved
+     * (branch 19): credit given, what paid new bills, what patients paid on
+     * top and the cash refunded.
+     *
+     * @return array{exchanges: int, returns: int, credit: int, applied: int, patient_paid: int, refunded: int}
+     */
+    public function exchangeTotals(ReportPeriod $period, ?int $locationId = null): array
+    {
+        $row = Exchange::query()->toBase()
+            ->where('exchanged_at', '>=', $period->startUtc())
+            ->where('exchanged_at', '<', $period->endUtc())
+            ->when($locationId !== null, fn ($query) => $query->where('location_id', $locationId))
+            ->selectRaw('SUM(CASE WHEN new_sale_id IS NULL THEN 0 ELSE 1 END) as exchanges, SUM(CASE WHEN new_sale_id IS NULL THEN 1 ELSE 0 END) as returns')
+            ->selectRaw('COALESCE(SUM(credit_total), 0) as credit, COALESCE(SUM(credit_applied), 0) as applied, COALESCE(SUM(patient_paid), 0) as patient_paid, COALESCE(SUM(cash_refunded), 0) as refunded')
+            ->first();
+
+        return [
+            'exchanges' => (int) ($row->exchanges ?? 0),
+            'returns' => (int) ($row->returns ?? 0),
+            'credit' => (int) ($row->credit ?? 0),
+            'applied' => (int) ($row->applied ?? 0),
+            'patient_paid' => (int) ($row->patient_paid ?? 0),
+            'refunded' => (int) ($row->refunded ?? 0),
+        ];
     }
 
     /**
