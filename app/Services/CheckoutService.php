@@ -85,7 +85,7 @@ class CheckoutService
         [$patientInput, $patientName, $patientReview] = $this->checkPatient($shop, $data, $totals['lines']);
         $review = [...$review, ...$patientReview, ...$this->checkPrescriptions($shop, $data, $totals['lines'], $patientName)];
 
-        [$paidTotal, $changeDue, $paymentIssues] = $this->checkPayments($data->payments, $totals['grand_total'], $data->isOfflineSync, $shop);
+        [$paidTotal, $changeDue, $paymentIssues] = $this->checkPayments($data->payments, $totals['grand_total'], $data->isOfflineSync, $shop, $data->exchangeCredit);
         $review = [...$review, ...$paymentIssues];
 
         $syncedAt = $data->isOfflineSync ? now() : null;
@@ -1584,7 +1584,7 @@ class CheckoutService
      * @param  list<PaymentInput>  $payments
      * @return array{0:int, 1:int, 2:list<array<string, mixed>>} [paid total, change due, review reasons]
      */
-    private function checkPayments(array $payments, int $grandTotal, bool $isOfflineSync, ?Shop $shop = null): array
+    private function checkPayments(array $payments, int $grandTotal, bool $isOfflineSync, ?Shop $shop = null, bool $exchangeCredit = false): array
     {
         $paid = 0;
         $cash = 0;
@@ -1592,6 +1592,11 @@ class CheckoutService
         foreach ($payments as $payment) {
             if ($payment->amount <= 0) {
                 throw new PosException('Payment amounts must be greater than zero.');
+            }
+
+            // Return credit pays only an exchange's new bill (branch 19), never a sale, online or offline.
+            if ($payment->method === PaymentMethod::Exchange && ! $exchangeCredit) {
+                throw new PosException('Exchange credit is only taken in an exchange (Return / Exchange at the till).');
             }
 
             $paid += $payment->amount;

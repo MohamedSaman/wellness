@@ -45,5 +45,8 @@ final readonly class CheckoutData
         public ?int $clockOffsetSeconds = null,
         // The patient (pharmacy; docs/PHARMACY.md, branch 13): found or added at the till.
         public ?PatientInput $patient = null,
+        // The new bill of an exchange at the till (docs/PHARMACY.md, branch 19): its return
+        // credit is paid as Exchange credit. SECURITY: only ExchangeService sets this.
+        public bool $exchangeCredit = false,
     ) {}
 }

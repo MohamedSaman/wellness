@@ -67,10 +67,11 @@ class ShiftService
 
         $changeGiven = (int) (clone $countedSales)->sum('change_due');
 
+        // An exchange's credit paid its new bill (branch 19): only the rest left the drawer.
         $cashRefunds = (int) SaleReturn::query()
             ->where('shift_id', $shift->getKey())
             ->where('refund_method', PaymentMethod::Cash->value)
-            ->sum('refund_total');
+            ->sum(DB::raw('refund_total - exchange_credit'));
 
         $drawer = $this->drawer($shift);
 
@@ -101,7 +102,7 @@ class ShiftService
         $noReceiptCash = (int) NoReceiptReturn::query()
             ->where('shift_id', $shift->getKey())
             ->where('refund_method', PaymentMethod::Cash->value)
-            ->sum('refund_total');
+            ->sum(DB::raw('refund_total - exchange_credit'));
 
         return [
             'paid_in' => (int) ($movements[CashMovementType::PaidIn->value] ?? 0),
@@ -134,7 +135,7 @@ class ShiftService
         $voids = (clone $sales)->where('status', SaleStatus::Voided->value)->selectRaw('COUNT(*) as voids, COALESCE(SUM(grand_total), 0) as voids_total')->toBase()->first();
         $returns = SaleReturn::query()->where('shift_id', $shift->getKey());
         $refunds = (clone $returns)->selectRaw('COUNT(*) as refunds_count, COALESCE(SUM(refund_total), 0) as refunds')->toBase()->first();
-        $cashRefunds = (int) (clone $returns)->where('refund_method', PaymentMethod::Cash->value)->sum('refund_total');
+        $cashRefunds = (int) (clone $returns)->where('refund_method', PaymentMethod::Cash->value)->sum(DB::raw('refund_total - exchange_credit'));
 
         $taken = Payment::query()->toBase()
             ->whereIn('sale_id', (clone $counted)->select('id'))
@@ -152,7 +153,7 @@ class ShiftService
 
             $payments[] = [
                 'method' => $method->value,
-                'label' => ucwords(str_replace('_', ' ', $method->value)),
+                'label' => $method->label(),
                 'amount' => (int) $taken[$method->value] - ($method === PaymentMethod::Cash ? $changeGiven : 0),
             ];
         }
