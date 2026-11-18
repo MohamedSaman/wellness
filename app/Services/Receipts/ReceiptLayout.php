@@ -460,6 +460,132 @@ final class ReceiptLayout
     }
 
     /**
+     * A return or exchange at the till (docs/PHARMACY.md, branch 19), on one
+     * receipt: EXCHANGE (or RETURN when nothing new was given), the bill the
+     * items came from and the new bill, the items returned with their credit
+     * and where they went, the new items, then New items − Return credit =
+     * PATIENT PAYS or REFUND, how it was paid, the reason and the doctor.
+     * Laid out by the server only (online only), so no layout.ts mirror.
+     *
+     * @param  array<string, mixed>  $exchange  ExchangeService::receipt()
+     * @return list<array{text: string, bold: bool, tall: bool}>
+     */
+    public function exchange(array $exchange): array
+    {
+        /** @var array<string, mixed>|null $new */
+        $new = $exchange['newSale'] ?? null;
+        $this->start($new ?? ['taxRate' => $exchange['taxRate'] ?? 0]);
+        /** @var array{printedAt: string|null, printedBy: string}|null $reprint */
+        $reprint = $exchange['reprint'] ?? null;
+
+        if ($reprint !== null) {
+            $this->center('*** REPRINT ***', bold: true, tall: true);
+        }
+
+        $this->header();
+        $this->center($new === null ? '*** RETURN ***' : '*** EXCHANGE ***', bold: true, tall: true);
+        $this->detail('No.', (string) $exchange['number']);
+        $this->detail('Date', self::date((string) $exchange['exchangedAt']));
+
+        /** @var array{invoiceNo: string, soldAt: string}|null $original */
+        $original = $exchange['original'] ?? null;
+
+        if ($original !== null) {
+            $this->detail('Bill no.', $original['invoiceNo']);
+            $this->detail('Bill date', self::date($original['soldAt']));
+        } else {
+            $this->detail('Without bill', (string) ($exchange['noReceiptNo'] ?? ''));
+        }
+
+        if ($new !== null) {
+            $this->detail('New bill', (string) $new['invoiceNo']);
+        }
+
+        $this->tillDetails($exchange['till'] ?? null);
+        $this->detail('Cashier', (string) $exchange['user']);
+
+        if (($patient = $this->patientRow($exchange['patient'] ?? null)) !== null) {
+            $this->detail($patient[0], $patient[1]);
+        }
+
+        if (filled($exchange['doctor'] ?? null)) {
+            $this->detail('Doctor', (string) $exchange['doctor']);
+        }
+
+        $this->rule();
+        $this->text('RETURNED', bold: true);
+
+        /** @var list<array<string, mixed>> $returned */
+        $returned = $exchange['returned'];
+
+        foreach ($returned as $item) {
+            $this->text(self::itemName($item), hang: 2);
+            $this->row($this->quantity((string) $item['quantity'], $item['unitName'] ?? null), $this->money((int) $item['credit'], (bool) ($item['taxExempt'] ?? false)), indent: 2, hang: 2);
+            $this->text((string) $item['to'], indent: 2, hang: 2);
+            $this->details([...$item, 'prescriber' => null, 'prescriptionRef' => null], 2, false);
+        }
+
+        $this->rule();
+        $this->row('RETURN CREDIT', $this->money((int) $exchange['creditTotal']), bold: true);
+
+        if ($new !== null) {
+            $this->rule();
+            $this->text('NEW ITEMS', bold: true);
+            $this->items($new, fn (array $item): ?int => $item['lineTotal'] ?? null, withReturns: false);
+            $this->rule();
+            $discount = (int) $new['discountTotal'];
+
+            if ($discount > 0) {
+                $this->row('Subtotal', $this->money((int) $new['subtotal']));
+                $this->row('Discount', $this->money(-$discount));
+            }
+
+            if ($this->taxOn) {
+                $rate = rtrim(rtrim(number_format((float) $new['taxRate'], 2, '.', ''), '0'), '.');
+                $this->row('Tax '.$rate.'%'.(($new['pricesIncludeTax'] ?? false) ? ' (incl.)' : ''), $this->money((int) $new['taxTotal']));
+            }
+
+            $this->row('New items', $this->money((int) $new['grandTotal']));
+            $this->row('Return credit', $this->money(-(int) $exchange['creditTotal']));
+        }
+
+        $refund = (int) $exchange['cashRefunded'];
+        $this->grandTotal(
+            ($refund > 0 || $new === null ? 'REFUND ' : 'PATIENT PAYS ').$this->shop['currency'],
+            $this->money($refund > 0 || $new === null ? $refund : (int) $exchange['patientPaid']),
+        );
+        $this->rule();
+
+        if ($new !== null) {
+            $this->payments($new);
+
+            if ((int) $new['changeDue'] > 0) {
+                $this->row('Change', $this->money((int) $new['changeDue']));
+            }
+        }
+
+        if ($refund > 0 || $new === null) {
+            $this->row('Cash refund', $this->money($refund));
+        }
+
+        $this->text('Reason: '.$exchange['reason'], hang: 2);
+
+        if (filled($exchange['note'] ?? null)) {
+            $this->text('Note: '.$exchange['note'], hang: 2);
+        }
+
+        if ($refund > 0) {
+            $this->rule();
+            $this->signatures(["Patient's signature"]);
+        }
+
+        $this->footer();
+        $this->reprinted($reprint);
+
+        return $this->lines;
+    }
+
+    /**
      * The shift's paid out and paid in, one by one, and (a pharmacy) what
      * each doctor was paid, as sections of their own (branch 18). Nothing
      * when the shop does not record cash movements.

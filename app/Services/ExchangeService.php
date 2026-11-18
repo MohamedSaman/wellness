@@ -142,6 +142,85 @@ class ExchangeService
     }
 
     /**
+     * The receipt for ReceiptLayout::exchange(), in shop time: the bill the
+     * items came from, the items returned (as the return recorded them) with
+     * their credit and where they went, the new bill as ReceiptService::sale()
+     * prints it, and the money. With $reprint, marked as a reprint.
+     *
+     * @return array<string, mixed>
+     */
+    public function receipt(Exchange $exchange, ?AuditLog $reprint = null): array
+    {
+        $receipts = app(ReceiptService::class);
+        $exchange->loadMissing(['originalSale', 'newSale', 'saleReturn.items.location', 'noReceiptReturn', 'device', 'location', 'user', 'doctor', 'patient']);
+        $timezone = (string) ($this->shop()->timezone ?: config('app.timezone'));
+        $original = $exchange->originalSale;
+        $device = $exchange->device;
+
+        if ($exchange->saleReturn !== null) {
+            // refund() lists the return's lines in their order: the same line, the same index.
+            $lines = $exchange->saleReturn->items->values();
+            $refund = $receipts->refund($exchange->saleReturn);
+            /** @var list<array<string, mixed>> $items */
+            $items = $refund['items'];
+            $returned = [];
+
+            foreach ($items as $i => $item) {
+                $returned[] = [...$item, 'credit' => (int) $item['refund'], 'to' => self::destination($lines[$i]->location ?? null)];
+            }
+            $taxRate = (float) $refund['sale']['taxRate'];
+        } else {
+            $slip = $this->noReceipt->slip($exchange->noReceiptReturn ?? throw new \LogicException('An exchange has a return.'));
+            $returned = array_map(fn (array $item): array => [
+                'description' => $item['description'],
+                'unitName' => $item['unitName'],
+                'quantity' => $item['quantity'],
+                'credit' => (int) $item['refund'],
+                'to' => $item['to'],
+                'batches' => filled($item['batchNo']) ? [['batchNo' => $item['batchNo'], 'expiry' => $item['expiry'], 'quantity' => $item['quantity']]] : [],
+            ], $slip['items']);
+            $taxRate = 0.0;
+        }
+
+        $patient = match (true) {
+            $exchange->newSale !== null => ReceiptService::patient($exchange->newSale),
+            $original !== null => ReceiptService::patient($original),
+            default => $exchange->patient === null ? null : ['name' => $exchange->patient->name, 'age' => null],
+        };
+
+        return [
+            'number' => $exchange->number,
+            'exchangedAt' => $exchange->exchanged_at->setTimezone($timezone)->format('Y-m-d H:i'),
+            'till' => $device === null ? null : ['code' => (string) $device->code, 'name' => $device->name, 'location' => $exchange->location?->name],
+            'user' => (string) $exchange->user?->name,
+            'patient' => $patient,
+            'doctor' => $exchange->doctor?->name,
+            'original' => $original === null ? null : ['invoiceNo' => $original->invoice_no, 'soldAt' => $original->sold_at->setTimezone($timezone)->format('Y-m-d H:i')],
+            'noReceiptNo' => $exchange->noReceiptReturn?->number,
+            'returned' => array_values($returned),
+            'taxRate' => $taxRate,
+            'creditTotal' => $exchange->credit_total,
+            'creditApplied' => $exchange->credit_applied,
+            'patientPaid' => $exchange->patient_paid,
+            'cashRefunded' => $exchange->cash_refunded,
+            'newSale' => $exchange->newSale === null ? null : $receipts->sale($exchange->newSale),
+            'reason' => $exchange->reason->label(),
+            'note' => $exchange->note,
+            'reprint' => $receipts->reprintStamp($reprint),
+        ];
+    }
+
+    /** Where returned stock went, as printed. */
+    public static function destination(?Location $to): string
+    {
+        return match (true) {
+            $to === null => 'Not put back',
+            $to->is_sellable => 'Back on sale: '.$to->name,
+            default => 'To '.$to->name,
+        };
+    }
+
+    /**
      * How many whole shop days old a bill is (sold yesterday: 1).
      */
     public function ageInDays(Sale $sale): int
