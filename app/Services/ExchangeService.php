@@ -14,9 +14,11 @@ use App\Models\Doctor;
 use App\Models\Exchange;
 use App\Models\Location;
 use App\Models\NoReceiptReturn;
+use App\Models\NoReceiptReturnItem;
 use App\Models\Patient;
 use App\Models\Sale;
 use App\Models\SaleReturn;
+use App\Models\SaleReturnItem;
 use App\Models\Shift;
 use App\Models\Shop;
 use App\Models\User;
@@ -28,6 +30,7 @@ use App\Services\Data\PaymentInput;
 use App\Services\Data\ReturnLine;
 use App\Support\CurrentShop;
 use App\Support\Money;
+use App\Support\Quantity;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -208,6 +211,26 @@ class ExchangeService
             'note' => $exchange->note,
             'reprint' => $receipts->reprintStamp($reprint),
         ];
+    }
+
+    /**
+     * What came back, as the return recorded it, and where it went: "Amoxil
+     * 250 mg × 10 Capsule → To Quarantine" (the patient's Exchanges, the
+     * report).
+     *
+     * @return array<int, string>
+     */
+    public function returnedLines(Exchange $exchange): array
+    {
+        if ($exchange->saleReturn !== null) {
+            return $exchange->saleReturn->items->map(fn (SaleReturnItem $line): string => $line->saleItem->description
+                .' × '.Quantity::format((float) $line->quantity).' '.($line->saleItem->unit_name ?? '')
+                .' → '.self::destination($line->location))->values()->all();
+        }
+
+        return $exchange->noReceiptReturn?->items->map(fn (NoReceiptReturnItem $item): string => $item->description
+            .' × '.Quantity::format((float) $item->quantity).' '.($item->unit_name ?? '')
+            .' → '.self::destination($item->location))->values()->all() ?? [];
     }
 
     /** Where returned stock went, as printed. */
