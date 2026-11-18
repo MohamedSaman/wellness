@@ -9,6 +9,7 @@ import { addItem, dialog, expectInside, useTill } from './helpers';
  * then confirmed), a batch pick, discount, prescription, payment, the sale
  * done, recent sales, the Close shift reminder about doctor payment, Cash
  * in and out (a paid out, a doctor payment), Return without receipt,
+ * Return / Exchange (the bill, exchange mode, its payment and This shift),
  * closing the shift and its printed summary, reprinting that summary from
  * Shift summary, and back on
  * T2 the search looking at General Pharmacy's stock, the Request dialog and
@@ -413,6 +414,93 @@ for (const viewport of viewports) {
                 ).toContainText(/NR-\d{6}/);
                 await page.keyboard.press('Escape');
                 await expect(nr).toBeHidden();
+            });
+
+            await test.step('Return / Exchange: the bill, the cart, the payment', async () => {
+                // Alt+X (branch 19): the bill just made, from Recent sales on T1.
+                await page.keyboard.press('Alt+KeyX');
+                const exchange = page.locator('[data-test=exchange-dialog]');
+                await expect(exchange).toBeVisible();
+                await expect(
+                    exchange.locator('[data-test=exchange-recent]').first(),
+                ).toBeVisible();
+                await expectInside(exchange, 'Return / Exchange dialog');
+
+                await exchange
+                    .locator('[data-test=exchange-recent]')
+                    .first()
+                    .click();
+                const panadol = exchange
+                    .locator('[data-test=exchange-line]')
+                    .filter({ hasText: 'Panadol' });
+                await expect(panadol).toBeVisible();
+                await panadol.locator('[data-test=exchange-line-tick]').check();
+                await expect(
+                    panadol.locator('[data-test=exchange-to-quarantine]'),
+                ).toHaveAttribute('aria-pressed', 'true');
+                await expect(
+                    exchange.locator('[data-test=exchange-credit]'),
+                ).toHaveText(/\d+\.\d{2}/);
+                await exchange
+                    .locator('[data-test=exchange-note]')
+                    .fill('Rash after two days');
+                await expectInside(
+                    exchange,
+                    'Return / Exchange dialog, a line ticked',
+                );
+
+                // Exchange: the cart takes the new items; the credit pays for them.
+                await exchange.locator('[data-test=exchange-continue]').click();
+                await expect(exchange).toBeHidden();
+                await expect(
+                    page.locator('[data-test=exchange-banner]'),
+                ).toBeVisible();
+                await expectInside(cart, 'cart in exchange mode', {
+                    window: 'width',
+                });
+                await addItem(page, 'Panadol');
+                await expect(
+                    cart.locator('[data-test=exchange-difference]'),
+                ).toBeVisible();
+                await expectInside(cart, 'cart with an exchange', {
+                    window: 'width',
+                });
+
+                await page.keyboard.press('F9');
+                const pay = dialog(page, /the difference/);
+                await expect(pay).toBeVisible();
+                await expectInside(pay, 'Pay dialog, exchange');
+                const exact = pay.getByRole('button', { name: 'Exact' });
+
+                if (await exact.isVisible()) {
+                    await exact.click();
+                }
+
+                await expect(
+                    pay.locator('[data-test=complete-sale]'),
+                ).toBeEnabled();
+                await pay.locator('[data-test=complete-sale]').click();
+
+                const done = page.locator('[data-test=sale-done]');
+                await expect(
+                    done.locator('[data-test=exchange-done]'),
+                ).toBeVisible();
+                await expectInside(done, 'Exchange complete dialog');
+                await done.locator('[data-test=new-sale]').click();
+                await expect(done).toBeHidden();
+
+                // This shift: the exchange, to reprint.
+                await page.keyboard.press('Alt+KeyX');
+                await expect(exchange).toBeVisible();
+                await exchange
+                    .locator('[data-test=exchange-tab-shift]')
+                    .click();
+                await expect(
+                    exchange.locator('[data-test=exchange-row]'),
+                ).toHaveCount(1);
+                await expectInside(exchange, 'Return / Exchange, this shift');
+                await page.keyboard.press('Escape');
+                await expect(exchange).toBeHidden();
             });
 
             await test.step('Close shift dialog and its summary', async () => {
