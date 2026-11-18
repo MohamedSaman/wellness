@@ -556,7 +556,7 @@ class ReportService
 
             $rows[] = [
                 'key' => $method->value,
-                'method' => ucwords(str_replace('_', ' ', $method->value)),
+                'method' => $method->label(),
                 'payments' => (int) ($row->payments ?? 0),
                 'taken' => $amount,
                 'refunds' => $refund,

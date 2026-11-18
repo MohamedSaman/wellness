@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $base_quantity
  * @property int $refund_amount
  * @property bool $restocked
+ * @property int|null $location_id where a till return sent the stock (branch 19); null: the line's location
  * @property list<array{sale_item_batch_id: int, stock_batch_id: int, batch_no: string, expiry_date: string|null, quantity: float}>|null $batches
  *
  * One line of a return: what came back of a sale line and what it refunded.
@@ -29,6 +30,18 @@ class SaleReturnItem extends Model
             // Batch-tracked lines: [{sale_item_batch_id, stock_batch_id, batch_no, expiry_date, quantity}], as returned
             'batches' => 'array',
         ];
+    }
+
+    /** @return BelongsTo<Location, $this> */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class);
+    }
+
+    /** @return BelongsTo<SaleReturn, $this> */
+    public function saleReturn(): BelongsTo
+    {
+        return $this->belongsTo(SaleReturn::class);
     }
 
     /** @return BelongsTo<SaleItem, $this> */

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CashMovement;
 use App\Models\Device;
+use App\Models\Exchange;
 use App\Models\GoodsReceipt;
 use App\Models\NoReceiptReturn;
 use App\Models\Patient;
@@ -132,6 +133,8 @@ class GoLiveResetService
         $saleItems = fn (): Builder => DB::table('sale_items')->whereIn('sale_id', $sales())->select('id');
 
         $targets = [
+            // Branch 19: the rehearsal's returns and exchanges at the till (they point at its sales and returns).
+            'exchanges' => DB::table('exchanges')->where('shop_id', $shopId),
             'sale_return_items' => DB::table('sale_return_items')->whereIn('sale_return_id', $returns()),
             'sale_item_batches' => DB::table('sale_item_batches')->whereIn('sale_item_id', $saleItems()),
             'sale_returns' => DB::table('sale_returns')->where('shop_id', $shopId),
@@ -177,8 +180,8 @@ class GoLiveResetService
         $targets['audit_logs'] = DB::table('audit_logs')->where('shop_id', $shopId)->whereIn('auditable_type', array_map(
             fn (string $model): string => (new $model)->getMorphClass(),
             $stock
-                ? [Sale::class, SaleReturn::class, Shift::class, Patient::class, CashMovement::class, NoReceiptReturn::class, GoodsReceipt::class, PurchaseOrder::class, SupplierReturn::class, SupplierPayment::class, SupplierOpeningBalance::class, SupplierAllocation::class, StockTransfer::class, StockRequest::class, StockWriteOff::class, StockCount::class]
-                : [Sale::class, SaleReturn::class, Shift::class, Patient::class, CashMovement::class, NoReceiptReturn::class],
+                ? [Sale::class, SaleReturn::class, Shift::class, Patient::class, CashMovement::class, NoReceiptReturn::class, Exchange::class, GoodsReceipt::class, PurchaseOrder::class, SupplierReturn::class, SupplierPayment::class, SupplierOpeningBalance::class, SupplierAllocation::class, StockTransfer::class, StockRequest::class, StockWriteOff::class, StockCount::class]
+                : [Sale::class, SaleReturn::class, Shift::class, Patient::class, CashMovement::class, NoReceiptReturn::class, Exchange::class],
         ));
 
         return $targets;

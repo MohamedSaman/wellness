@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\BillType;
+use App\Enums\PaymentMethod;
 use App\Enums\SaleStatus;
 use App\Enums\TaxCategory;
 use App\Models\AuditLog;
@@ -468,7 +469,7 @@ class ReceiptService
 
     private function methodLabel(string $method): string
     {
-        return ucwords(str_replace('_', ' ', $method));
+        return PaymentMethod::tryFrom($method)?->label() ?? ucwords(str_replace('_', ' ', $method));
     }
 
     private function quantity(float $quantity): string

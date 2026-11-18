@@ -8,6 +8,7 @@ use App\Models\Concerns\HasPublicUuid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -21,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $note
  * @property int $refund_total
  * @property PaymentMethod $refund_method always cash
+ * @property int $exchange_credit the part of refund_total that paid a new bill in an exchange (branch 19)
  * @property Carbon $returned_at
  *
  * A refund for items brought back without their bill: bought before the
@@ -39,6 +41,7 @@ class NoReceiptReturn extends Model
     {
         return [
             'refund_total' => 'integer',
+            'exchange_credit' => 'integer',
             'refund_method' => PaymentMethod::class,
             'returned_at' => 'datetime',
         ];
@@ -47,6 +50,12 @@ class NoReceiptReturn extends Model
     protected static function booted(): void
     {
         static::deleting(fn () => throw new \LogicException('Returns are never deleted.'));
+    }
+
+    /** @return HasOne<Exchange, $this> */
+    public function exchange(): HasOne
+    {
+        return $this->hasOne(Exchange::class);
     }
 
     /** @return HasMany<NoReceiptReturnItem, $this> */

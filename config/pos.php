@@ -130,6 +130,10 @@ return [
         // Close shift shows a note, with Pay doctor, when the shift paid no doctor (pharmacy).
         // Never blocks closing.
         'doctor_payment_reminder' => false,
+        // Returns and exchanges at the till (docs/PHARMACY.md, branch 19): a bill older than
+        // this many days (shop days) can't be returned or exchanged at the till without
+        // pos.exchange.late (the owner). 0 = no limit.
+        'exchange_max_days' => 14,
     ],
 
     /*
@@ -482,6 +486,8 @@ return [
         'returns.no_receipt' => 'Refund an item returned without its bill, to Quarantine or back to stock (pharmacy)',
         'doctors.manage' => 'Add and edit doctors, and see each doctor\'s payments (pharmacy)',
         'doctors.pay' => 'Pay a doctor in cash from the till, within their role\'s limit (pharmacy, cash_movements)',
+        'pos.exchange' => 'Return or exchange a bill\'s items at the till; cash refunded within their role\'s paid out limit (pharmacy)',
+        'pos.exchange.late' => 'Return or exchange at the till a bill older than the shop\'s time limit (pharmacy)',
     ],
 
     /*
@@ -505,6 +511,8 @@ return [
             // Branch 18: paid out / paid in and doctor payments, within the role's limits.
             'cash.movements',
             'doctors.pay',
+            // Branch 19: returns and exchanges at the till, cash back within the paid out limit.
+            'pos.exchange',
         ],
     ],
 
