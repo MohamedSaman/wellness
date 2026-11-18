@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Patients;
 
 use App\Filament\Resources\Patients\Pages\ListPatients;
 use App\Filament\Resources\Patients\Pages\ViewPatient;
+use App\Filament\Resources\Patients\RelationManagers\ExchangesRelationManager;
 use App\Filament\Resources\Patients\RelationManagers\SalesRelationManager;
 use App\Filament\Resources\PermissionResource;
 use App\Models\Location;
@@ -240,7 +241,7 @@ class PatientResource extends PermissionResource
 
     public static function getRelations(): array
     {
-        return [SalesRelationManager::class];
+        return [SalesRelationManager::class, ExchangesRelationManager::class];
     }
 
     public static function getPages(): array

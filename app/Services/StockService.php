@@ -456,6 +456,76 @@ class StockService
     }
 
     /**
+     * Stock a sale took coming back at the till (docs/PHARMACY.md, branch 19)
+     * to $to: Quarantine (a location that does not sell) or back on sale at
+     * the till's location. One `return` movement at $to, at the sale line's
+     * cost (a return never changes an average). A batch-tracked item goes
+     * into the batch it was sold from when that batch is at $to, else into
+     * the same batch (number, expiry, purchase cost) at $to, created on
+     * first need. Back on sale needs a known batch that has not expired
+     * (as returns without a receipt, branch 18); a piece of unknown batch
+     * (sold from the unallocated batch, or before the item tracked batches)
+     * goes to $to's unallocated batch, which only a location that does not
+     * sell takes. An item that does not track batches is record()ed.
+     */
+    public function returnTo(
+        ProductVariant $variant,
+        ?SaleItemBatch $piece,
+        Location $to,
+        float $quantity,
+        User $user,
+        Model $reference,
+        int|string|null $unitCost,
+        ReturnReason $reason,
+        ?string $note = null,
+        ?int $deviceId = null,
+    ): StockMovement {
+        if (! $variant->product->tracksBatches()) {
+            return $this->record($variant, $to, StockMovementType::Return, $quantity, $user, $reference, $unitCost, $reason, $note, $deviceId, allowPartUnits: true);
+        }
+
+        $quantity = Quantity::normalize($quantity);
+
+        if ($quantity <= 0) {
+            throw new PosException('Quantity must be greater than zero.');
+        }
+
+        $this->assertCurrentShop($variant, $to);
+
+        $source = $piece === null ? null : StockBatch::query()->find($piece->stock_batch_id);
+        $known = $source !== null && ! $source->is_unallocated;
+
+        if ($to->is_sellable) {
+            if ($source === null || $source->is_unallocated) {
+                throw new PosException("The batch of {$variant->sku} that came back is not known: send it to Quarantine, not back on sale.");
+            }
+
+            if ($source->expiry_date !== null && $source->expiry_date->toDateString() <= $this->batches->today()->toDateString()) {
+                throw new PosException("Batch {$source->batch_no} of {$variant->sku} has expired: send it to Quarantine, not back on sale.");
+            }
+        }
+
+        return DB::transaction(function () use ($variant, $source, $known, $to, $quantity, $user, $reference, $unitCost, $reason, $note, $deviceId): StockMovement {
+            $cost = $unitCost === null ? null : UnitCost::normalize($unitCost);
+            $level = $this->lockLevel($variant, $to);
+
+            if (! $known) {
+                $row = $this->lockUnallocated($variant, $level);
+            } elseif ((int) $source->location_id === (int) $to->getKey()) {
+                $row = $this->lockBatch($source);
+            } else {
+                [$row, $created] = $this->counterpart($source, $to, null);
+
+                if ($created) {
+                    $row->source()->associate($reference)->save();
+                }
+            }
+
+            return $this->move($level, $variant, StockMovementType::Return, $quantity, $user, $reference, $cost, $reason, $note, $deviceId, batch: $row);
+        });
+    }
+
+    /**
      * Move stock from one location to another: per line, a transfer_out at the
      * source and a transfer_in at the destination, all in one transaction. The
      * cost travels at the source location's average (decided, PHARMACY.md §5):

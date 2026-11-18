@@ -131,6 +131,8 @@ class PosController extends Controller
             ] : null,
             // Returns without a receipt (pharmacy, returns.no_receipt; branch 18).
             'noReceiptReturns' => $pharmacy && $user->can('returns.no_receipt'),
+            // Return / Exchange at the till (pharmacy, pos.exchange; branch 19).
+            'exchanges' => $pharmacy && $user->can('pos.exchange'),
         ]);
     }
 

@@ -97,6 +97,7 @@ class ShopSettings extends Page
             'brand_color' => $shop->setting('brand_color'),
             'cash_limits' => $this->cashLimitsForForm(),
             'doctor_payment_reminder' => (bool) $shop->setting('doctor_payment_reminder'),
+            'exchange_max_days' => $shop->setting('exchange_max_days', 14),
         ]);
     }
 
@@ -177,6 +178,21 @@ class ShopSettings extends Page
                             ->helperText('Close shift shows a note, with Pay doctor, when no doctor was paid in the shift. Closing is never blocked.')
                             ->visible(fn (): bool => $this->shop()->hasModule('pharmacy'))
                             ->columnSpanFull(),
+                    ]),
+                // Branch 19: Return / Exchange at the till.
+                Section::make('Returns and exchanges at the till')
+                    ->visible(fn (): bool => $this->shop()->hasModule('pharmacy'))
+                    ->description('Return / Exchange (Alt+X). The cash given back in one return or exchange is within the user\'s paid out limit under Cash in and out.')
+                    ->schema([
+                        TextInput::make('exchange_max_days')
+                            ->label('Take bills back up to (days)')
+                            ->numeric()
+                            ->integer()
+                            ->required()
+                            ->minValue(0)
+                            ->maxValue(3650)
+                            ->suffix('days')
+                            ->helperText('A bill older than this needs the owner. 0 = no limit.'),
                     ]),
                 Section::make('Batches and expiry')
                     ->visible(fn (): bool => $this->shop()->hasModule('pharmacy'))
@@ -329,6 +345,9 @@ class ShopSettings extends Page
                 ] : []),
                 ...(array_key_exists('doctor_payment_reminder', $data) ? [
                     'doctor_payment_reminder' => (bool) $data['doctor_payment_reminder'],
+                ] : []),
+                ...(array_key_exists('exchange_max_days', $data) ? [
+                    'exchange_max_days' => max(0, (int) $data['exchange_max_days']),
                 ] : []),
                 'favicon_path' => BrandingForm::replaceFavicon($shop, $data['favicon_path'] ?? null),
                 'brand_color' => BrandingForm::normalize($data['brand_color'] ?? null),

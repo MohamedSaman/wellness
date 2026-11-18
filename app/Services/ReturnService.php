@@ -9,6 +9,7 @@ use App\Enums\SaleStatus;
 use App\Enums\StockMovementType;
 use App\Enums\StorageCondition;
 use App\Exceptions\PosException;
+use App\Models\Location;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SaleItemBatch;
@@ -121,11 +122,43 @@ class ReturnService
             throw new PosException('You do not have permission to process returns.');
         }
 
+        return $this->record($sale, $lines, $reason, $refundMethod, $user, $refundReference, $shift, $note);
+    }
+
+    /**
+     * A return at the till (docs/PHARMACY.md, branch 19), for ExchangeService
+     * only, which has checked pos.exchange, the time limit and the cashier's
+     * cash limit: cash from $shift's drawer (the till's open shift, locked by
+     * the caller) and each line's stock to the location it names. The caller
+     * then sets the part of the refund that paid the new bill
+     * (exchange_credit), in the same transaction.
+     *
+     * @param  list<ReturnLine>  $lines
+     */
+    public function atTill(Sale $sale, array $lines, ReturnReason $reason, User $user, Shift $shift, ?string $note): SaleReturn
+    {
+        return $this->record($sale, $lines, $reason, PaymentMethod::Cash, $user, null, $shift, $note, atTill: true);
+    }
+
+    /**
+     * @param  list<ReturnLine>  $lines
+     */
+    private function record(
+        Sale $sale,
+        array $lines,
+        ReturnReason $reason,
+        PaymentMethod $refundMethod,
+        User $user,
+        ?string $refundReference,
+        ?Shift $shift,
+        ?string $note,
+        bool $atTill = false,
+    ): SaleReturn {
         $note = blank($note) ? null : trim($note);
         $refundReference = $this->refundReference($refundMethod, $refundReference);
         $lines = $this->requested($lines);
 
-        return DB::transaction(function () use ($sale, $lines, $reason, $note, $refundMethod, $refundReference, $user, $shift): SaleReturn {
+        return DB::transaction(function () use ($sale, $lines, $reason, $note, $refundMethod, $refundReference, $user, $shift, $atTill): SaleReturn {
             /** @var Sale $sale */
             $sale = Sale::query()->whereKey($sale->getKey())->lockForUpdate()->firstOrFail();
 
@@ -137,6 +170,10 @@ class ReturnService
             $shift = $this->resolveShift($sale, $shift);
             $priced = $this->price($sale, $lines);
             $refundTotal = array_sum(array_column($priced, 'refund'));
+
+            if ($atTill && collect($priced)->contains(fn (array $line): bool => $line['to'] === null && $line['item']->variant->product->track_stock)) {
+                throw new \LogicException('A return at the till says where each line\'s stock goes.');
+            }
 
             $count = SaleReturn::query()->where('sale_id', $sale->getKey())->count();
 
@@ -158,13 +195,14 @@ class ReturnService
             // Fixed lock order (by location, then variant) so concurrent stock changes never deadlock.
             usort($priced, fn ($a, $b) => [$a['item']->location_id, $a['item']->product_variant_id] <=> [$b['item']->location_id, $b['item']->product_variant_id]);
 
-            foreach ($priced as ['item' => $item, 'quantity' => $quantity, 'baseQuantity' => $baseQuantity, 'refund' => $refund, 'pieces' => $pieces, 'restock' => $restock]) {
+            foreach ($priced as ['item' => $item, 'quantity' => $quantity, 'baseQuantity' => $baseQuantity, 'refund' => $refund, 'pieces' => $pieces, 'restock' => $restock, 'to' => $to]) {
                 $return->items()->create([
                     'sale_item_id' => $item->getKey(),
                     'quantity' => $quantity,
                     'base_quantity' => $baseQuantity,
                     'refund_amount' => $refund,
                     'restocked' => $restock,
+                    'location_id' => $to?->getKey(),
                     'batches' => $pieces === [] ? null : array_map(fn (array $piece): array => [
                         'sale_item_batch_id' => (int) $piece[0]->getKey(),
                         'stock_batch_id' => (int) $piece[0]->stock_batch_id,
@@ -183,6 +221,19 @@ class ReturnService
                 }
 
                 if (! $restock || ! $item->variant->product->track_stock) {
+                    continue;
+                }
+
+                // At the till (branch 19): to Quarantine, or back on sale at the till's location.
+                if ($to !== null) {
+                    if ($pieces === []) {
+                        $this->stock->returnTo($item->variant, null, $to, $baseQuantity, $user, $return, $item->unitCostPerBase(), $reason, $note, $shift?->device_id);
+                    }
+
+                    foreach ($pieces as [$piece, $pieceQuantity]) {
+                        $this->stock->returnTo($item->variant, $piece, $to, $pieceQuantity, $user, $return, $item->unitCostPerBase(), $reason, $note, $shift?->device_id);
+                    }
+
                     continue;
                 }
 
@@ -230,6 +281,7 @@ class ReturnService
                 'invoice_no' => $sale->invoice_no,
                 'refund_total' => $refundTotal,
                 'refund_method' => $refundMethod->value,
+                ...($atTill ? ['at_till' => true] : []),
                 'reason' => $reason->value,
                 'shift_id' => $shift?->getKey(),
                 'till' => $shift?->device?->code,
@@ -238,6 +290,7 @@ class ReturnService
                     'quantity' => $line['quantity'],
                     'refund' => $line['refund'],
                     'restock' => $line['restock'],
+                    ...($line['to'] === null ? [] : ['to' => $line['to']->getKey()]),
                 ], $priced),
             ], (int) $user->getKey());
 
@@ -286,7 +339,7 @@ class ReturnService
                 throw new PosException('Each item can be returned once per return.');
             }
 
-            $requested[$line->saleItemId] = new ReturnLine($line->saleItemId, $quantity, $line->inBaseUnits, $line->restock, $line->batches);
+            $requested[$line->saleItemId] = new ReturnLine($line->saleItemId, $quantity, $line->inBaseUnits, $line->restock, $line->batches, $line->toLocationId);
         }
 
         if ($requested === []) {
@@ -301,7 +354,7 @@ class ReturnService
      * and the batches it comes back from.
      *
      * @param  list<ReturnLine>  $lines
-     * @return list<array{item: SaleItem, quantity: float, baseQuantity: float, refund: int, pieces: list<array{0: SaleItemBatch, 1: float}>, restock: bool}>
+     * @return list<array{item: SaleItem, quantity: float, baseQuantity: float, refund: int, pieces: list<array{0: SaleItemBatch, 1: float}>, restock: bool, to: Location|null}>
      */
     private function price(Sale $sale, array $lines): array
     {
@@ -328,6 +381,7 @@ class ReturnService
                 'refund' => $this->refundFor($item, $baseQuantity, $isLast),
                 'pieces' => $item->batches->isEmpty() ? [] : $this->batchSplit($item, $baseQuantity, $line->batches),
                 'restock' => $line->restock,
+                'to' => $line->toLocationId === null ? null : (Location::query()->find($line->toLocationId) ?? throw new PosException('That location was not found.')),
             ];
         }
 

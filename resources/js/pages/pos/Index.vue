@@ -3,6 +3,7 @@ import { Head, router } from '@inertiajs/vue3';
 import {
     ArrowLeftRight,
     Banknote,
+    Undo2,
     FileText,
     History,
     Inbox,
@@ -25,6 +26,7 @@ import {
     watch,
 } from 'vue';
 import CheckoutController from '@/actions/App/Http/Controllers/Pos/CheckoutController';
+import ExchangeController from '@/actions/App/Http/Controllers/Pos/ExchangeController';
 import StockRequestController from '@/actions/App/Http/Controllers/Pos/StockRequestController';
 import TillController from '@/actions/App/Http/Controllers/Pos/TillController';
 import CartPanel from '@/components/pos/CartPanel.vue';
@@ -32,6 +34,7 @@ import CashMovementsDialog from '@/components/pos/CashMovementsDialog.vue';
 import NoReceiptReturnDialog from '@/components/pos/NoReceiptReturnDialog.vue';
 import CloseShiftDialog from '@/components/pos/CloseShiftDialog.vue';
 import DiscountDialog from '@/components/pos/DiscountDialog.vue';
+import ExchangeDialog from '@/components/pos/ExchangeDialog.vue';
 import ItemSearch from '@/components/pos/ItemSearch.vue';
 import OfflineStatus from '@/components/pos/OfflineStatus.vue';
 import PaymentDialog from '@/components/pos/PaymentDialog.vue';
@@ -50,6 +53,7 @@ import { Button } from '@/components/ui/button';
 import { useOfflinePos } from '@/composables/useOfflinePos';
 import { usePosCart } from '@/composables/usePosCart';
 import { ApiError, postJson } from '@/lib/http';
+import { formatMoney } from '@/lib/money';
 import type { OfflineReceipt, OfflineShop } from '@/lib/offline/db';
 import { rememberPatient } from '@/lib/offline/patients';
 import { formatAge, today } from '@/lib/patientAge';
@@ -59,7 +63,9 @@ import { loadReceiptFont, printReceiptPage } from '@/lib/receipt/printPage';
 import { receiptPrinter } from '@/lib/receiptPrinter';
 import { logout } from '@/routes';
 import type {
+    CartExchange,
     CompletedSale,
+    ExchangeSummary,
     PosCashMovements,
     PosCashier,
     PosFeatures,
@@ -70,6 +76,7 @@ import type {
     PosShop,
     PosTill,
     PosTillOption,
+    SalePatient,
 } from '@/types/pos';
 
 const props = withDefaults(
@@ -89,12 +96,15 @@ const props = withDefaults(
         cashMovements?: PosCashMovements;
         /** Returns without a receipt (pharmacy, returns.no_receipt; branch 18). */
         noReceiptReturns?: boolean;
+        /** Return / Exchange at the till (pharmacy, pos.exchange; branch 19). */
+        exchanges?: boolean;
     }>(),
     {
         pharmacy: null,
         searchLocations: () => [],
         cashMovements: null,
         noReceiptReturns: false,
+        exchanges: false,
     },
 );
 
@@ -180,6 +190,44 @@ function payDoctorFromClose(): void {
 function openNoReceipt(): void {
     cashOpen.value = false;
     noReceiptOpen.value = true;
+}
+
+/** Return / Exchange (Alt+X, branch 19): online only, with an open shift. */
+const exchangeOpen = ref(false);
+const canExchange = computed(() => props.exchanges && props.shift !== null);
+/** The cart's exchange: its new items are paid with the return credit. */
+const exchangeMode = computed(() => state.exchange !== null);
+
+function openExchange(): void {
+    if (canExchange.value && !offlinePos.isOffline.value) {
+        exchangeOpen.value = true;
+    }
+}
+
+/** Exchange chosen: the cart takes the new items; the credit pays for them. */
+function startExchange(
+    exchange: CartExchange,
+    patient: SalePatient | null,
+): void {
+    cart.startExchange(exchange, patient);
+    exchangeOpen.value = false;
+    void nextTick(() =>
+        search.value?.showInfo(
+            'Add the new items, then Pay (F9). The return credit pays for them.',
+        ),
+    );
+}
+
+/** Change what came back: the dialog again, the cart's items kept. */
+function changeExchange(): void {
+    cart.cancelExchange();
+    openExchange();
+}
+
+/** Return only, recorded from the dialog: its receipt from the Done dialog. */
+function returned(done: CompletedSale): void {
+    exchangeOpen.value = false;
+    completed.value = done;
 }
 const completed = ref<CompletedSale | null>(null);
 const submitting = ref(false);
@@ -290,6 +338,7 @@ const dialogOpen = computed(
         shiftSummariesOpen.value ||
         cashOpen.value ||
         noReceiptOpen.value ||
+        exchangeOpen.value ||
         rxOpen.value ||
         requestItem.value !== null ||
         completed.value !== null,
@@ -315,6 +364,15 @@ function openPayment(): void {
             `Enter the price of ${pending.sku}, then press Enter.`,
         );
         cartPanel.value?.focusPrice(pending.key);
+
+        return;
+    }
+
+    // An exchange is paid online only: the credit is the server's.
+    if (exchangeMode.value && offlinePos.isOffline.value) {
+        search.value?.showNotice(
+            'Offline: an exchange needs a connection. Wait for it, or cancel the exchange.',
+        );
 
         return;
     }
@@ -460,6 +518,12 @@ async function completeSale(): Promise<void> {
     checkoutError.value = null;
 
     try {
+        if (exchangeMode.value) {
+            await completeExchange();
+
+            return;
+        }
+
         if (offlinePos.isOffline.value && offlinePos.canSellOffline.value) {
             await completeOffline();
 
@@ -499,6 +563,40 @@ async function completeSale(): Promise<void> {
         checkoutError.value = errorMessage(error);
     } finally {
         submitting.value = false;
+    }
+}
+
+/**
+ * An exchange's new items with the return (branch 19), in one request: the
+ * same cart uuid on every attempt, so a retry records it once. Never offline.
+ */
+async function completeExchange(): Promise<void> {
+    if (props.till === null) {
+        return;
+    }
+
+    try {
+        const response = await postJson<{
+            exchange: ExchangeSummary;
+            receipt_url: string;
+        }>(ExchangeController.store.url(), cart.exchangeBody(props.till.uuid));
+        rememberNewPatient();
+        offlinePos.reportConnection(true);
+        completed.value = {
+            uuid: response.exchange.uuid,
+            invoice_no:
+                response.exchange.new_invoice_no ?? response.exchange.number,
+            grand_total: response.exchange.patient_paid,
+            change_due: response.exchange.change_due ?? 0,
+            receipt_url: response.receipt_url,
+            exchange: response.exchange,
+        };
+        paymentOpen.value = false;
+    } catch (error) {
+        checkoutError.value =
+            error instanceof ApiError && error.status === 0
+                ? 'The server cannot be reached: an exchange needs a connection. Try again.'
+                : errorMessage(error);
     }
 }
 
@@ -677,6 +775,18 @@ function onKeydown(event: KeyboardEvent): void {
         event.preventDefault();
         if (!dialogOpen.value) {
             shiftPatientsOpen.value = true;
+        }
+    } else if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.code === 'KeyX' &&
+        canExchange.value
+    ) {
+        // Return / Exchange: online only.
+        event.preventDefault();
+        if (!dialogOpen.value) {
+            openExchange();
         }
     } else if (
         event.altKey &&
@@ -902,6 +1012,18 @@ onBeforeUnmount(() => {
                     <kbd class="text-xs text-muted-foreground">Alt+P</kbd>
                 </Button>
                 <Button
+                    v-if="till && canExchange"
+                    variant="outline"
+                    class="h-11"
+                    data-test="exchange-button"
+                    title="Return or exchange a bill's items (Alt+X)"
+                    :disabled="offlinePos.isOffline.value"
+                    @click="openExchange"
+                >
+                    <Undo2 class="size-4" /> Return / Exchange
+                    <kbd class="text-xs text-muted-foreground">Alt+X</kbd>
+                </Button>
+                <Button
                     v-if="till && shift && canCash"
                     variant="outline"
                     class="h-11"
@@ -1043,7 +1165,13 @@ onBeforeUnmount(() => {
                         data-test="sale-title"
                     >
                         <Receipt class="size-5" />
-                        {{ opdBill ? 'OPD bill' : 'Current sale' }}
+                        {{
+                            exchangeMode
+                                ? 'Exchange'
+                                : opdBill
+                                  ? 'OPD bill'
+                                  : 'Current sale'
+                        }}
                     </h2>
                     <div class="flex flex-wrap items-center gap-1">
                         <Button
@@ -1082,6 +1210,56 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
+                <div
+                    v-if="state.exchange"
+                    class="grid min-w-0 gap-1 rounded-xl border border-primary/40 bg-primary/5 p-3"
+                    data-test="exchange-banner"
+                >
+                    <div class="flex min-w-0 flex-wrap items-center gap-2">
+                        <p class="min-w-0 flex-1 font-semibold">
+                            <Undo2 class="mr-1 inline size-4" />
+                            {{
+                                state.exchange.invoiceNo
+                                    ? `Back from ${state.exchange.invoiceNo}`
+                                    : 'Back without a bill'
+                            }}
+                        </p>
+                        <span
+                            class="shrink-0 font-bold tabular-nums"
+                            data-test="exchange-banner-credit"
+                            >Credit
+                            {{
+                                formatMoney(
+                                    state.exchange.credit,
+                                    shop.decimals,
+                                    shop.currency,
+                                )
+                            }}</span
+                        >
+                    </div>
+                    <p
+                        class="line-clamp-2 min-w-0 text-sm break-words text-muted-foreground"
+                    >
+                        {{ state.exchange.summary }}
+                    </p>
+                    <div class="flex flex-wrap gap-1">
+                        <Button
+                            variant="outline"
+                            class="h-9"
+                            data-test="exchange-change"
+                            @click="changeExchange"
+                            >Change what came back</Button
+                        >
+                        <Button
+                            variant="ghost"
+                            class="h-9"
+                            data-test="exchange-cancel"
+                            @click="cart.cancelExchange()"
+                            >Cancel exchange</Button
+                        >
+                    </div>
+                </div>
+
                 <CartPanel
                     ref="cartPanel"
                     :lines="state.lines"
@@ -1110,6 +1288,16 @@ onBeforeUnmount(() => {
                     :decimals="shop.decimals"
                     :currency="shop.currency"
                     :opd-bill="opdBill"
+                    :exchange="
+                        state.exchange
+                            ? (state.quote?.exchange ?? {
+                                  credit: state.exchange.credit,
+                                  applied: 0,
+                                  patient_pays: 0,
+                                  refund: state.exchange.credit,
+                              })
+                            : null
+                    "
                     :below-list-percent="
                         props.pharmacy?.opdBelowListWarningPercent ?? 100
                     "
@@ -1140,6 +1328,7 @@ onBeforeUnmount(() => {
             :reference-required="
                 pharmacy?.bankTransferReferenceRequired ?? false
             "
+            :exchange="state.exchange ? (state.quote?.exchange ?? null) : null"
             @complete="completeSale"
         />
         <PrescriptionDialog
@@ -1191,6 +1380,15 @@ onBeforeUnmount(() => {
             :start-with="cashStartWith"
             :can-return-without-receipt="noReceiptReturns"
             @no-receipt="openNoReceipt"
+        />
+        <ExchangeDialog
+            v-if="till && canExchange"
+            v-model:open="exchangeOpen"
+            :till="till"
+            :shop="shop"
+            :patient="state.patient"
+            @exchange="startExchange"
+            @returned="returned"
         />
         <NoReceiptReturnDialog
             v-if="till && shift && noReceiptReturns"

@@ -236,6 +236,39 @@ class NoReceiptReturnService
         });
     }
 
+    /**
+     * What these items would refund (branch 19: the credit of an exchange
+     * without a bill), line by line: the value typed or the unit's price
+     * today, times the quantity. Throws what create() would refuse a line
+     * with for want of a price.
+     *
+     * @param  list<NoReceiptLine>  $lines
+     * @return array{total: int, lines: list<int>}
+     */
+    public function preview(array $lines): array
+    {
+        $priceList = $this->shop()->defaultPriceList();
+        $amounts = [];
+
+        foreach ($lines as $line) {
+            /** @var ProductVariant|null $variant */
+            $variant = ProductVariant::query()->find($line->variantId) ?? throw new PosException('That item was not found.');
+            /** @var VariantUnit|null $unit */
+            $unit = $line->unitId === null
+                ? $variant->units()->where('is_base', true)->first()
+                : $variant->units()->whereKey($line->unitId)->first();
+            $value = $line->unitValue ?? $unit?->priceOn($priceList);
+
+            if ($unit === null || $value === null || $value <= 0) {
+                throw new PosException("{$variant->sku} has no price for one ".($unit->name ?? 'unit').': enter the value to refund.');
+            }
+
+            $amounts[] = Money::multiply((int) $value, Quantity::normalize($line->quantity));
+        }
+
+        return ['total' => array_sum($amounts), 'lines' => $amounts];
+    }
+
     /** Whoever made it, a user who may read its shift, or one who may refund without a receipt. */
     public function mayRead(?User $user, NoReceiptReturn $return): bool
     {

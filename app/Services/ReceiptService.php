@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\BillType;
+use App\Enums\PaymentMethod;
 use App\Enums\SaleStatus;
 use App\Enums\TaxCategory;
 use App\Models\AuditLog;
@@ -108,8 +109,8 @@ class ReceiptService
      * prints, and the receipt as ESC/POS bytes (base64) for a thermal printer,
      * laid out for that printer's own font (ReceiptLayout::forPrinter()).
      *
-     * @param  'sale'|'refund'|'void'|'shift'|'cash'|'no_receipt'  $document
-     * @param  array<string, mixed>  $payload  sale(), refund(), voidSlip(), a shift summary (ShiftController::summary()) a cash movement's slip (CashMovementService::slip()) or a refund without a receipt (NoReceiptReturnService::slip())
+     * @param  'sale'|'refund'|'void'|'shift'|'cash'|'no_receipt'|'exchange'  $document
+     * @param  array<string, mixed>  $payload  sale(), refund(), voidSlip(), a shift summary (ShiftController::summary()) a cash movement's slip (CashMovementService::slip()) a refund without a receipt (NoReceiptReturnService::slip()) or a return or exchange at the till (ExchangeService::receipt())
      * @param  ReceiptShop|null  $shop  shop(), or the shop as Receipt settings' preview has it
      * @return array{paperWidth: int, columns: int, largePrint: bool, lines: list<array{text: string, bold: bool, tall: bool}>, escpos: string}
      */
@@ -126,6 +127,7 @@ class ReceiptService
                 'shift' => $layout->shiftSummary($payload),
                 'cash' => $layout->cashMovement($payload),
                 'no_receipt' => $layout->noReceiptRefund($payload),
+                'exchange' => $layout->exchange($payload),
             };
         };
         $paperWidth = (int) $shop['receipt']['paperWidth'];
@@ -183,7 +185,7 @@ class ReceiptService
         $search = trim((string) $search);
 
         return Sale::query()
-            ->with('cashier')
+            ->with($this->usesThermalReceipt() ? ['cashier', 'exchange'] : ['cashier'])
             ->where('device_id', $till->getKey())
             ->where(fn (Builder $query) => $query
                 ->where('sold_at', '>=', $todayStartsAt)
@@ -468,7 +470,7 @@ class ReceiptService
 
     private function methodLabel(string $method): string
     {
-        return ucwords(str_replace('_', ' ', $method));
+        return PaymentMethod::tryFrom($method)?->label() ?? ucwords(str_replace('_', ' ', $method));
     }
 
     private function quantity(float $quantity): string

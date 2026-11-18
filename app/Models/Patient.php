@@ -69,6 +69,16 @@ class Patient extends Model
         return $this->hasMany(Sale::class);
     }
 
+    /**
+     * Returns and exchanges at the till (branch 19).
+     *
+     * @return HasMany<Exchange, $this>
+     */
+    public function exchanges(): HasMany
+    {
+        return $this->hasMany(Exchange::class);
+    }
+
     /** @return BelongsTo<User, $this> */
     public function creator(): BelongsTo
     {

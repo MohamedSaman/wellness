@@ -25,6 +25,7 @@ import type { OfflineQuote, TillUnit } from '@/lib/offline/pricing';
 import { itemsById } from '@/lib/offline/search';
 import type {
     BillType,
+    CartExchange,
     DrugInfo,
     PatientOnSale,
     PaymentMethod,
@@ -127,6 +128,12 @@ export type CartState = {
     patient: SalePatient | null;
     /** The cashier skipped the patient step for this sale (the shop allows it). */
     patientSkipped: boolean;
+    /**
+     * Return / Exchange (branch 19): the items coming back, whose credit pays
+     * this cart's new items. Online only, so never saved with the cart
+     * (snapshot()); null for a sale.
+     */
+    exchange: CartExchange | null;
 };
 
 /** What the till is (set by the checkout page through configure()); not part of the sale. */
@@ -196,6 +203,7 @@ const state = reactive<CartState>({
     customerPhone: '',
     patient: null,
     patientSkipped: false,
+    exchange: null,
 });
 
 const offline = useOfflinePos();
@@ -567,6 +575,10 @@ function requestBody() {
         ...(state.patient === null
             ? {}
             : { patient: patientBody(state.patient) }),
+        // An exchange's credit (branch 19): the quote's payment preview counts it.
+        ...(state.exchange === null
+            ? {}
+            : { exchange_credit: state.exchange.credit }),
     };
 }
 
@@ -986,8 +998,62 @@ export function usePosCart() {
         state.quoteError = null;
         state.stale = false;
         state.quoteSource = 'server';
+        state.exchange = null;
         sequence++;
         startCart();
+    }
+
+    /**
+     * Exchange mode (branch 19): the cart holds the new items, paid with the
+     * return's credit. An exchange's new bill is a standard bill, for the
+     * bill's patient when it has one.
+     */
+    function startExchange(
+        exchange: CartExchange,
+        patient: SalePatient | null,
+    ): void {
+        if (state.billType === 'opd') {
+            const consultationId = context.opdConsultation?.variant_id ?? null;
+
+            // The consultation an OPD till starts every cart with is not part of an exchange.
+            state.lines = state.lines.filter(
+                (line) => line.variantId !== consultationId,
+            );
+            state.billType = 'standard';
+            state.medicinesAmount = '';
+        }
+
+        state.exchange = exchange;
+        state.payments = [];
+
+        if (patient !== null) {
+            state.patient = patient;
+            state.patientSkipped = false;
+        }
+    }
+
+    /** Back to a plain sale: the items stay in the cart. */
+    function cancelExchange(): void {
+        state.exchange = null;
+        state.payments = [];
+    }
+
+    /** POST /pos/exchanges: the return with the cart's new items and the patient's payments. */
+    function exchangeBody(deviceUuid: string) {
+        const exchange = state.exchange;
+
+        return {
+            ...requestBody(),
+            device: deviceUuid,
+            // The cart's uuid: a retry or a double click records the exchange once.
+            uuid: state.uuid,
+            sale: exchange?.saleUuid ?? null,
+            returns: exchange?.returns ?? [],
+            no_receipt: exchange?.noReceipt ?? [],
+            reason: exchange?.reason ?? null,
+            note: exchange?.note.trim() || null,
+            doctor_id: exchange?.doctorId ?? null,
+        };
     }
 
     /** The cart as plain JSON, ready to store in IndexedDB. */
@@ -1254,6 +1320,9 @@ export function usePosCart() {
         snapshot,
         restore,
         checkoutBody,
+        startExchange,
+        cancelExchange,
+        exchangeBody,
         refreshQuote,
         baseQuantity,
         isRxLine,

@@ -35,6 +35,10 @@
             {{-- Returns without a receipt (branch 18): part of the refunds above. --}}
             <tr data-test="shift-no-receipt"><td class="muted">&nbsp;&nbsp;of which without receipt ({{ $summary['no_receipt_count'] }})</td><td class="num muted">{{ $money(-$summary['no_receipt_refunds']) }}</td></tr>
         @endif
+        @if (($summary['exchanges'] ?? 0) > 0 || ($summary['till_returns'] ?? 0) > 0)
+            {{-- Returns and exchanges at the till (branch 19): counts; the money is in the refunds and payments. --}}
+            <tr data-test="shift-exchanges"><td class="muted">Exchanges / returns at the till</td><td class="num muted">{{ $summary['exchanges'] }} / {{ $summary['till_returns'] }}</td></tr>
+        @endif
         <tr class="grand"><td>Net sales</td><td class="num">{{ $money($summary['net']) }}</td></tr>
         <tr><td class="muted">Voided bills ({{ $summary['voids'] }})</td><td class="num muted">{{ $money($summary['voids_total']) }}</td></tr>
     </table>

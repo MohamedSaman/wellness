@@ -8,7 +8,10 @@ namespace App\Services\Data;
  * $inBaseUnits, in base units (10 tablets from a box of 30), whether it goes
  * back on the shelf, and for a line that took several batches how much
  * comes back from each (sale_item_batch_id => base units; null = latest
- * expiry first).
+ * expiry first). At the till (branch 19) each line also says where its
+ * stock goes: $toLocationId, Quarantine or the till's location
+ * (StockService::returnTo()); null keeps the admin's rule (the line's own
+ * location, when restocked).
  */
 final readonly class ReturnLine
 {
@@ -21,5 +24,6 @@ final readonly class ReturnLine
         public bool $inBaseUnits = false,
         public bool $restock = true,
         public ?array $batches = null,
+        public ?int $toLocationId = null,
     ) {}
 }

@@ -36,8 +36,21 @@ function print(): void {
         <DialogContent class="sm:max-w-md" data-test="sale-done">
             <DialogHeader class="items-center text-center">
                 <CircleCheck class="size-14 text-emerald-600" />
-                <DialogTitle class="text-2xl">Sale complete</DialogTitle>
-                <DialogDescription
+                <DialogTitle class="text-2xl">{{
+                    sale?.exchange
+                        ? sale.exchange.kind === 'exchange'
+                            ? 'Exchange complete'
+                            : 'Return complete'
+                        : 'Sale complete'
+                }}</DialogTitle>
+                <DialogDescription v-if="sale?.exchange"
+                    >{{ sale.exchange.number }} ·
+                    {{ sale.exchange.original_invoice_no
+                    }}<template v-if="sale.exchange.new_invoice_no">
+                        → new bill {{ sale.exchange.new_invoice_no }}</template
+                    ></DialogDescription
+                >
+                <DialogDescription v-else
                     >Invoice {{ sale?.invoice_no }}</DialogDescription
                 >
                 <p
@@ -50,7 +63,67 @@ function print(): void {
                 </p>
             </DialogHeader>
 
-            <div v-if="sale" class="grid grid-cols-2 gap-4 text-center">
+            <div
+                v-if="sale?.exchange"
+                class="grid grid-cols-2 gap-4 text-center"
+                data-test="exchange-done"
+            >
+                <div>
+                    <p class="text-sm text-muted-foreground">Return credit</p>
+                    <p class="text-2xl font-bold tabular-nums">
+                        {{
+                            formatMoney(
+                                sale.exchange.credit,
+                                shop.decimals,
+                                shop.currency,
+                            )
+                        }}
+                    </p>
+                </div>
+                <div v-if="sale.exchange.cash_refunded > 0">
+                    <p class="text-sm text-muted-foreground">Refund in cash</p>
+                    <p
+                        class="text-2xl font-bold text-emerald-600 tabular-nums dark:text-emerald-400"
+                        data-test="exchange-done-refund"
+                    >
+                        {{
+                            formatMoney(
+                                sale.exchange.cash_refunded,
+                                shop.decimals,
+                                shop.currency,
+                            )
+                        }}
+                    </p>
+                </div>
+                <div v-else>
+                    <p class="text-sm text-muted-foreground">
+                        Patient paid<template v-if="sale.change_due > 0">
+                            · change
+                            {{
+                                formatMoney(
+                                    sale.change_due,
+                                    shop.decimals,
+                                    shop.currency,
+                                )
+                            }}</template
+                        >
+                    </p>
+                    <p
+                        class="text-2xl font-bold tabular-nums"
+                        data-test="exchange-done-paid"
+                    >
+                        {{
+                            formatMoney(
+                                sale.exchange.patient_paid,
+                                shop.decimals,
+                                shop.currency,
+                            )
+                        }}
+                    </p>
+                </div>
+            </div>
+
+            <div v-else-if="sale" class="grid grid-cols-2 gap-4 text-center">
                 <div>
                     <p class="text-sm text-muted-foreground">Total</p>
                     <p class="text-2xl font-bold tabular-nums">
@@ -92,7 +165,7 @@ function print(): void {
                     class="h-14 text-base"
                     data-test="new-sale"
                     @click="emit('close')"
-                    >New sale</Button
+                    >{{ sale?.exchange ? 'Done' : 'New sale' }}</Button
                 >
             </div>
         </DialogContent>

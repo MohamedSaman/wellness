@@ -213,7 +213,7 @@ class AdminPharmacyReportsTest extends BatchTestCase
             ->assertSee(number_format($net / 100, 2));
 
         $sheets = $this->sheets($this->export(DailySummaryReport::class, 'exportXlsx'));
-        $this->assertSame(['By counter', 'Payments', 'Consultation fees and medici', 'By cashier', 'Cash expected and counted', 'Doctor payments'], array_keys($sheets));
+        $this->assertSame(['By counter', 'Payments', 'Consultation fees and medici', 'By cashier', 'Cash expected and counted', 'Doctor payments', 'Returns and exchanges at the'], array_keys($sheets));
 
         // Bills, sales, refunds, net, consultation fees, medicines: as numbers in rupees.
         $total = $this->rowStarting($sheets['By counter'], 'Total');

@@ -43,7 +43,8 @@ abstract class CartRequest extends PosRequest
             'customer_name' => ['nullable', 'string', 'max:255'],
             'customer_phone' => ['nullable', 'string', 'max:50'],
             'payments' => ['nullable', 'array', 'max:10'],
-            'payments.*.method' => ['required', Rule::enum(PaymentMethod::class)],
+            // Exchange credit is taken only in an exchange at the till (branch 19), never here.
+            'payments.*.method' => ['required', Rule::enum(PaymentMethod::class)->except([PaymentMethod::Exchange])],
             'payments.*.amount' => ['required', self::MONEY],
             'payments.*.reference' => ['nullable', 'string', 'max:100'],
             // The patient found or added at the till (pharmacy; branch 13).
@@ -73,7 +74,7 @@ abstract class CartRequest extends PosRequest
                 prescriber: $line['prescriber'] ?? null,
                 prescriptionRef: $line['prescription_ref'] ?? null,
             ),
-            $this->validated('lines'),
+            (array) ($this->validated('lines') ?? []),
         ));
     }
 

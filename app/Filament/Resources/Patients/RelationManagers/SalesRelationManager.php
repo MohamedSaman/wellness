@@ -39,7 +39,7 @@ class SalesRelationManager extends RelationManager
         $timezone = fn (): string => app(CurrentShop::class)->getOrFail()->timezone ?: 'UTC';
 
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['items', 'device', 'location', 'cashier']))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['items', 'device', 'location', 'cashier', 'exchange']))
             ->defaultSort('sold_at', 'desc')
             ->columns([
                 TextColumn::make('sold_at')->label('Date')->dateTime('d/m/Y H:i', $timezone)->sortable(),
@@ -50,8 +50,9 @@ class SalesRelationManager extends RelationManager
                 TextColumn::make('bill_type')
                     ->label('Type')
                     ->badge()
-                    ->formatStateUsing(fn (BillType $state): string => $state === BillType::Opd ? 'OPD' : 'Pharmacy')
-                    ->color(fn (BillType $state): string => $state === BillType::Opd ? 'info' : 'gray'),
+                    // The new bill of an exchange at the till (branch 19): its details are on Exchanges.
+                    ->formatStateUsing(fn (BillType $state, Sale $record): string => $record->exchange !== null ? 'Exchange '.$record->exchange->number : ($state === BillType::Opd ? 'OPD' : 'Pharmacy'))
+                    ->color(fn (BillType $state, Sale $record): string => $record->exchange !== null ? 'warning' : ($state === BillType::Opd ? 'info' : 'gray')),
                 TextColumn::make('where')
                     ->label('Till / location')
                     ->state(fn (Sale $record): string => $record->device->code.' · '.$record->location->name),

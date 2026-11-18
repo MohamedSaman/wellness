@@ -124,7 +124,8 @@ class OfflineSaleSyncService
             'medicines_amount' => ['nullable', 'integer', 'min:0'],
             'sale_discount' => ['nullable', 'integer', 'min:0'],
             'payments' => ['required', 'array', 'min:1', 'max:10'],
-            'payments.*.method' => ['required', Rule::enum(PaymentMethod::class)],
+            // Exchange credit is taken only in an exchange at the till (branch 19), never here.
+            'payments.*.method' => ['required', Rule::enum(PaymentMethod::class)->except([PaymentMethod::Exchange])],
             'payments.*.amount' => ['required', 'integer', 'min:1'],
             'payments.*.reference' => ['nullable', 'string', 'max:100'],
             'grand_total' => ['required', 'integer', 'min:0'],

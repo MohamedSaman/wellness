@@ -19,6 +19,13 @@ const props = defineProps<{
     belowListPercent?: number;
     /** The cashier may give a discount (a limit above 0, or no limit); else no Discount button. */
     canDiscount?: boolean;
+    /** An exchange (branch 19): New items − Return credit = Patient pays, or Refund. */
+    exchange?: {
+        credit: number;
+        applied: number;
+        patient_pays: number;
+        refund: number;
+    } | null;
 }>();
 
 const emit = defineEmits<{
@@ -192,14 +199,73 @@ defineExpose({ focusMedicines });
                     }}
                 </dd>
             </template>
-            <dt class="text-2xl font-bold">Total</dt>
-            <dd
-                class="text-right text-3xl font-extrabold tabular-nums"
-                data-test="grand-total"
-            >
-                {{ formatMoney(quote.totals.grand_total, decimals, currency) }}
-            </dd>
+            <template v-if="exchange">
+                <dt class="font-semibold">New items</dt>
+                <dd
+                    class="text-right font-semibold tabular-nums"
+                    data-test="grand-total"
+                >
+                    {{
+                        formatMoney(
+                            quote.totals.grand_total,
+                            decimals,
+                            currency,
+                        )
+                    }}
+                </dd>
+                <dt class="text-muted-foreground">Return credit</dt>
+                <dd
+                    class="text-right tabular-nums"
+                    data-test="exchange-credit-row"
+                >
+                    -{{ formatMoney(exchange.credit, decimals, currency) }}
+                </dd>
+                <dt class="text-2xl font-bold">
+                    {{ exchange.refund > 0 ? 'Refund' : 'Patient pays' }}
+                </dt>
+                <dd
+                    class="text-right text-3xl font-extrabold tabular-nums"
+                    data-test="exchange-difference"
+                >
+                    {{
+                        formatMoney(
+                            exchange.refund > 0
+                                ? exchange.refund
+                                : exchange.patient_pays,
+                            decimals,
+                            currency,
+                        )
+                    }}
+                </dd>
+            </template>
+            <template v-else>
+                <dt class="text-2xl font-bold">Total</dt>
+                <dd
+                    class="text-right text-3xl font-extrabold tabular-nums"
+                    data-test="grand-total"
+                >
+                    {{
+                        formatMoney(
+                            quote.totals.grand_total,
+                            decimals,
+                            currency,
+                        )
+                    }}
+                </dd>
+            </template>
         </dl>
+        <p
+            v-else-if="exchange"
+            class="flex items-baseline justify-between gap-3 text-base"
+            data-test="exchange-credit-row"
+        >
+            <span class="text-muted-foreground"
+                >Return credit · add the new items</span
+            >
+            <span class="font-semibold tabular-nums">{{
+                formatMoney(exchange.credit, decimals, currency)
+            }}</span>
+        </p>
 
         <p
             v-if="error"

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -146,6 +147,16 @@ class Sale extends Model
     public function location(): BelongsTo
     {
         return $this->belongsTo(Location::class);
+    }
+
+    /**
+     * The exchange at the till this bill was the new bill of (branch 19), if any.
+     *
+     * @return HasOne<Exchange, $this>
+     */
+    public function exchange(): HasOne
+    {
+        return $this->hasOne(Exchange::class, 'new_sale_id');
     }
 
     /** @return BelongsTo<Patient, $this> */

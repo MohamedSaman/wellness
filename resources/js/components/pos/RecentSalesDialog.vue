@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { ApiError, getJson, queryString } from '@/lib/http';
 import { formatMoney } from '@/lib/money';
-import { reprintSale } from '@/lib/receipt/reprint';
+import { reprintExchange, reprintSale } from '@/lib/receipt/reprint';
 import type { PosShop, PosTill, RecentSale } from '@/types/pos';
 
 /** F6: this till's sales from the open shift and today, each with Reprint. */
@@ -88,7 +88,10 @@ async function reprint(sale: RecentSale): Promise<void> {
     error.value = null;
 
     try {
-        await reprintSale(sale.uuid, props.till.uuid);
+        // An exchange's new bill (branch 19) reprints its EXCHANGE receipt.
+        await (sale.exchange
+            ? reprintExchange(sale.exchange.uuid, props.till.uuid)
+            : reprintSale(sale.uuid, props.till.uuid));
     } catch (caught) {
         error.value =
             caught instanceof ApiError
@@ -168,6 +171,12 @@ const statusLabel = (status: string) =>
                                     v-if="sale.status !== 'completed'"
                                     class="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400"
                                     >{{ statusLabel(sale.status) }}</span
+                                >
+                                <span
+                                    v-if="sale.exchange"
+                                    class="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold"
+                                    data-test="recent-sale-exchange"
+                                    >Exchange {{ sale.exchange.number }}</span
                                 >
                             </p>
                             <p class="truncate text-sm text-muted-foreground">

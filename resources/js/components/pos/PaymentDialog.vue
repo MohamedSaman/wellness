@@ -20,6 +20,17 @@ const props = defineProps<{
     error: string | null;
     /** Shop setting bank_transfer_reference_required: a bank transfer needs its reference. */
     referenceRequired?: boolean;
+    /**
+     * An exchange (branch 19): the return credit pays the new items up to
+     * their total (the quote's preview counts it); the patient pays the rest,
+     * or the rest of the credit is refunded in cash.
+     */
+    exchange?: {
+        credit: number;
+        applied: number;
+        patient_pays: number;
+        refund: number;
+    } | null;
 }>();
 
 const emit = defineEmits<{ 'update:open': [value: boolean]; complete: [] }>();
@@ -36,8 +47,20 @@ const methods: {
     { value: 'bank_transfer', label: 'Bank transfer', icon: Landmark },
 ];
 
-const total = computed(() => state.quote?.totals.grand_total ?? 0);
+const total = computed(() =>
+    props.exchange
+        ? props.exchange.patient_pays
+        : (state.quote?.totals.grand_total ?? 0),
+);
 const preview = computed(() => state.quote?.payment ?? null);
+/** What the patient handed over: an exchange's preview also counts the credit. */
+const paid = computed(
+    () => (preview.value?.paid_total ?? 0) - (props.exchange?.applied ?? 0),
+);
+/** An exchange the credit pays in full: nothing to take, maybe cash to give back. */
+const nothingToPay = computed(
+    () => !!props.exchange && props.exchange.patient_pays === 0,
+);
 const outstanding = computed(() => preview.value?.short_by ?? total.value);
 const canComplete = computed(
     () =>
@@ -51,7 +74,7 @@ const canComplete = computed(
 watch(
     () => props.open,
     (open) => {
-        if (open && state.payments.length === 0) {
+        if (open && state.payments.length === 0 && !nothingToPay.value) {
             addPayment('cash');
         }
     },
@@ -130,8 +153,19 @@ function onKey(event: KeyboardEvent): void {
             @keydown="onKey"
         >
             <DialogHeader>
-                <DialogTitle>Payment</DialogTitle>
-                <DialogDescription
+                <DialogTitle>{{
+                    exchange
+                        ? exchange.refund > 0
+                            ? 'Refund the difference'
+                            : 'Pay the difference'
+                        : 'Payment'
+                }}</DialogTitle>
+                <DialogDescription v-if="exchange"
+                    >The return credit of {{ money(exchange.credit) }} pays
+                    {{ money(exchange.applied) }} of the new
+                    items.</DialogDescription
+                >
+                <DialogDescription v-else
                     >Cash, card, bank transfer or a split across
                     them.</DialogDescription
                 >
@@ -140,124 +174,152 @@ function onKey(event: KeyboardEvent): void {
             <div
                 class="flex items-baseline justify-between rounded-xl bg-muted p-4"
             >
-                <span class="text-lg text-muted-foreground">Total due</span>
+                <span class="text-lg text-muted-foreground">{{
+                    exchange && exchange.refund > 0
+                        ? 'Refund in cash'
+                        : exchange
+                          ? 'Patient pays'
+                          : 'Total due'
+                }}</span>
                 <span
                     class="text-4xl font-extrabold tabular-nums"
                     data-test="payment-total"
-                    >{{ money(total) }}</span
+                    >{{
+                        money(
+                            exchange && exchange.refund > 0
+                                ? exchange.refund
+                                : total,
+                        )
+                    }}</span
                 >
             </div>
 
-            <div class="flex flex-wrap gap-2" data-test="quick-cash">
-                <Button
-                    variant="secondary"
-                    class="h-14 min-w-24 text-base"
-                    @click="exact"
-                    >Exact</Button
-                >
-                <Button
-                    v-for="note in shop.quickCash"
-                    :key="note"
-                    variant="outline"
-                    class="h-14 min-w-20 text-base tabular-nums"
-                    @click="setCash(String(note))"
-                >
-                    {{ note.toLocaleString('en-US') }}
-                </Button>
-            </div>
-
-            <ul class="grid gap-2">
-                <li
-                    v-for="row in state.payments"
-                    :key="row.key"
-                    class="grid grid-cols-[7rem_1fr_auto] items-center gap-2"
-                >
-                    <span class="font-medium">{{
-                        methodLabel(row.method)
-                    }}</span>
-                    <div class="flex flex-wrap gap-2 sm:flex-nowrap">
-                        <input
-                            v-model="row.amount"
-                            type="text"
-                            inputmode="decimal"
-                            placeholder="0.00"
-                            :aria-label="`${methodLabel(row.method)} amount`"
-                            class="h-14 w-full min-w-0 rounded-lg border bg-background px-3 text-right text-xl font-semibold tabular-nums"
-                            data-test="payment-amount"
-                        />
-                        <input
-                            v-if="row.method !== 'cash'"
-                            v-model="row.reference"
-                            type="text"
-                            maxlength="100"
-                            :placeholder="
-                                referenceRequired &&
-                                row.method === 'bank_transfer'
-                                    ? 'Reference (required)'
-                                    : 'Reference'
-                            "
-                            class="h-14 w-full rounded-lg border bg-background px-3 text-base sm:w-44"
-                            :class="{
-                                'border-destructive': missingReference(row),
-                            }"
-                            :aria-invalid="missingReference(row)"
-                            aria-label="Reference"
-                            data-test="payment-reference"
-                        />
-                    </div>
-                    <Button
-                        variant="ghost"
-                        size="icon-lg"
-                        class="size-12 text-destructive"
-                        aria-label="Remove payment"
-                        @click="removePayment(row)"
-                    >
-                        <Trash2 class="size-5" />
-                    </Button>
-                </li>
-            </ul>
-
-            <div class="flex flex-wrap gap-2">
-                <Button
-                    v-for="method in methods"
-                    :key="method.value"
-                    variant="outline"
-                    class="h-12"
-                    @click="addMethod(method.value)"
-                >
-                    <component :is="method.icon" class="size-4" /> Add
-                    {{ method.label.toLowerCase() }}
-                </Button>
-            </div>
-
-            <div
-                class="grid grid-cols-2 gap-4 rounded-xl border p-4 text-center"
+            <p
+                v-if="nothingToPay"
+                class="rounded-lg bg-muted px-3 py-2 text-sm"
+                data-test="exchange-nothing-to-pay"
             >
-                <div>
-                    <p class="text-sm text-muted-foreground">Paid</p>
-                    <p class="text-2xl font-bold tabular-nums">
-                        {{ money(preview?.paid_total ?? 0) }}
-                    </p>
-                </div>
-                <div v-if="preview && preview.short_by > 0">
-                    <p class="text-sm text-muted-foreground">Still to pay</p>
-                    <p
-                        class="text-2xl font-bold text-destructive tabular-nums"
-                        data-test="short-by"
+                {{
+                    exchange && exchange.refund > 0
+                        ? `Give the patient ${money(exchange.refund)} from the drawer. The receipt has a line for them to sign.`
+                        : 'The return credit pays for the new items exactly.'
+                }}
+            </p>
+
+            <template v-if="!nothingToPay">
+                <div class="flex flex-wrap gap-2" data-test="quick-cash">
+                    <Button
+                        variant="secondary"
+                        class="h-14 min-w-24 text-base"
+                        @click="exact"
+                        >Exact</Button
                     >
-                        {{ money(preview.short_by) }}
-                    </p>
-                </div>
-                <div v-else>
-                    <p class="text-sm text-muted-foreground">Change due</p>
-                    <p
-                        class="text-5xl font-extrabold text-emerald-600 tabular-nums dark:text-emerald-400"
-                        data-test="change-due"
+                    <Button
+                        v-for="note in shop.quickCash"
+                        :key="note"
+                        variant="outline"
+                        class="h-14 min-w-20 text-base tabular-nums"
+                        @click="setCash(String(note))"
                     >
-                        {{ money(preview?.change_due ?? 0) }}
-                    </p>
+                        {{ note.toLocaleString('en-US') }}
+                    </Button>
                 </div>
-            </div>
+
+                <ul class="grid gap-2">
+                    <li
+                        v-for="row in state.payments"
+                        :key="row.key"
+                        class="grid grid-cols-[7rem_1fr_auto] items-center gap-2"
+                    >
+                        <span class="font-medium">{{
+                            methodLabel(row.method)
+                        }}</span>
+                        <div class="flex flex-wrap gap-2 sm:flex-nowrap">
+                            <input
+                                v-model="row.amount"
+                                type="text"
+                                inputmode="decimal"
+                                placeholder="0.00"
+                                :aria-label="`${methodLabel(row.method)} amount`"
+                                class="h-14 w-full min-w-0 rounded-lg border bg-background px-3 text-right text-xl font-semibold tabular-nums"
+                                data-test="payment-amount"
+                            />
+                            <input
+                                v-if="row.method !== 'cash'"
+                                v-model="row.reference"
+                                type="text"
+                                maxlength="100"
+                                :placeholder="
+                                    referenceRequired &&
+                                    row.method === 'bank_transfer'
+                                        ? 'Reference (required)'
+                                        : 'Reference'
+                                "
+                                class="h-14 w-full rounded-lg border bg-background px-3 text-base sm:w-44"
+                                :class="{
+                                    'border-destructive': missingReference(row),
+                                }"
+                                :aria-invalid="missingReference(row)"
+                                aria-label="Reference"
+                                data-test="payment-reference"
+                            />
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="icon-lg"
+                            class="size-12 text-destructive"
+                            aria-label="Remove payment"
+                            @click="removePayment(row)"
+                        >
+                            <Trash2 class="size-5" />
+                        </Button>
+                    </li>
+                </ul>
+
+                <div class="flex flex-wrap gap-2">
+                    <Button
+                        v-for="method in methods"
+                        :key="method.value"
+                        variant="outline"
+                        class="h-12"
+                        @click="addMethod(method.value)"
+                    >
+                        <component :is="method.icon" class="size-4" /> Add
+                        {{ method.label.toLowerCase() }}
+                    </Button>
+                </div>
+
+                <div
+                    class="grid grid-cols-2 gap-4 rounded-xl border p-4 text-center"
+                >
+                    <div>
+                        <p class="text-sm text-muted-foreground">Paid</p>
+                        <p class="text-2xl font-bold tabular-nums">
+                            {{ money(paid) }}
+                        </p>
+                    </div>
+                    <div v-if="preview && preview.short_by > 0">
+                        <p class="text-sm text-muted-foreground">
+                            Still to pay
+                        </p>
+                        <p
+                            class="text-2xl font-bold text-destructive tabular-nums"
+                            data-test="short-by"
+                        >
+                            {{ money(preview.short_by) }}
+                        </p>
+                    </div>
+                    <div v-else>
+                        <p class="text-sm text-muted-foreground">Change due</p>
+                        <p
+                            class="text-5xl font-extrabold text-emerald-600 tabular-nums dark:text-emerald-400"
+                            data-test="change-due"
+                        >
+                            {{ money(preview?.change_due ?? 0) }}
+                        </p>
+                    </div>
+                </div>
+            </template>
 
             <p
                 v-if="preview?.error && preview.short_by === 0"
@@ -289,7 +351,15 @@ function onKey(event: KeyboardEvent): void {
                 data-test="complete-sale"
                 @click="emit('complete')"
             >
-                {{ submitting ? 'Recording sale…' : 'Complete sale' }}
+                {{
+                    submitting
+                        ? 'Recording…'
+                        : exchange && exchange.refund > 0
+                          ? `Refund ${money(exchange.refund)} & complete`
+                          : exchange
+                            ? 'Complete exchange'
+                            : 'Complete sale'
+                }}
             </Button>
         </DialogContent>
     </Dialog>

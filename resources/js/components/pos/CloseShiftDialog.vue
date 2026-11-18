@@ -43,6 +43,9 @@ type Summary = {
     /** Of the refunds, those without a receipt (pharmacy, branch 18). */
     no_receipt_refunds?: number;
     no_receipt_count?: number;
+    /** Returns and exchanges at the till (branch 19). */
+    exchanges?: number;
+    till_returns?: number;
     voids: number;
     voids_total: number;
     net: number;
@@ -224,6 +227,23 @@ function money(minor: number | null): string {
                     </dt>
                     <dd class="text-right text-muted-foreground tabular-nums">
                         {{ money(-(summary.no_receipt_refunds ?? 0)) }}
+                    </dd>
+                </template>
+                <template
+                    v-if="
+                        (summary.exchanges ?? 0) > 0 ||
+                        (summary.till_returns ?? 0) > 0
+                    "
+                >
+                    <dt class="pl-3 text-muted-foreground">
+                        Exchanges / returns at the till
+                    </dt>
+                    <dd
+                        class="text-right text-muted-foreground tabular-nums"
+                        data-test="close-shift-exchanges"
+                    >
+                        {{ summary.exchanges ?? 0 }} /
+                        {{ summary.till_returns ?? 0 }}
                     </dd>
                 </template>
                 <dt class="font-medium">Net sales</dt>

@@ -166,7 +166,7 @@ class ViewSale extends ViewRecord
                     ], $get('items') ?? []))),
                 Select::make('refund_method')
                     ->label('Refund by')
-                    ->options(collect(PaymentMethod::cases())->mapWithKeys(fn (PaymentMethod $method) => [$method->value => ucwords(str_replace('_', ' ', $method->value))])->all())
+                    ->options(collect(PaymentMethod::tendered())->mapWithKeys(fn (PaymentMethod $method) => [$method->value => $method->label()])->all())
                     ->required()
                     ->live(),
                 Select::make('shift_id')
