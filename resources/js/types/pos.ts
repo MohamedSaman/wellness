@@ -287,6 +287,13 @@ export type Quote = {
     totals: QuoteTotals;
     lines: QuoteLine[];
     payment: PaymentPreview | null;
+    /** An exchange's new items (branch 19): how the return credit pays them. */
+    exchange?: {
+        credit: number;
+        applied: number;
+        patient_pays: number;
+        refund: number;
+    };
 };
 
 export type VehicleMake = {
@@ -307,6 +314,8 @@ export type CompletedSale = {
     change_due: number;
     /** Null for a sale made offline: its receipt is printed from this browser. */
     receipt_url: string | null;
+    /** A return or exchange at the till (branch 19): its receipt is the EXCHANGE receipt. */
+    exchange?: ExchangeSummary;
 };
 
 /** How the shop prints receipts (Receipt settings, branch 9); read when printing. */
@@ -425,6 +434,92 @@ export type RecentSale = {
     cashier: string;
     grand_total: number;
     status: string;
+    /** Pharmacy (branch 19): the new bill of an exchange reprints the EXCHANGE receipt. */
+    exchange?: { uuid: string; number: string } | null;
+};
+
+/** Return / Exchange at the till (branch 19): a bill found to take items back from. */
+export type ExchangeBill = {
+    uuid: string;
+    invoice_no: string;
+    sold_at: string;
+    till: string;
+    bill_type: string;
+    status: string;
+    grand_total: number;
+    age_days: number;
+    patient: { uuid: string; name: string } | null;
+    /** Why it can't be returned here (OPD bill, too old, nothing left); null when it can. */
+    refusal: string | null;
+};
+
+/** One line of that bill with what can still come back of it. */
+export type ExchangeBillLine = {
+    id: number;
+    description: string;
+    sku: string;
+    strength: string | null;
+    unit_name: string | null;
+    base_unit_name: string | null;
+    unit_factor: number;
+    quantity: number;
+    returnable: number;
+    returnable_base: number;
+    line_total: number;
+    track_stock: boolean;
+    /** Why it can only go to Quarantine (batch unknown or expired); null when it may go back on sale. */
+    stock_note: string | null;
+    batches: {
+        batch_no: string | null;
+        expiry: string | null;
+        remaining: number;
+    }[];
+};
+
+/** A return or exchange of this till's open shift (This shift). */
+export type ExchangeSummary = {
+    uuid: string;
+    number: string;
+    kind: 'exchange' | 'return';
+    original_invoice_no: string | null;
+    new_invoice_no: string | null;
+    credit: number;
+    new_total: number;
+    patient_paid: number;
+    cash_refunded: number;
+    reason: string;
+    user: string;
+    at: string;
+    change_due?: number;
+};
+
+/** What the cart carries in exchange mode: the return, sent with the new items. */
+export type CartExchange = {
+    /** The bill's uuid; null without a bill (owner only). */
+    saleUuid: string | null;
+    invoiceNo: string | null;
+    /** The return credit (minor units), as the server previewed it. */
+    credit: number;
+    returns: {
+        sale_item_id: number;
+        quantity: number;
+        in_base_units: boolean;
+        to: 'quarantine' | 'stock';
+    }[];
+    noReceipt: {
+        variant_id: number;
+        unit_id: number | null;
+        quantity: number;
+        unit_value: string | null;
+        to: 'quarantine' | 'stock';
+        batch_no: string | null;
+        expiry: string | null;
+    }[];
+    /** What came back, for the banner. */
+    summary: string;
+    reason: string;
+    note: string;
+    doctorId: number | null;
 };
 
 /** Shift summaries (branch 17): a shift closed on this till in the last 7 days, to reprint its summary. */

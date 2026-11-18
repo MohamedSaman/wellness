@@ -337,6 +337,38 @@ class ExchangeTillTest extends BatchTestCase
         $this->assertSame(1, Sale::query()->count());
     }
 
+    public function test_the_quote_counts_the_credit_in_the_payment_preview(): void
+    {
+        $quote = fn (array $body, ?User $user = null): TestResponse => $this->actingAs($user ?? $this->cashier)->postJson(route('pos.quote'), [
+            'device' => $this->till->uuid,
+            'lines' => [['variant_id' => $this->amoxil->getKey(), 'quantity' => 10, 'prescriber' => 'Dr. S. Perera']],
+            ...$body,
+        ]);
+
+        // 350.00 of new items, 90.00 of credit: the patient pays 260.00; 300.00 in cash leaves 40.00 change.
+        $quote(['exchange_credit' => 9_000, 'payments' => [['method' => 'cash', 'amount' => '300']]])
+            ->assertOk()
+            ->assertJsonPath('exchange', ['credit' => 9_000, 'applied' => 9_000, 'patient_pays' => 26_000, 'refund' => 0])
+            ->assertJsonPath('payment.paid_total', 39_000)
+            ->assertJsonPath('payment.change_due', 4_000)
+            ->assertJsonPath('payment.short_by', 0)
+            ->assertJsonPath('payment.error', null);
+
+        // The credit covers it: nothing to take, 150.00 back.
+        $quote(['exchange_credit' => 50_000])
+            ->assertJsonPath('exchange.refund', 15_000)
+            ->assertJsonPath('exchange.patient_pays', 0)
+            ->assertJsonPath('payment.short_by', 0)
+            ->assertJsonPath('payment.error', null);
+
+        // Without the credit (or the permission), a quote is what it always was.
+        $this->assertArrayNotHasKey('exchange', $quote([])->json());
+        $nobody = $this->cashierAt();
+        $nobody->syncRoles([]);
+        $nobody->givePermissionTo('pos.checkout');
+        $this->assertArrayNotHasKey('exchange', $quote(['exchange_credit' => 9_000], $nobody)->json());
+    }
+
     public function test_it_needs_the_permission_and_the_pharmacy(): void
     {
         $nobody = $this->cashierAt();

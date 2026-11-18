@@ -13,6 +13,9 @@ class QuoteRequest extends CartRequest
             ...$this->cartRules(),
             // Optional: with the till, units are checked at its location and batch lines show their batches.
             'device' => ['nullable', 'uuid'],
+            // An exchange's return credit at the till (branch 19), minor units: the payment
+            // preview counts it as Exchange credit (pharmacy, pos.exchange only).
+            'exchange_credit' => ['nullable', 'integer', 'min:0', 'max:100000000000'],
         ];
     }
 

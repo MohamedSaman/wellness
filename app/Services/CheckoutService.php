@@ -337,16 +337,18 @@ class CheckoutService
     /**
      * How a set of payments settles a total, without recording anything.
      * `error` holds the same message checkout would refuse the sale with.
+     * With $exchangeCredit (an exchange's new bill, branch 19) the payments
+     * may include Exchange credit.
      *
      * @param  list<PaymentInput>  $payments
      * @return array{paid_total:int, change_due:int, short_by:int, error:string|null}
      */
-    public function previewPayments(array $payments, int $grandTotal): array
+    public function previewPayments(array $payments, int $grandTotal, bool $exchangeCredit = false): array
     {
         $paid = array_sum(array_map(fn (PaymentInput $payment): int => $payment->amount, $payments));
 
         try {
-            $this->checkPayments($payments, $grandTotal, false, $this->currentShop->get());
+            $this->checkPayments($payments, $grandTotal, false, $this->currentShop->get(), $exchangeCredit);
             $error = null;
         } catch (PosException $exception) {
             $error = $exception->getMessage();

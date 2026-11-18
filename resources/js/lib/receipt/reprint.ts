@@ -1,4 +1,5 @@
 import CashMovementController from '@/actions/App/Http/Controllers/Pos/CashMovementController';
+import ExchangeController from '@/actions/App/Http/Controllers/Pos/ExchangeController';
 import ReprintController from '@/actions/App/Http/Controllers/Pos/ReprintController';
 import ShiftReprintController from '@/actions/App/Http/Controllers/Pos/ShiftReprintController';
 import { postJson } from '@/lib/http';
@@ -125,6 +126,32 @@ export async function reprintCashMovement(
         }
     } catch (caught) {
         slipWindow?.close();
+
+        throw caught;
+    }
+}
+
+/** Reprint a return or exchange's receipt: logged first, then printed marked REPRINT. */
+export async function reprintExchange(
+    exchangeUuid: string,
+    tillUuid: string,
+): Promise<void> {
+    const receiptWindow = window.open('', '_blank', 'width=420,height=720');
+
+    try {
+        const response = await postJson<{ receipt_url: string }>(
+            ExchangeController.reprint.url({ exchange: exchangeUuid }),
+            { device: tillUuid },
+        );
+        const url = `${response.receipt_url}?print=1`;
+
+        if (receiptWindow) {
+            receiptWindow.location.href = url;
+        } else {
+            window.open(url, '_blank', 'width=420,height=720');
+        }
+    } catch (caught) {
+        receiptWindow?.close();
 
         throw caught;
     }
