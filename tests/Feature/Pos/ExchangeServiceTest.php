@@ -279,7 +279,7 @@ class ExchangeServiceTest extends BatchTestCase
         $this->shift->update(['opened_at' => now()]);
 
         $this->refused(fn () => $this->exchange($sale, [$this->toQuarantine($this->line($sale, 1), 1)]), "{$sale->invoice_no} is 15 days old; the shop takes returns and exchanges at the till up to 14 days. Ask the owner.");
-        $this->assertSame(1, $this->exchange($sale, [$this->toQuarantine($this->line($sale, 1), 1)], user: $this->owner)->id);
+        $this->assertSame('EX-000001', $this->exchange($sale, [$this->toQuarantine($this->line($sale, 1), 1)], user: $this->owner)->number);
 
         $this->setShopSetting('exchange_max_days', 30);
         $this->exchange($sale, [$this->toQuarantine($this->line($sale, 1), 1)]);
