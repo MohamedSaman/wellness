@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  * queries whatever the filters: the patients, the visits by time, kind of
  * bill and location, and the money. Read only.
  *
- * @phpstan-type Visits array{bucket: string, opd: bool, location_id: int, visits: int, total: int, refunded: int, first_at: string, last_at: string}
+ * @phpstan-type Visits array{bucket: string, opd: bool, location_id: int, visits: int, total: int, refunded: int, first_at: string, last_at: string, first_id: int, last_id: int}
  */
 class PatientSummaryService
 {
@@ -210,7 +210,7 @@ class PatientSummaryService
             ->selectRaw($bucket, $bindings)
             ->addSelect('sales.bill_type', 'sales.location_id')
             ->selectRaw('COUNT(*) as visits, SUM(sales.grand_total) as total, SUM(sales.refunded_total) as refunded')
-            ->selectRaw('MIN(sales.reported_at) as first_at, MAX(sales.reported_at) as last_at')
+            ->selectRaw('MIN(sales.reported_at) as first_at, MAX(sales.reported_at) as last_at, MIN(sales.id) as first_id, MAX(sales.id) as last_id')
             ->groupBy('bucket', 'sales.bill_type', 'sales.location_id')
             ->get()
             ->map(fn (\stdClass $row): array => [
@@ -222,6 +222,8 @@ class PatientSummaryService
                 'refunded' => (int) $row->refunded,
                 'first_at' => (string) $row->first_at,
                 'last_at' => (string) $row->last_at,
+                'first_id' => (int) $row->first_id,
+                'last_id' => (int) $row->last_id,
             ])
             ->all());
     }
@@ -351,7 +353,10 @@ class PatientSummaryService
      * The money of the bills, net of the refunds given on them whenever that
      * was: services (products without stock: consultations, lab tests) and
      * medicines (the rest), as the reports split them. A bill's total is the
-     * sum of its lines, so only the few service items' lines are read.
+     * sum of its lines, so only the few service items' lines are read: added
+     * up per bill on their own, between the first bill shown and the last,
+     * so MySQL reads them by item for a year and by bill for a day. Joined
+     * line by line it read every line of a year's bills.
      *
      * @param  list<Visits>  $visits
      * @return array{services: int, medicines: int}
@@ -370,15 +375,20 @@ class PatientSummaryService
             return ['services' => 0, 'medicines' => $total - $refunded];
         }
 
-        $lines = fn (): Builder => $this->patients->bills($filters, $search)
-            ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
-            ->whereIn('sale_items.product_variant_id', $services);
-
-        $net = (int) $lines()->sum('sale_items.line_total');
+        $net = (int) $this->patients->bills($filters, $search)
+            ->joinSub(DB::table('sale_items')
+                ->whereIn('sale_items.product_variant_id', $services)
+                ->whereBetween('sale_items.sale_id', [min(array_column($visits, 'first_id')), max(array_column($visits, 'last_id'))])
+                ->groupBy('sale_items.sale_id')
+                ->select('sale_items.sale_id')
+                ->selectRaw('SUM(sale_items.line_total) as total'), 'service_lines', 'service_lines.sale_id', '=', 'sales.id')
+            ->sum('service_lines.total');
 
         if ($refunded > 0) {
-            $net -= (int) $lines()
+            $net -= (int) $this->patients->bills($filters, $search)
                 ->where('sales.refunded_total', '>', 0)
+                ->join('sale_items', 'sale_items.sale_id', '=', 'sales.id')
+                ->whereIn('sale_items.product_variant_id', $services)
                 ->join('sale_return_items', 'sale_return_items.sale_item_id', '=', 'sale_items.id')
                 ->sum('sale_return_items.refund_amount');
         }
