@@ -9,6 +9,8 @@ use App\Filament\Pages\Reports\Export\ReportTable;
 use App\Filament\Pages\Reports\ReportColumn;
 use App\Filament\Pages\ShiftPatients;
 use App\Filament\Resources\Patients\PatientResource;
+use App\Filament\Resources\Patients\Widgets\PatientsSummary;
+use App\Filament\Widgets\Concerns\ExposesListFilters;
 use App\Models\Shift;
 use App\Models\User;
 use App\Services\PatientListService;
@@ -24,9 +26,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * The clinic's patients with their filters (docs/PHARMACY.md, branch 16).
  * With one shift chosen, "Patients in this shift" opens that shift's bills.
  * The owner (patients.export) exports the list as filtered to Excel or PDF.
+ * Above the list, the summary of what it shows (branch 20).
  */
 class ListPatients extends ListRecords
 {
+    use ExposesListFilters;
+
     protected static string $resource = PatientResource::class;
 
     protected function getHeaderActions(): array
@@ -51,6 +56,11 @@ class ListPatients extends ListRecords
                 ->visible(fn (): bool => is_int($this->chosenShift()) && ShiftPatients::canAccess())
                 ->url(fn (): ?string => is_int($id = $this->chosenShift()) && ($shift = Shift::query()->find($id)) !== null ? ShiftPatients::getUrl(['shift' => $shift]) : null),
         ];
+    }
+
+    protected function getHeaderWidgets(): array
+    {
+        return [PatientsSummary::class];
     }
 
     /**

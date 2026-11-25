@@ -4,6 +4,8 @@ namespace Tests\Feature\Pos;
 
 use App\Filament\Pages\Reports\ShiftHistoryReport;
 use App\Filament\Pages\ShiftPatients;
+use App\Filament\Resources\Patients\PatientResource;
+use App\Filament\Resources\Patients\Widgets\PatientsSummary;
 use App\Models\Patient;
 use App\Models\Sale;
 use App\Services\ShiftService;
@@ -47,6 +49,16 @@ class PatientRetailTest extends PosTestCase
         $this->assertNotContains('Patients', array_map(fn ($column) => $column->label, $document->tables[0]->columns));
         $this->assertArrayNotHasKey('patients', $document->tables[0]->rows[0]);
         $this->assertFalse(ShiftPatients::canAccess());
+    }
+
+    public function test_there_is_no_patients_list_and_no_summary(): void
+    {
+        Filament::setCurrentPanel('admin');
+        $this->actingAs($this->owner);
+
+        $this->assertFalse(PatientsSummary::canView());
+        $this->get(PatientResource::getUrl())->assertForbidden();
+        Livewire::test(PatientsSummary::class)->assertForbidden();
     }
 
     public function test_the_tills_patients_this_shift_is_not_there(): void
