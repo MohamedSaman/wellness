@@ -5,6 +5,7 @@ namespace Tests\Feature\Pos\Mysql;
 use App\Models\Patient;
 use App\Models\Shift;
 use App\Services\Data\PatientFilters;
+use App\Services\Data\PatientSummary;
 use App\Services\PatientListService;
 use App\Services\PatientService;
 use App\Services\PatientSummaryService;
@@ -27,7 +28,8 @@ use Tests\Feature\Pos\Concerns\WorksWithPatientVisits;
  * each of two tills) and the list's first page and count timed for every
  * filter and a combination against POS_PATIENTS_BENCH_MAX_SECONDS (1 by
  * default); EXPLAIN shows no full scan of sales and each patient's
- * subqueries read by patient.
+ * subqueries read by patient. The summary above the list (branch 20) is
+ * checked on MySQL too and timed, with its money, under every filter.
  */
 #[Group('mysql')]
 class PatientFiltersMysqlTest extends MysqlTestCase
@@ -67,6 +69,39 @@ class PatientFiltersMysqlTest extends MysqlTestCase
 
         $this->assertSame(['Nimal Perera'], Patient::query()->search('NIMAL')->pluck('name')->all());
         $this->assertSame([(int) $this->shiftA->getKey() => 1], app(PatientListService::class)->patientsPerShift([(int) $this->shiftA->getKey()]));
+    }
+
+    public function test_the_summary_on_mysql(): void
+    {
+        $this->seedVisits();
+        $shop = $this->shop->fresh();
+        $service = app(PatientSummaryService::class);
+        $bars = fn (PatientSummary $summary): array => collect($summary->timeline)
+            ->filter(fn (array $bar): bool => $bar['opd'] + $bar['pharmacy'] > 0)
+            ->mapWithKeys(fn (array $bar): array => [$bar['label'] => [$bar['opd'], $bar['pharmacy']]])
+            ->all();
+
+        $today = $service->summary(new PatientFilters, null, $this->owner);
+        $this->assertSame(['Today', 1, 2, 0, 1, 1, 1], [$today->title, $today->patients, $today->visits, $today->new, $today->returning, $today->opd, $today->pharmacy]);
+        $this->assertSame(['00:00' => [0, 1], '09:00' => [1, 0]], $bars($today));
+        $this->assertSame(['services' => 200_000, 'medicines' => 0], $today->income);
+
+        $month = $service->summary(new PatientFilters(period: ReportPeriod::preset($shop, 'this_month')), 'perera');
+        $this->assertSame([2, 4, 2, 0], [$month->patients, $month->visits, $month->new, $month->returning]);
+        $this->assertSame(['1 Oct' => [0, 1], '17 Oct' => [0, 1], '18 Oct' => [1, 1]], $bars($month));
+        $this->assertSame(['child' => 0, 'adult' => 1, 'senior' => 1, 'unknown' => 0], $month->ages);
+
+        $both = $service->summary(new PatientFilters(billType: PatientFilters::BILL_BOTH, minVisits: 2));
+        $this->assertSame([1, 3, null], [$both->patients, $both->visits, $both->new]);
+        $open = $service->summary(new PatientFilters(shift: PatientFilters::OPEN_SHIFTS));
+        $this->assertSame([1, 1, 0, 1], [$open->patients, $open->visits, $open->new, $open->returning]);
+
+        // Where the clocks change, the hours and days are worked out one by one.
+        $this->shop->update(['timezone' => 'Europe/London']);
+        $this->bills['sunil']->forceFill(['reported_at' => '2026-10-25 00:30:00'])->saveQuietly();
+        $this->bills['kamala']->forceFill(['reported_at' => '2026-10-25 01:30:00'])->saveQuietly();
+        $day = PatientFilters::period($this->shop->fresh(), 'custom', '2026-10-25', '2026-10-25');
+        $this->assertSame(['01:00' => [0, 2]], $bars($service->summary(new PatientFilters(period: $day))));
     }
 
     public function test_benchmark_a_year_of_patients(): void
