@@ -82,7 +82,7 @@ class PatientSummaryWidgetTest extends PharmacyTestCase
         $html = $this->widget(['last_visit' => ['range' => 'this_month']])
             ->assertSee('This month')
             ->assertSee("General Pharmacy 3 · Doctor's Medicines 1")
-            ->assertSee('25% OPD consultations · 75% pharmacy bills')
+            ->assertSee('25% OPD · 75% pharmacy bills')
             ->assertSee('New: first visit ever in this period')
             ->html();
 
@@ -101,7 +101,7 @@ class PatientSummaryWidgetTest extends PharmacyTestCase
             ->assertSeeLivewire(SummaryChart::class)
             ->assertSee('Per hour')
             ->assertSee('00:00: Pharmacy 1; 09:00: OPD 1')
-            ->assertSee('Adult (12–59): Patients 1');
+            ->assertSee('Adult: Patients 1');
 
         $this->widget(['last_visit' => ['range' => 'this_month']])->assertSee('Per day')->assertSee('17 Oct: Pharmacy 1; 18 Oct: OPD 1, Pharmacy 1');
         $this->widget(['last_visit' => ['range' => 'today']], 'nobody')->assertSee('No visits');

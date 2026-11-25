@@ -39,7 +39,7 @@ class SummaryChart extends ChartWidget
 
     protected function getMaxHeight(): ?string
     {
-        return '220px';
+        return '180px';
     }
 
     protected function getType(): string

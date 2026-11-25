@@ -21,7 +21,7 @@ use App\Support\CurrentShop;
 class PatientsSummary extends ListSummaryWidget
 {
     /** Under the money cards. */
-    public const MONEY_NOTE = 'Money is for the visits shown, less refunds on them; services include lab tests. It can differ from the Daily summary: that counts a refund on the day it was given, and bills without a patient.';
+    public const MONEY_NOTE = 'Totals can differ from the Daily summary: it counts a refund on the day it was given, and bills without a patient.';
 
     private ?PatientSummary $summary = null;
 
@@ -65,14 +65,14 @@ class PatientsSummary extends ListSummaryWidget
             $summary->new === null || $summary->returning === null
                 ? self::stat('New / Returning', '–', 'Choose a period or a shift')
                 : self::stat('New / Returning', self::pair($summary->new, $summary->returning), 'New: first visit ever in this '.($this->byShift() ? 'shift' : 'period')),
-            self::stat('OPD / Pharmacy', self::pair($summary->opd, $summary->pharmacy), $share($summary->opd).' OPD consultations · '.$share($summary->pharmacy).' pharmacy bills'),
+            self::stat('OPD / Pharmacy', self::pair($summary->opd, $summary->pharmacy), $share($summary->opd).' OPD · '.$share($summary->pharmacy).' pharmacy bills'),
             self::stat('By location', $summary->locations === [] ? '–' : self::pair(...array_column($summary->locations, 'visits')), $locations === [] ? 'No visits' : implode(' · ', $locations)),
             self::stat('Child / Adult / Senior', self::pair($ages['child'], $ages['adult'], $ages['senior']), 'Under 12 · 12–59 · 60 and over'.($ages['unknown'] > 0 ? ' · '.number_format($ages['unknown']).' not known' : '')),
         ];
 
         if ($summary->income !== null) {
-            $stats[] = self::stat('Consultations & services', ShopMoney::format($summary->income['services']));
-            $stats[] = self::stat('Medicines', ShopMoney::format($summary->income['medicines']));
+            $stats[] = self::stat('Consultations & services', ShopMoney::format($summary->income['services']), 'Lab tests too, less refunds');
+            $stats[] = self::stat('Medicines', ShopMoney::format($summary->income['medicines']), 'Less refunds');
         }
 
         return $stats;
@@ -86,7 +86,7 @@ class PatientsSummary extends ListSummaryWidget
     protected function charts(): array
     {
         $summary = $this->summary();
-        $ages = ['Child (under 12)' => $summary->ages['child'], 'Adult (12–59)' => $summary->ages['adult'], 'Senior (60+)' => $summary->ages['senior']];
+        $ages = ['Child' => $summary->ages['child'], 'Adult' => $summary->ages['adult'], 'Senior' => $summary->ages['senior']];
 
         if ($summary->ages['unknown'] > 0) {
             $ages['Not known'] = $summary->ages['unknown'];
@@ -108,7 +108,7 @@ class PatientsSummary extends ListSummaryWidget
                 'name' => 'ages',
                 'columns' => 1,
                 'heading' => 'Age groups',
-                'description' => 'Patients by age at their latest visit',
+                'description' => 'By age at the latest visit',
                 'labels' => $summary->patients === 0 ? [] : array_keys($ages),
                 'series' => [['label' => 'Patients', 'color' => ChartColors::NEUTRAL, 'data' => array_values($ages)]],
             ],

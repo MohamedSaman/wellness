@@ -41,10 +41,12 @@ abstract class ListSummaryWidget extends StatsOverviewWidget
         return null;
     }
 
-    /** Beside the sidebar: two, three, then four to a row as the page is wide enough for the figures. */
+    /** Three to a row beside the sidebar, so amounts are not cut off; four on a wide page when that fills the rows better. */
     protected function getColumns(): array
     {
-        return ['default' => 1, '@md' => 2, '@3xl' => 3, '@6xl' => 4, '!@md' => 2, '!@3xl' => 3];
+        $wide = count($this->getCachedStats()) % 3 === 0 ? 3 : 4;
+
+        return ['default' => 1, '@md' => 2, '@3xl' => 3, '@6xl' => $wide, '!@md' => 2, '!@3xl' => 3];
     }
 
     public function content(Schema $schema): Schema
@@ -57,11 +59,11 @@ abstract class ListSummaryWidget extends StatsOverviewWidget
                 ->persistCollapsed()
                 ->compact()
                 ->gridContainer()
-                ->extraAttributes(['data-test' => $this->foldName()])
+                ->extraAttributes(['class' => 'pos-list-summary', 'data-test' => $this->foldName()])
                 ->columns(1)
                 ->schema([
                     Grid::make($this->getColumns())->schema($this->getCachedStats()),
-                    ...($this->note() === null ? [] : [Text::make($this->note())->color('gray')]),
+                    ...($this->note() === null ? [] : [Text::make($this->note())->color('gray')->size('xs')]),
                     Grid::make(['default' => 1, '@4xl' => 3, '!@4xl' => 3])->schema(array_map(
                         fn (array $chart): Livewire => Livewire::make(SummaryChart::class, ['chart' => array_diff_key($chart, ['name' => true, 'columns' => true])])
                             ->key($chart['name'])
