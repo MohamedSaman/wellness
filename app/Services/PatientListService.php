@@ -78,7 +78,58 @@ class PatientListService
      */
     public function visits(PatientFilters $filters): QueryBuilder
     {
-        $bills = $this->visitBills()
+        return $this->perPatient($this->matchingBills($filters), $filters)
+            ->groupBy('sales.patient_id')
+            ->select('sales.patient_id')
+            ->selectRaw('COUNT(*) as visits');
+    }
+
+    /**
+     * The bills behind the list as filtered and searched (branch 20's
+     * summary): those matching the filters, of the patients the list shows.
+     * Their number is the sum of the list's visits.
+     */
+    public function bills(PatientFilters $filters, ?string $search = null): QueryBuilder
+    {
+        $bills = $this->matchingBills($filters);
+
+        if ($filters->billType === PatientFilters::BILL_BOTH || $filters->minVisits !== null) {
+            $bills->whereIn('sales.patient_id', $this->perPatient($this->matchingBills($filters), $filters)
+                ->groupBy('sales.patient_id')
+                ->select('sales.patient_id'));
+        }
+
+        if (filled($search)) {
+            $bills->whereIn('sales.patient_id', Patient::query()->search(self::searchWords((string) $search))->toBase()->select('patients.id'));
+        }
+
+        return $bills;
+    }
+
+    /**
+     * The shifts the filter names ("open": those open now), oldest first;
+     * null without a shift filter.
+     *
+     * @return Collection<int, Shift>|null
+     */
+    public function shiftsOf(PatientFilters $filters): ?Collection
+    {
+        return match (true) {
+            $filters->shift === null => null,
+            is_int($filters->shift) => Shift::query()->with('device')->whereKey($filters->shift)->get(),
+            default => Shift::query()->with('device')->whereNull('closed_at')->orderBy('opened_at')->orderBy('id')->get(),
+        };
+    }
+
+    /**
+     * Bills with a patient, not voided, matching period, location, bill type
+     * (OPD or pharmacy) and shift: the conditions on one bill. The open
+     * shifts are looked up first (a handful): as a subquery MySQL read the
+     * shop's whole history for them.
+     */
+    private function matchingBills(PatientFilters $filters): QueryBuilder
+    {
+        return $this->visitBills()
             ->whereNotNull('sales.patient_id')
             ->when($filters->period !== null, fn (QueryBuilder $query) => $query
                 ->where('sales.reported_at', '>=', $filters->period?->startUtc())
@@ -88,11 +139,12 @@ class PatientListService
             ->when($filters->billType === PatientFilters::BILL_PHARMACY, fn (QueryBuilder $query) => $query->where('sales.bill_type', BillType::Standard->value))
             ->when(is_int($filters->shift), fn (QueryBuilder $query) => $query->where('sales.shift_id', $filters->shift))
             ->when($filters->shift === PatientFilters::OPEN_SHIFTS, fn (QueryBuilder $query) => $query
-                ->whereIn('sales.shift_id', Shift::query()->whereNull('closed_at')->select('id')))
-            ->groupBy('sales.patient_id')
-            ->select('sales.patient_id')
-            ->selectRaw('COUNT(*) as visits');
+                ->whereIn('sales.shift_id', Shift::query()->whereNull('closed_at')->pluck('id')));
+    }
 
+    /** The conditions on a patient's matching bills together: both kinds of bill, the minimum. Group by patient before use. */
+    private function perPatient(QueryBuilder $bills, PatientFilters $filters): QueryBuilder
+    {
         if ($filters->billType === PatientFilters::BILL_BOTH) {
             $bills->havingRaw('SUM(CASE WHEN sales.bill_type = ? THEN 1 ELSE 0 END) > 0', [BillType::Opd->value])
                 ->havingRaw('SUM(CASE WHEN sales.bill_type = ? THEN 1 ELSE 0 END) > 0', [BillType::Standard->value]);
@@ -103,6 +155,15 @@ class PatientListService
         }
 
         return $bills;
+    }
+
+    /** A search as the table reads it: its words, the quotes round a phrase left out (Filament splits it as CSV). */
+    private static function searchWords(string $search): string
+    {
+        return implode(' ', array_filter(
+            str_getcsv((string) preg_replace('/(\s|\x{3164}|\x{1160})+/u', ' ', trim($search)), separator: ' ', escape: '\\'),
+            fn (?string $word): bool => filled($word),
+        ));
     }
 
     /** The audit log's event for an export of the list. */

@@ -26,6 +26,9 @@ final readonly class ReportPeriod
         'custom' => 'Custom',
     ];
 
+    /** How localBucketSql() names an hour, a day and a month (PHP's format of the same text). */
+    private const BUCKET_FORMATS = ['hour' => 'Y-m-d H', 'day' => 'Y-m-d', 'month' => 'Y-m'];
+
     private function __construct(
         public CarbonImmutable $start,      // first day, 00:00 shop time
         public CarbonImmutable $end,        // day after the last day, 00:00 shop time (exclusive)
@@ -185,31 +188,76 @@ final readonly class ReportPeriod
      */
     public function localDaySql(string $column, string $alias = 'day'): array
     {
+        return $this->localBucketSql($column, 'day', $alias);
+    }
+
+    /**
+     * localDaySql() by the shop's hour ("2026-10-18 09"), day or month
+     * ("2026-10").
+     *
+     * @param  literal-string  $column
+     * @param  'hour'|'day'|'month'  $unit
+     * @param  literal-string  $alias
+     * @return array{0: literal-string, 1: list<string>}
+     */
+    public function localBucketSql(string $column, string $unit, string $alias = 'bucket'): array
+    {
         // A timezone with one UTC offset over the whole period (Asia/Colombo has no
-        // daylight saving) shifts by it: one addition a row instead of a branch a day.
+        // daylight saving) shifts by it: one addition a row instead of a branch a bucket.
         $offset = $this->fixedOffsetMinutes();
         $driver = DB::connection()->getDriverName();
+        $format = match ($unit) {
+            'hour' => '%Y-%m-%d %H',
+            'day' => '%Y-%m-%d',
+            'month' => '%Y-%m',
+        };
 
         if ($offset !== null && in_array($driver, ['mysql', 'mariadb'], true)) {
-            return ["DATE_FORMAT(DATE_ADD({$column}, INTERVAL ? MINUTE), '%Y-%m-%d') as {$alias}", [(string) $offset]];
+            return ["DATE_FORMAT(DATE_ADD({$column}, INTERVAL ? MINUTE), '{$format}') as {$alias}", [(string) $offset]];
         }
 
         if ($offset !== null && $driver === 'sqlite') {
-            return ["strftime('%Y-%m-%d', {$column}, ?) as {$alias}", [sprintf('%+d minutes', $offset)]];
+            return ["strftime('{$format}', {$column}, ?) as {$alias}", [sprintf('%+d minutes', $offset)]];
         }
 
         $sql = 'CASE';
         $bindings = [];
 
-        foreach ($this->days() as $day) {
-            $start = CarbonImmutable::createFromFormat('!Y-m-d', $day, $this->timezone);
+        for ($from = $this->start; $from->lessThan($this->end); $from = $to) {
+            // An hour is a step of real time; a day or a month ends at the shop's midnight.
+            $to = match ($unit) {
+                'hour' => $from->addUTCHour(),
+                'day' => $from->addDay(),
+                'month' => $from->startOfMonth()->addMonth(),
+            };
             $sql .= " WHEN {$column} >= ? AND {$column} < ? THEN ?";
-            $bindings[] = $start->utc()->format('Y-m-d H:i:s');
-            $bindings[] = $start->addDay()->utc()->format('Y-m-d H:i:s');
-            $bindings[] = $day;
+            $bindings[] = $from->utc()->format('Y-m-d H:i:s');
+            $bindings[] = $to->utc()->format('Y-m-d H:i:s');
+            $bindings[] = $from->format(self::BUCKET_FORMATS[$unit]);
         }
 
         return ["{$sql} END as {$alias}", $bindings];
+    }
+
+    /**
+     * Every bucket of the period, as localBucketSql() names them, in order.
+     *
+     * @param  'hour'|'day'|'month'  $unit
+     * @return list<string>
+     */
+    public function buckets(string $unit): array
+    {
+        if ($unit === 'hour') {
+            $buckets = [];
+
+            for ($hour = $this->start; $hour->lessThan($this->end); $hour = $hour->addUTCHour()) {
+                $buckets[] = $hour->format(self::BUCKET_FORMATS['hour']);
+            }
+
+            return array_values(array_unique($buckets));
+        }
+
+        return $unit === 'day' ? $this->days() : $this->months();
     }
 
     /** The timezone's UTC offset in minutes when it is the same all through the period (no change of clocks), else null. */
