@@ -7,9 +7,11 @@ use App\Models\Shift;
 use App\Services\Data\PatientFilters;
 use App\Services\PatientListService;
 use App\Services\PatientService;
+use App\Services\PatientSummaryService;
 use App\Support\ReportPeriod;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Group;
@@ -114,6 +116,35 @@ class PatientFiltersMysqlTest extends MysqlTestCase
             }
         }
 
+        $slowestSummary = [0.0, ''];
+        $cases += [
+            'until today' => new PatientFilters(period: PatientFilters::period($shop, 'custom', null, '2026-10-18')),
+            'half a year' => new PatientFilters(period: PatientFilters::period($shop, 'custom', '2026-04-18', '2026-10-18')),
+            'a year + both + >= 2' => new PatientFilters(period: PatientFilters::period($shop, 'custom', '2025-10-19', '2026-10-18'), billType: PatientFilters::BILL_BOTH, minVisits: 2),
+            'a year + one shift' => new PatientFilters(period: PatientFilters::period($shop, 'custom', '2025-10-19', '2026-10-18'), shift: $closedShift),
+        ];
+
+        // The summary above the list (branch 20), with the money, alone and with a search that finds nearly everyone.
+        foreach ($cases as $label => $filters) {
+            foreach ([null, 'bench'] as $search) {
+                $queries = [];
+                DB::listen(function ($query) use (&$queries): void {
+                    $queries[] = sprintf('%.3f', $query->time / 1000);
+                });
+                $start = microtime(true);
+                $summary = app(PatientSummaryService::class)->summary($filters, $search, $this->owner);
+                $seconds = microtime(true) - $start;
+                $name = $label.($search === null ? '' : ' + search');
+                $slowestSummary = $seconds > $slowestSummary[0] ? [$seconds, $name] : $slowestSummary;
+                DB::getEventDispatcher()?->forget(QueryExecuted::class);
+
+                fwrite(STDERR, sprintf("Summary %-40s %6s patients %6s visits  %5.3fs  (%s)\n", $name, number_format($summary->patients), number_format($summary->visits), $seconds, implode(' ', $queries)));
+                $this->assertSame($summary->visits, $summary->opd + $summary->pharmacy);
+                $this->assertSame($summary->patients, array_sum($summary->ages));
+                $this->assertNotNull($summary->income);
+            }
+        }
+
         $start = microtime(true);
         $rows = app(PatientListService::class)->exportRows(app(PatientListService::class)->query(new PatientFilters)->orderBy('patients.name')->orderBy('patients.id'), $this->owner);
         fwrite(STDERR, sprintf("Export rows, every patient (%s): %.2fs\n", number_format(count($rows)), microtime(true) - $start));
@@ -123,7 +154,10 @@ class PatientFiltersMysqlTest extends MysqlTestCase
         fwrite(STDERR, sprintf("Till: patients this shift (%d bills): %.3fs\n", $shiftBills->count(), microtime(true) - $start));
         fwrite(STDERR, sprintf("Slowest: %s, %.3fs\n", $slowest[1], $slowest[0]));
 
+        fwrite(STDERR, sprintf("Slowest summary: %s, %.3fs\n", $slowestSummary[1], $slowestSummary[0]));
+
         $this->assertLessThanOrEqual($limit, $slowest[0], "{$slowest[1]} took ".round($slowest[0], 3).'s.');
+        $this->assertLessThanOrEqual($limit, $slowestSummary[0], "The summary of {$slowestSummary[1]} took ".round($slowestSummary[0], 3).'s.');
     }
 
     /**
@@ -234,6 +268,41 @@ class PatientFiltersMysqlTest extends MysqlTestCase
 
         DB::statement('ANALYZE TABLE sales, patients, shifts');
 
+        $this->seedLines();
+
         return [Shift::query()->whereNull('closed_at')->sole(), $shifts[0][300][0]];
+    }
+
+    /**
+     * Ages at the visit (one patient in twenty without), and three lines a
+     * bill: medicines (40 of them), and the consultation on OPD bills; one
+     * bill in a hundred has a line refunded. A bill's total is its lines'.
+     */
+    private function seedLines(): void
+    {
+        $medicines = [];
+
+        for ($m = 0; $m < 40; $m++) {
+            $medicines[] = (int) $this->medicine('Bench medicine '.$m)->getKey();
+        }
+
+        $firstBill = (int) DB::table('sales')->where('invoice_no', 'like', 'PB-%')->min('id');
+        $template = array_diff_key((array) DB::table('sale_items')->first(), array_flip(['id', 'sale_id', 'uuid', 'product_variant_id', 'line_total']));
+        $columns = implode(', ', array_map(fn (string $column): string => "`{$column}`", array_keys($template)));
+        $values = implode(', ', array_fill(0, count($template), '?'));
+        $variant = 'ELT(1 + (sales.id * 3 + ?) % '.count($medicines).', '.implode(', ', $medicines).')';
+
+        foreach ([0, 1, 2] as $line) {
+            DB::insert(
+                "INSERT INTO sale_items (sale_id, product_variant_id, line_total, {$columns}) SELECT sales.id, CASE WHEN ? = 0 AND sales.bill_type = 'opd' THEN ? ELSE {$variant} END, 20000, {$values} FROM sales WHERE sales.id >= ?",
+                [$line, $this->consult->getKey(), $line, ...array_values($template), $firstBill],
+            );
+        }
+
+        DB::update('UPDATE sales SET grand_total = 60000, refunded_total = CASE WHEN id % 100 = 0 THEN 20000 ELSE 0 END, patient_age_months = CASE WHEN patient_id % 20 = 0 THEN NULL ELSE (patient_id * 7) % 1000 END WHERE id >= ?', [$firstBill]);
+        DB::insert("INSERT INTO sale_returns (uuid, shop_id, sale_id, user_id, return_no, refund_total, refund_method, returned_at, created_at, updated_at) SELECT UUID(), shop_id, id, user_id, CONCAT('PBR-', id), 20000, 'cash', sold_at, sold_at, sold_at FROM sales WHERE id >= ? AND id % 100 = 0", [$firstBill]);
+        DB::insert("INSERT INTO sale_return_items (sale_return_id, sale_item_id, quantity, refund_amount, restocked, created_at, updated_at) SELECT r.id, MIN(i.id), 1, 20000, 1, r.created_at, r.created_at FROM sale_returns r JOIN sale_items i ON i.sale_id = r.sale_id WHERE r.return_no LIKE 'PBR-%' GROUP BY r.id, r.created_at");
+
+        DB::statement('ANALYZE TABLE sales, sale_items, sale_returns, sale_return_items');
     }
 }
