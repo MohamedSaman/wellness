@@ -39,6 +39,9 @@ final readonly class PatientFilters
         'custom' => 'Custom dates',
     ];
 
+    /** The first day of a custom range with no "from" (see startsSomewhere()). */
+    public const OPEN_START = '2000-01-01';
+
     public function __construct(
         public ?ReportPeriod $period = null,
         public ?int $locationId = null,
@@ -46,7 +49,20 @@ final readonly class PatientFilters
         public ?int $minVisits = null,
         /** A shift's id, or OPEN_SHIFTS. */
         public int|string|null $shift = null,
+        /** The period's key in PERIODS, for a title ("Today"); null when the dates were typed or not known. */
+        public ?string $preset = null,
     ) {}
+
+    /**
+     * What the summary above the list covers (branch 20): these filters, or
+     * today when nothing is set and nothing searched, so an unfiltered page
+     * never adds up the clinic's whole history. The list itself still shows
+     * every patient.
+     */
+    public function orToday(Shop $shop, ?string $search = null): self
+    {
+        return $this->isFiltered() || filled($search) ? $this : new self(period: ReportPeriod::today($shop), preset: 'today');
+    }
 
     /** Any condition on the bills themselves (the minimum alone is not one). */
     public function hasBillConditions(): bool
@@ -57,6 +73,12 @@ final readonly class PatientFilters
     public function isFiltered(): bool
     {
         return $this->hasBillConditions() || $this->minVisits !== null;
+    }
+
+    /** The period has a first day (not only "until"), so a patient's first visit can be in it or before it. */
+    public function startsSomewhere(): bool
+    {
+        return $this->period !== null && $this->period->fromDate() !== self::OPEN_START;
     }
 
     /**
@@ -73,13 +95,15 @@ final readonly class PatientFilters
         $minVisits = $value('visits', 'min');
         $shift = $value('shift', 'value');
         $location = $value('location', 'value');
+        $range = $value('last_visit', 'range');
 
         return new self(
-            period: self::period($shop, $value('last_visit', 'range'), $value('last_visit', 'from'), $value('last_visit', 'to')),
+            period: self::period($shop, $range, $value('last_visit', 'from'), $value('last_visit', 'to')),
             locationId: is_numeric($location) && (int) $location > 0 ? (int) $location : null,
             billType: is_string($billType) && array_key_exists($billType, self::BILL_TYPES) ? $billType : null,
             minVisits: is_numeric($minVisits) && (int) $minVisits >= 1 ? min((int) $minVisits, 10_000) : null,
             shift: $shift === self::OPEN_SHIFTS ? self::OPEN_SHIFTS : (is_numeric($shift) && (int) $shift > 0 ? (int) $shift : null),
+            preset: is_string($range) && $range !== 'custom' && array_key_exists($range, self::PERIODS) ? $range : null,
         );
     }
 
@@ -101,7 +125,7 @@ final readonly class PatientFilters
             return null;
         }
 
-        return ReportPeriod::between($shop, $from ?? '2000-01-01', $to ?? now($shop->timezone ?: config('app.timezone'))->format('Y-m-d'), clamp: false);
+        return ReportPeriod::between($shop, $from ?? self::OPEN_START, $to ?? now($shop->timezone ?: config('app.timezone'))->format('Y-m-d'), clamp: false);
     }
 
     private static function date(mixed $value): ?string

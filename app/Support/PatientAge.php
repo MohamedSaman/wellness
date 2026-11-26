@@ -20,6 +20,11 @@ final class PatientAge
     /** Below this many months, an age is shown in months. */
     public const MONTHS_UNTIL = 24;
 
+    /** Age groups (branch 20): a child is under 12 years, a senior 60 or more, an adult between. */
+    public const ADULT_FROM_MONTHS = 144;
+
+    public const SENIOR_FROM_MONTHS = 720;
+
     /** "34", "34y", "34 y", "8m", "8 m" (any case) → months; null when it is not an age. */
     public static function parse(?string $typed): ?int
     {

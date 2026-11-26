@@ -5,11 +5,14 @@ namespace Tests\Feature\Pos\Mysql;
 use App\Models\Patient;
 use App\Models\Shift;
 use App\Services\Data\PatientFilters;
+use App\Services\Data\PatientSummary;
 use App\Services\PatientListService;
 use App\Services\PatientService;
+use App\Services\PatientSummaryService;
 use App\Support\ReportPeriod;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Group;
@@ -25,7 +28,8 @@ use Tests\Feature\Pos\Concerns\WorksWithPatientVisits;
  * each of two tills) and the list's first page and count timed for every
  * filter and a combination against POS_PATIENTS_BENCH_MAX_SECONDS (1 by
  * default); EXPLAIN shows no full scan of sales and each patient's
- * subqueries read by patient.
+ * subqueries read by patient. The summary above the list (branch 20) is
+ * checked on MySQL too and timed, with its money, under every filter.
  */
 #[Group('mysql')]
 class PatientFiltersMysqlTest extends MysqlTestCase
@@ -65,6 +69,39 @@ class PatientFiltersMysqlTest extends MysqlTestCase
 
         $this->assertSame(['Nimal Perera'], Patient::query()->search('NIMAL')->pluck('name')->all());
         $this->assertSame([(int) $this->shiftA->getKey() => 1], app(PatientListService::class)->patientsPerShift([(int) $this->shiftA->getKey()]));
+    }
+
+    public function test_the_summary_on_mysql(): void
+    {
+        $this->seedVisits();
+        $shop = $this->shop->fresh();
+        $service = app(PatientSummaryService::class);
+        $bars = fn (PatientSummary $summary): array => collect($summary->timeline)
+            ->filter(fn (array $bar): bool => $bar['opd'] + $bar['pharmacy'] > 0)
+            ->mapWithKeys(fn (array $bar): array => [$bar['label'] => [$bar['opd'], $bar['pharmacy']]])
+            ->all();
+
+        $today = $service->summary(new PatientFilters, null, $this->owner);
+        $this->assertSame(['Today', 1, 2, 0, 1, 1, 1], [$today->title, $today->patients, $today->visits, $today->new, $today->returning, $today->opd, $today->pharmacy]);
+        $this->assertSame(['00:00' => [0, 1], '09:00' => [1, 0]], $bars($today));
+        $this->assertSame(['services' => 200_000, 'medicines' => 0], $today->income);
+
+        $month = $service->summary(new PatientFilters(period: ReportPeriod::preset($shop, 'this_month')), 'perera');
+        $this->assertSame([2, 4, 2, 0], [$month->patients, $month->visits, $month->new, $month->returning]);
+        $this->assertSame(['1 Oct' => [0, 1], '17 Oct' => [0, 1], '18 Oct' => [1, 1]], $bars($month));
+        $this->assertSame(['child' => 0, 'adult' => 1, 'senior' => 1, 'unknown' => 0], $month->ages);
+
+        $both = $service->summary(new PatientFilters(billType: PatientFilters::BILL_BOTH, minVisits: 2));
+        $this->assertSame([1, 3, null], [$both->patients, $both->visits, $both->new]);
+        $open = $service->summary(new PatientFilters(shift: PatientFilters::OPEN_SHIFTS));
+        $this->assertSame([1, 1, 0, 1], [$open->patients, $open->visits, $open->new, $open->returning]);
+
+        // Where the clocks change, the hours and days are worked out one by one.
+        $this->shop->update(['timezone' => 'Europe/London']);
+        $this->bills['sunil']->forceFill(['reported_at' => '2026-10-25 00:30:00'])->saveQuietly();
+        $this->bills['kamala']->forceFill(['reported_at' => '2026-10-25 01:30:00'])->saveQuietly();
+        $day = PatientFilters::period($this->shop->fresh(), 'custom', '2026-10-25', '2026-10-25');
+        $this->assertSame(['01:00' => [0, 2]], $bars($service->summary(new PatientFilters(period: $day))));
     }
 
     public function test_benchmark_a_year_of_patients(): void
@@ -114,6 +151,35 @@ class PatientFiltersMysqlTest extends MysqlTestCase
             }
         }
 
+        $slowestSummary = [0.0, ''];
+        $cases += [
+            'until today' => new PatientFilters(period: PatientFilters::period($shop, 'custom', null, '2026-10-18')),
+            'half a year' => new PatientFilters(period: PatientFilters::period($shop, 'custom', '2026-04-18', '2026-10-18')),
+            'a year + both + >= 2' => new PatientFilters(period: PatientFilters::period($shop, 'custom', '2025-10-19', '2026-10-18'), billType: PatientFilters::BILL_BOTH, minVisits: 2),
+            'a year + one shift' => new PatientFilters(period: PatientFilters::period($shop, 'custom', '2025-10-19', '2026-10-18'), shift: $closedShift),
+        ];
+
+        // The summary above the list (branch 20), with the money, alone and with a search that finds nearly everyone.
+        foreach ($cases as $label => $filters) {
+            foreach ([null, 'bench'] as $search) {
+                $queries = [];
+                DB::listen(function ($query) use (&$queries): void {
+                    $queries[] = sprintf('%.3f', $query->time / 1000);
+                });
+                $start = microtime(true);
+                $summary = app(PatientSummaryService::class)->summary($filters, $search, $this->owner);
+                $seconds = microtime(true) - $start;
+                $name = $label.($search === null ? '' : ' + search');
+                $slowestSummary = $seconds > $slowestSummary[0] ? [$seconds, $name] : $slowestSummary;
+                DB::getEventDispatcher()?->forget(QueryExecuted::class);
+
+                fwrite(STDERR, sprintf("Summary %-40s %6s patients %6s visits  %5.3fs  (%s)\n", $name, number_format($summary->patients), number_format($summary->visits), $seconds, implode(' ', $queries)));
+                $this->assertSame($summary->visits, $summary->opd + $summary->pharmacy);
+                $this->assertSame($summary->patients, array_sum($summary->ages));
+                $this->assertNotNull($summary->income);
+            }
+        }
+
         $start = microtime(true);
         $rows = app(PatientListService::class)->exportRows(app(PatientListService::class)->query(new PatientFilters)->orderBy('patients.name')->orderBy('patients.id'), $this->owner);
         fwrite(STDERR, sprintf("Export rows, every patient (%s): %.2fs\n", number_format(count($rows)), microtime(true) - $start));
@@ -123,7 +189,10 @@ class PatientFiltersMysqlTest extends MysqlTestCase
         fwrite(STDERR, sprintf("Till: patients this shift (%d bills): %.3fs\n", $shiftBills->count(), microtime(true) - $start));
         fwrite(STDERR, sprintf("Slowest: %s, %.3fs\n", $slowest[1], $slowest[0]));
 
+        fwrite(STDERR, sprintf("Slowest summary: %s, %.3fs\n", $slowestSummary[1], $slowestSummary[0]));
+
         $this->assertLessThanOrEqual($limit, $slowest[0], "{$slowest[1]} took ".round($slowest[0], 3).'s.');
+        $this->assertLessThanOrEqual($limit, $slowestSummary[0], "The summary of {$slowestSummary[1]} took ".round($slowestSummary[0], 3).'s.');
     }
 
     /**
@@ -234,6 +303,41 @@ class PatientFiltersMysqlTest extends MysqlTestCase
 
         DB::statement('ANALYZE TABLE sales, patients, shifts');
 
+        $this->seedLines();
+
         return [Shift::query()->whereNull('closed_at')->sole(), $shifts[0][300][0]];
+    }
+
+    /**
+     * Ages at the visit (one patient in twenty without), and three lines a
+     * bill: medicines (40 of them), and the consultation on OPD bills; one
+     * bill in a hundred has a line refunded. A bill's total is its lines'.
+     */
+    private function seedLines(): void
+    {
+        $medicines = [];
+
+        for ($m = 0; $m < 40; $m++) {
+            $medicines[] = (int) $this->medicine('Bench medicine '.$m)->getKey();
+        }
+
+        $firstBill = (int) DB::table('sales')->where('invoice_no', 'like', 'PB-%')->min('id');
+        $template = array_diff_key((array) DB::table('sale_items')->first(), array_flip(['id', 'sale_id', 'uuid', 'product_variant_id', 'line_total']));
+        $columns = implode(', ', array_map(fn (string $column): string => "`{$column}`", array_keys($template)));
+        $values = implode(', ', array_fill(0, count($template), '?'));
+        $variant = 'ELT(1 + (sales.id * 3 + ?) % '.count($medicines).', '.implode(', ', $medicines).')';
+
+        foreach ([0, 1, 2] as $line) {
+            DB::insert(
+                "INSERT INTO sale_items (sale_id, product_variant_id, line_total, {$columns}) SELECT sales.id, CASE WHEN ? = 0 AND sales.bill_type = 'opd' THEN ? ELSE {$variant} END, 20000, {$values} FROM sales WHERE sales.id >= ?",
+                [$line, $this->consult->getKey(), $line, ...array_values($template), $firstBill],
+            );
+        }
+
+        DB::update('UPDATE sales SET grand_total = 60000, refunded_total = CASE WHEN id % 100 = 0 THEN 20000 ELSE 0 END, patient_age_months = CASE WHEN patient_id % 20 = 0 THEN NULL ELSE (patient_id * 7) % 1000 END WHERE id >= ?', [$firstBill]);
+        DB::insert("INSERT INTO sale_returns (uuid, shop_id, sale_id, user_id, return_no, refund_total, refund_method, returned_at, created_at, updated_at) SELECT UUID(), shop_id, id, user_id, CONCAT('PBR-', id), 20000, 'cash', sold_at, sold_at, sold_at FROM sales WHERE id >= ? AND id % 100 = 0", [$firstBill]);
+        DB::insert("INSERT INTO sale_return_items (sale_return_id, sale_item_id, quantity, refund_amount, restocked, created_at, updated_at) SELECT r.id, MIN(i.id), 1, 20000, 1, r.created_at, r.created_at FROM sale_returns r JOIN sale_items i ON i.sale_id = r.sale_id WHERE r.return_no LIKE 'PBR-%' GROUP BY r.id, r.created_at");
+
+        DB::statement('ANALYZE TABLE sales, sale_items, sale_returns, sale_return_items');
     }
 }

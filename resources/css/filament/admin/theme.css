@@ -373,3 +373,32 @@ html[data-pos-theme] {
     .fi-wi-stats-overview-stat-value {
     color: var(--pos-danger-text, var(--color-danger-400));
 }
+
+/*
+  The summary above a list (app/Filament/Widgets/Summary): its cards and
+  charts are tighter than the dashboard's, so the list stays near.
+*/
+.pos-list-summary {
+    & .fi-grid {
+        gap: 0.75rem;
+    }
+
+    & .fi-wi-stats-overview-stat {
+        padding: 0.875rem 1rem;
+    }
+
+    & .fi-wi-stats-overview-stat-content {
+        row-gap: 0.125rem;
+    }
+
+    & .fi-wi-stats-overview-stat-value {
+        font-size: 1.5rem;
+        line-height: 2rem;
+        font-variant-numeric: tabular-nums;
+    }
+
+    & .fi-wi-chart .fi-section-header,
+    & .fi-wi-chart .fi-section-content {
+        padding: 0.75rem 1rem;
+    }
+}
