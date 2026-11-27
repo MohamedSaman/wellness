@@ -36,37 +36,33 @@ final class PatientVisitsTable
             ->query(fn (): Builder => $service->query(PatientResource::filtersOf($livewire)))
             ->defaultSort('reported_at', 'desc')
             ->columns([
+                // The time under the date, the age under the name, the location under the type: the row fits beside the sidebar at 1280 px.
                 TextColumn::make('reported_at')
                     ->label('Time')
-                    ->dateTime('d/m/Y H:i', $timezone)
+                    ->date('d/m/Y', $timezone)
+                    ->description(fn (Sale $record): string => $record->reported_at?->setTimezone($timezone())->format('H:i') ?? '')
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query
                         ->orderBy('sales.reported_at', $direction === 'asc' ? 'asc' : 'desc')
                         ->orderBy('sales.id', $direction === 'asc' ? 'asc' : 'desc')),
                 TextColumn::make('patient.name')
                     ->label('Patient')
                     ->weight('medium')
+                    ->description(fn (Sale $record): ?string => PatientAge::format($record->patient_age_months) === null ? null : PatientAge::format($record->patient_age_months).' at the visit')
                     ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereIn('sales.patient_id', PatientResource::searchPatients($search)))
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query
                         ->join('patients as visit_patients', 'visit_patients.id', '=', 'sales.patient_id')
                         ->orderBy('visit_patients.name', $direction === 'desc' ? 'desc' : 'asc'))
                     ->wrap(),
-                TextColumn::make('patient_age_months')
-                    ->label('Age')
-                    ->tooltip('At the visit')
-                    ->formatStateUsing(fn (?int $state): ?string => PatientAge::format($state))
-                    ->placeholder('-'),
                 TextColumn::make('kind')
-                    ->label('Type')
+                    ->label('Type · location')
                     ->badge()
                     ->state(fn (Sale $record): string => PatientVisitsService::kind($record))
+                    ->description(fn (Sale $record): ?string => $record->location?->name)
                     ->color(fn (string $state): string => match (true) {
                         str_starts_with($state, 'Exchange') => 'warning',
                         $state === 'OPD' => 'info',
                         default => 'gray',
                     }),
-                TextColumn::make('location.name')
-                    ->label('Location')
-                    ->wrap(),
                 TextColumn::make('invoice_no')
                     ->label('Invoice')
                     ->url(fn (Sale $record): ?string => SaleResource::canView($record) ? SaleResource::getUrl('view', ['record' => $record]) : null)
