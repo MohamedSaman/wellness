@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Patients;
 
+use App\Filament\Resources\Patients\Actions\PatientQuickView;
 use App\Filament\Resources\Patients\Pages\ListPatients;
 use App\Filament\Resources\Patients\Pages\ViewPatient;
 use App\Filament\Resources\Patients\RelationManagers\ExchangesRelationManager;
@@ -15,6 +16,7 @@ use App\Services\PatientListService;
 use App\Support\CurrentShop;
 use App\Support\PatientAge;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -57,16 +59,15 @@ class PatientResource extends PermissionResource
 
     public static function table(Table $table): Table
     {
-        $timezone = fn (): string => app(CurrentShop::class)->getOrFail()->timezone ?: 'UTC';
+        $timezone = fn (): string => static::timezone();
 
-        return $table
+        return static::listState($table)
             ->modifyQueryUsing(fn (Builder $query, HasTable $livewire): Builder => app(PatientListService::class)->apply($query, static::filtersOf($livewire)))
             ->defaultSort('name')
-            ->searchable()
             ->columns([
                 TextColumn::make('name')
                     ->label('Name')
-                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereIn('patients.id', Patient::query()->search($search)->select('patients.id')))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereIn('patients.id', static::searchPatients($search)))
                     ->sortable()
                     ->wrap(),
                 TextColumn::make('age')
@@ -103,9 +104,50 @@ class PatientResource extends PermissionResource
                     ->date('d/m/Y', $timezone)
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            // A row opens the patient's quick view over the list (branch 21); Open, their page.
+            ->recordActions([
+                PatientQuickView::make(),
+                Action::make('open')
+                    ->label('Open')
+                    ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
+                    ->iconButton()
+                    ->color('gray')
+                    ->url(fn (Patient $record): string => static::getUrl('view', ['record' => $record])),
+            ])
+            ->recordAction(PatientQuickView::NAME)
+            ->recordUrl(null);
+    }
+
+    /** The shop's clock, for the list's times. */
+    public static function timezone(): string
+    {
+        return app(CurrentShop::class)->getOrFail()->timezone ?: 'UTC';
+    }
+
+    /**
+     * What the Patients and Visits tabs share (branch 21): the filters, the
+     * search box, and the filters, search and sort kept in the user's session,
+     * so the sidebar or a breadcrumb back to the list finds them as they were.
+     */
+    public static function listState(Table $table): Table
+    {
+        return $table
+            ->searchable()
             ->filters(self::filters(), layout: FiltersLayout::AboveContentCollapsible)
             ->filtersFormColumns(['default' => 1, 'sm' => 2, 'xl' => 5])
-            ->recordUrl(fn (Patient $record): string => static::getUrl('view', ['record' => $record]));
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession();
+    }
+
+    /**
+     * Patients whose name matches a search, for the search box of either tab.
+     *
+     * @return Builder<Patient>
+     */
+    public static function searchPatients(string $search): Builder
+    {
+        return Patient::query()->search($search)->select('patients.id');
     }
 
     /** Sorts on a column the list query selects (visits, first and last visit). */

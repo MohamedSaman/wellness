@@ -402,3 +402,84 @@ html[data-pos-theme] {
         padding: 0.75rem 1rem;
     }
 }
+
+/*
+  A patient's quick view (app/Filament/Resources/Patients/Actions): their
+  bills, one card each, in the slide-over over the Patients list.
+*/
+.pos-quick-view {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+}
+
+.pos-quick-view-bill {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 0.5rem;
+    min-width: 0;
+}
+
+.dark .pos-quick-view-bill {
+    border-color: var(--color-white-10, rgb(255 255 255 / 0.1));
+}
+
+.pos-quick-view-bill-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+}
+
+.pos-quick-view-time {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.pos-quick-view-amount {
+    margin-inline-start: auto;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.pos-quick-view-muted {
+    color: var(--color-gray-500);
+}
+
+.dark .pos-quick-view-muted {
+    color: var(--color-gray-400);
+}
+
+.pos-quick-view-link {
+    color: var(--color-primary-600);
+    font-weight: 500;
+}
+
+.dark .pos-quick-view-link {
+    color: var(--color-primary-400);
+}
+
+.pos-quick-view-given {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.125rem 0.75rem;
+    margin: 0;
+
+    & dt {
+        color: var(--color-gray-500);
+    }
+
+    & dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+}
+
+.dark .pos-quick-view-given dt {
+    color: var(--color-gray-400);
+}

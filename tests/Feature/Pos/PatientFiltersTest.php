@@ -179,13 +179,15 @@ class PatientFiltersTest extends PharmacyTestCase
             ->assertSee('Bill type: Pharmacy')
             ->assertSee('Doctor&#039;s Medicines', false);
 
-        // Query parameters stay for the next component under test.
+        // Query parameters stay for the next component under test, and the filters in the session (branch 21).
+        $this->flushSession();
         Livewire::withQueryParams([])->test(ListPatients::class)
             ->filterTable('shift', ['value' => (string) $this->shiftA->getKey()])
             ->assertCanSeeTableRecords([$this->patients['kamala']])
             ->assertCanNotSeeTableRecords([$this->patients['nimal']])
             ->assertSee('Shift: T1 · 17/10/2026 22:00 · '.$this->cashier->name.' · closed');
 
+        $this->flushSession();
         Livewire::test(ListPatients::class)
             ->filterTable('visits', ['min' => 3])
             ->searchTable('nimal')

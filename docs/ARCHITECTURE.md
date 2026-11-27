@@ -64,7 +64,8 @@ app/
                     PatientService (patients found or added at the till, the sale's snapshot, edits, history,
                     names in Title Case), PatientListService (the Patients list's filters and visits, its export,
                     the patients of a shift), PatientSummaryService (the summary above that list, over the
-                    same bills), CashMovementService (paid out, paid in and doctor payments in a
+                    same bills), PatientVisitsService (its Visits tab and the patient's quick view: each bill
+                    and what it gave, the visits export), CashMovementService (paid out, paid in and doctor payments in a
                     till's open shift: rules, limits per role, voids, slips, reprints), DoctorService,
                     NoReceiptReturnService (returns without a receipt, to Quarantine or back on sale),
                     ExchangeService (returns and exchanges at the till: the return, the new bill paid with
@@ -110,7 +111,8 @@ tests/Feature/Pos/  tenancy, stock, checkout, returns, shifts, roles, modules, p
                     patients (each patient setting, the age snapshot, offline creation once, search and the till's copy,
                     receipts, the dispensing register with its filters and audit, the patient's page; the Patients
                     list's filters, its export and audit, the patients of a shift in the panel and at the till,
-                    names in Title Case and their command)
+                    names in Title Case and their command; the list's state kept in the session, the Visits
+                    tab and the quick view)
                     cash movements (expected cash, only the paying till, rules and limits, voids, slips and reprints,
                     the summaries, returns without a receipt, the admin refund's drawer, doctors, their payments,
                     the reminder, the reports and the doctor's page, retail unchanged),
