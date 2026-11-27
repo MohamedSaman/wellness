@@ -59,14 +59,13 @@ class PatientResource extends PermissionResource
     {
         $timezone = fn (): string => app(CurrentShop::class)->getOrFail()->timezone ?: 'UTC';
 
-        return $table
+        return static::listState($table)
             ->modifyQueryUsing(fn (Builder $query, HasTable $livewire): Builder => app(PatientListService::class)->apply($query, static::filtersOf($livewire)))
             ->defaultSort('name')
-            ->searchable()
             ->columns([
                 TextColumn::make('name')
                     ->label('Name')
-                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereIn('patients.id', Patient::query()->search($search)->select('patients.id')))
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->whereIn('patients.id', static::searchPatients($search)))
                     ->sortable()
                     ->wrap(),
                 TextColumn::make('age')
@@ -103,9 +102,33 @@ class PatientResource extends PermissionResource
                     ->date('d/m/Y', $timezone)
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->recordUrl(fn (Patient $record): string => static::getUrl('view', ['record' => $record]));
+    }
+
+    /**
+     * What the Patients and Visits tabs share (branch 21): the filters, the
+     * search box, and the filters, search and sort kept in the user's session,
+     * so the sidebar or a breadcrumb back to the list finds them as they were.
+     */
+    public static function listState(Table $table): Table
+    {
+        return $table
+            ->searchable()
             ->filters(self::filters(), layout: FiltersLayout::AboveContentCollapsible)
             ->filtersFormColumns(['default' => 1, 'sm' => 2, 'xl' => 5])
-            ->recordUrl(fn (Patient $record): string => static::getUrl('view', ['record' => $record]));
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->persistSortInSession();
+    }
+
+    /**
+     * Patients whose name matches a search, for the search box of either tab.
+     *
+     * @return Builder<Patient>
+     */
+    public static function searchPatients(string $search): Builder
+    {
+        return Patient::query()->search($search)->select('patients.id');
     }
 
     /** Sorts on a column the list query selects (visits, first and last visit). */

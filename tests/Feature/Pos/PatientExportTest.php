@@ -60,6 +60,8 @@ class PatientExportTest extends PharmacyTestCase
             'to' => '2026-10-18',
         ], $entry->new_values);
 
+        // The filters stay in the session (branch 21): a new one for the second export.
+        $this->flushSession();
         Livewire::test(ListPatients::class)
             ->filterTable('shift', ['value' => 'open'])
             ->searchTable('nimal')

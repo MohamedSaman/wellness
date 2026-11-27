@@ -26,7 +26,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * The clinic's patients with their filters (docs/PHARMACY.md, branch 16).
  * With one shift chosen, "Patients in this shift" opens that shift's bills.
  * The owner (patients.export) exports the list as filtered to Excel or PDF.
- * Above the list, the summary of what it shows (branch 20).
+ * Above the list, the summary of what it shows (branch 20). Filters,
+ * search and sort stay in the user's session, with Reset filters to clear
+ * them (branch 21).
  */
 class ListPatients extends ListRecords
 {
@@ -37,6 +39,12 @@ class ListPatients extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('resetList')
+                ->label('Reset filters')
+                ->icon(Heroicon::OutlinedArrowPath)
+                ->color('gray')
+                ->visible(fn (): bool => $this->hasListState())
+                ->action(fn () => $this->resetList()),
             Action::make('exportXlsx')
                 ->label('Excel')
                 ->icon(Heroicon::OutlinedTableCells)
@@ -116,6 +124,23 @@ class ListPatients extends ListRecords
         return $format === 'pdf'
             ? app(ReportExporter::class)->pdfDownload($document)
             : app(ReportExporter::class)->xlsxDownload($document);
+    }
+
+    /** Something narrows or orders the list: a filter, the search or a sort. */
+    public function hasListState(): bool
+    {
+        return PatientResource::filtersOf($this)->isFiltered() || filled($this->getTableSearch()) || filled($this->tableSort);
+    }
+
+    /**
+     * Every filter, the search and the sort back to none, in the session too
+     * (branch 21): the list as on a first visit.
+     */
+    public function resetList(): void
+    {
+        $this->removeTableFilters();
+        $this->tableSort = null;
+        $this->updatedTableSort();
     }
 
     /** The one shift the filter names, if it names one (not "open shifts now"). */
