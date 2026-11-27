@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Patients;
 
+use App\Filament\Resources\Patients\Actions\PatientQuickView;
 use App\Filament\Resources\Patients\Pages\ListPatients;
 use App\Filament\Resources\Patients\Pages\ViewPatient;
 use App\Filament\Resources\Patients\RelationManagers\ExchangesRelationManager;
@@ -15,6 +16,7 @@ use App\Services\PatientListService;
 use App\Support\CurrentShop;
 use App\Support\PatientAge;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -57,7 +59,7 @@ class PatientResource extends PermissionResource
 
     public static function table(Table $table): Table
     {
-        $timezone = fn (): string => app(CurrentShop::class)->getOrFail()->timezone ?: 'UTC';
+        $timezone = fn (): string => static::timezone();
 
         return static::listState($table)
             ->modifyQueryUsing(fn (Builder $query, HasTable $livewire): Builder => app(PatientListService::class)->apply($query, static::filtersOf($livewire)))
@@ -102,7 +104,24 @@ class PatientResource extends PermissionResource
                     ->date('d/m/Y', $timezone)
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->recordUrl(fn (Patient $record): string => static::getUrl('view', ['record' => $record]));
+            // A row opens the patient's quick view over the list (branch 21); Open, their page.
+            ->recordActions([
+                PatientQuickView::make(),
+                Action::make('open')
+                    ->label('Open')
+                    ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
+                    ->iconButton()
+                    ->color('gray')
+                    ->url(fn (Patient $record): string => static::getUrl('view', ['record' => $record])),
+            ])
+            ->recordAction(PatientQuickView::NAME)
+            ->recordUrl(null);
+    }
+
+    /** The shop's clock, for the list's times. */
+    public static function timezone(): string
+    {
+        return app(CurrentShop::class)->getOrFail()->timezone ?: 'UTC';
     }
 
     /**
