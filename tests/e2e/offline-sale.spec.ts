@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import {
     expectReady,
     goOffline,
+    openPatients,
     resetTill,
     sellOffline,
     useTill,
@@ -102,9 +103,14 @@ test('a till keeps billing offline and syncs the sale on reconnect', async ({
         await expect(admin.getByText(invoice)).toBeVisible();
 
         // The patient added offline is on the server once, with this sale and their age at it.
-        await admin.goto('/admin/patients');
+        await openPatients(admin);
         await expect(admin.getByText(patient)).toHaveCount(1);
+        // A row opens the patient's quick view (branch 21); Open full page, their page.
         await admin.getByText(patient).click();
+        const quickView = admin.locator('[data-test=patient-quick-view]');
+        await expect(quickView.getByText(invoice)).toBeVisible();
+        await admin.getByRole('link', { name: 'Open full page' }).click();
+        await expect(admin).toHaveURL(/\/admin\/patients\/[^/?]+$/);
         await expect(admin.getByText(invoice)).toBeVisible();
         await expect(admin.getByText('8 m').first()).toBeVisible();
 

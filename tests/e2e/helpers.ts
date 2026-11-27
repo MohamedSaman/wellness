@@ -430,3 +430,60 @@ export async function measure(
 
     return { text, icon: iconRatio, colour, weight };
 }
+
+/**
+ * The Patients list as on a first visit, on the tab named. Its filters,
+ * search, sort and tab are kept in the session (docs/PHARMACY.md, branch
+ * 21), and every spec signs in with the same one: Reset filters first.
+ */
+export async function openPatients(
+    page: Page,
+    tab: 'patients' | 'visits' = 'patients',
+): Promise<void> {
+    await page.goto(`/admin/patients?tab=${tab}`);
+    const reset = page.getByRole('button', {
+        name: 'Reset filters',
+        exact: true,
+    });
+    const summary = page.locator('[data-test=patients-summary]');
+
+    // The summary loads after the page: reset once it is there, or it loads with the old filters.
+    await expect(summary).toBeVisible();
+
+    if (await reset.isVisible()) {
+        await reset.click();
+        await expect(reset).toBeHidden();
+        await expect(
+            summary.getByRole('heading', { name: 'Today', exact: true }),
+        ).toBeVisible();
+    }
+}
+
+/** Pays the cart in cash, exactly, for a patient found by name at the Patient & prescription step. */
+export async function payForPatient(
+    page: Page,
+    search: string,
+    name: string,
+): Promise<void> {
+    const step = page.locator('[data-test=prescription-dialog]');
+
+    await page.locator('[data-test=pay-button]').click();
+    await expect(step).toBeVisible();
+    await step.locator('[data-test=patient-name]').fill(search);
+    await expect(step.locator('[data-test=patient-result]')).toHaveCount(1);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(step.locator('[data-test=patient-chosen]')).toContainText(
+        name,
+    );
+    await step.locator('[data-test=prescription-continue]').click();
+
+    const pay = dialog(page, 'Payment');
+    await expect(pay).toBeVisible();
+    await pay.getByRole('button', { name: 'Exact' }).click();
+    await pay.locator('[data-test=complete-sale]').click();
+    const done = page.locator('[data-test=sale-done]');
+    await expect(done).toBeVisible();
+    await done.locator('[data-test=new-sale]').click();
+    await expect(done).toBeHidden();
+}
